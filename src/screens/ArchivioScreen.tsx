@@ -1,19 +1,34 @@
-﻿/**
- * Schermata Archivio.
+/**
+ * Schermata Archivio — design v2.
  * Gerarchia: Anni → Cartelle → File.
- * Features: ricerca globale, refresh, preferiti, preview PDF, download, multi-select.
+ *
+ * Novità v2:
+ * - Card di benvenuto NEUTRA (nessun saluto con il nome: l'app è usata anche da
+ *   società): titolo "Benvenuto", sottotitolo "Qui trovi l'archivio di {nome}"
+ *   che funziona sia per persone sia per aziende, data italiana e statistiche.
+ * - Animazioni di ingresso (fade + scivolata) per hero, ricerca e griglia anni;
+ *   effetto "schiaccia" al tocco su card-anno e barra di ricerca.
+ * - Sfondo hero con "bagliori" soft (nessuna libreria nuova: solo View assolute).
+ * - Barra di ricerca staccata dal bordo superiore, più alta, icona ben visibile.
+ * - Griglia anni a 2 colonne con card grandi e leggibili.
+ * - Pulsante "Aggiorna" rimosso: si usa il trascina-per-aggiornare (RefreshControl).
+ * - Ricerca con debounce (300 ms), minimo 2 caratteri, evidenziazione dei termini
+ *   trovati, conteggio risultati e anteprima diretta dei PDF.
  */
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
+  Animated,
+  Easing,
   FlatList,
   Pressable,
   RefreshControl,
-  ScrollView,
   StyleSheet,
   Text,
   TextInput,
   View,
+  type StyleProp,
+  type ViewStyle,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import ReactNativeBlobUtil from 'react-native-blob-util';
@@ -28,9 +43,128 @@ import { api } from '@/api/client';
 import { useAppStore } from '@/store/auth';
 import { formatDate } from '@/lib/utils';
 import type { Cartella, FileItem, SearchResult } from '@/types/api';
-import { spacing, typography, useColors, type ThemeColors } from '@/theme';
+import { radius, shadow, spacing, typography, useColors, type ThemeColors } from '@/theme';
 
 type Step = 'anno' | 'cartella' | 'file';
+
+const GIORNI = ['domenica', 'lunedì', 'martedì', 'mercoledì', 'giovedì', 'venerdì', 'sabato'];
+const MESI = [
+  'gennaio', 'febbraio', 'marzo', 'aprile', 'maggio', 'giugno',
+  'luglio', 'agosto', 'settembre', 'ottobre', 'novembre', 'dicembre',
+];
+
+function dataDiOggi(): string {
+  const d = new Date();
+  return `${GIORNI[d.getDay()]} ${d.getDate()} ${MESI[d.getMonth()]} ${d.getFullYear()}`;
+}
+
+function oraDi(d: Date): string {
+  const hh = String(d.getHours()).padStart(2, '0');
+  const mm = String(d.getMinutes()).padStart(2, '0');
+  return `${hh}:${mm}`;
+}
+
+/** Spezza il nome evidenziando (in accento) le parti che corrispondono alla query. */
+function evidenzia(nome: string, query: string, matchStyle: { color: string; fontWeight: '700' }): React.ReactNode[] {
+  const q = query.trim().toLowerCase();
+  if (!q) return [nome];
+  const lower = nome.toLowerCase();
+  const parti: React.ReactNode[] = [];
+  let i = 0;
+  for (;;) {
+    const idx = lower.indexOf(q, i);
+    if (idx === -1) {
+      parti.push(nome.slice(i));
+      break;
+    }
+    if (idx > i) parti.push(nome.slice(i, idx));
+    parti.push(
+      <Text key={`${idx}-${q.length}`} style={matchStyle}>
+        {nome.slice(idx, idx + q.length)}
+      </Text>,
+    );
+    i = idx + q.length;
+  }
+  return parti;
+}
+
+/* ============================================================
+ * Animazioni (React Native core, nessuna libreria aggiuntiva)
+ * ============================================================ */
+
+const AnimatedPressable = Animated.createAnimatedComponent(Pressable);
+
+/** Entrata: fade + piccola scivolata dal basso. */
+function Entrata({
+  delay = 0,
+  style,
+  children,
+}: {
+  delay?: number;
+  style?: StyleProp<ViewStyle>;
+  children: React.ReactNode;
+}) {
+  const v = useRef(new Animated.Value(0)).current;
+  useEffect(() => {
+    Animated.timing(v, {
+      toValue: 1,
+      duration: 430,
+      delay,
+      easing: Easing.out(Easing.cubic),
+      useNativeDriver: true,
+    }).start();
+  }, [v, delay]);
+  return (
+    <Animated.View
+      style={[
+        style,
+        {
+          opacity: v,
+          transform: [{ translateY: v.interpolate({ inputRange: [0, 1], outputRange: [18, 0] }) }],
+        },
+      ]}
+    >
+      {children}
+    </Animated.View>
+  );
+}
+
+/** Pressable con effetto "schiaccia" al tocco. */
+function ScalablePress({
+  onPress,
+  onLongPress,
+  style,
+  accessibilityLabel,
+  children,
+}: {
+  onPress: () => void;
+  onLongPress?: () => void;
+  style?: StyleProp<ViewStyle>;
+  accessibilityLabel?: string;
+  children: React.ReactNode;
+}) {
+  const scale = useRef(new Animated.Value(1)).current;
+  const pressIn = () =>
+    Animated.timing(scale, { toValue: 0.96, duration: 110, useNativeDriver: true }).start();
+  const pressOut = () =>
+    Animated.spring(scale, { toValue: 1, friction: 5, tension: 160, useNativeDriver: true }).start();
+  return (
+    <AnimatedPressable
+      onPress={onPress}
+      onLongPress={onLongPress}
+      onPressIn={pressIn}
+      onPressOut={pressOut}
+      accessibilityLabel={accessibilityLabel}
+      style={[style, { transform: [{ scale }] }]}
+    >
+      {children}
+    </AnimatedPressable>
+  );
+}
+
+/* ============================================================
+ * Schermata
+ * ============================================================ */
 
 export default function ArchivioScreen() {
   const colors = useColors();
@@ -48,6 +182,7 @@ export default function ArchivioScreen() {
   const [files, setFiles] = useState<FileItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
+  const [lastLoad, setLastLoad] = useState<Date | null>(null);
   const [searchOpen, setSearchOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [searchResults, setSearchResults] = useState<SearchResult[]>([]);
@@ -59,7 +194,13 @@ export default function ArchivioScreen() {
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const selectedFiles = files.filter((f) => selected.has(f.key));
 
+  const searchSeq = useRef(0);
+
   const step: Step = cartella ? 'file' : anno ? 'cartella' : 'anno';
+  const numColumns = step === 'anno' ? 2 : 1;
+
+  const nome = (user?.name?.trim() || user?.username || '').trim();
+  const nomeBello = nome ? nome.charAt(0).toUpperCase() + nome.slice(1) : '';
 
   const load = useCallback(
     async (showRefresh = false) => {
@@ -75,6 +216,7 @@ export default function ArchivioScreen() {
         if (res.anni) setAnni(res.anni.sort((a, b) => b.localeCompare(a)));
         setCartelle(res.cartelle ?? []);
         setFiles(res.files ?? []);
+        setLastLoad(new Date());
       } catch (err) {
         toast.error('Errore caricamento', err instanceof Error ? err.message : 'Errore sconosciuto');
       } finally {
@@ -88,6 +230,30 @@ export default function ArchivioScreen() {
   useEffect(() => {
     load();
   }, [load]);
+
+  // Ricerca con debounce: parte dopo 300 ms, solo da 2 caratteri, e ignora
+  // le risposte ormai superate da query più recenti (guardia di sequenza).
+  useEffect(() => {
+    const q = searchQuery.trim();
+    if (q.length < 2) {
+      setSearchResults([]);
+      setSearching(false);
+      return;
+    }
+    setSearching(true);
+    const timer = setTimeout(async () => {
+      const seq = ++searchSeq.current;
+      try {
+        const res = await api.ricerca.search(q, user?.username);
+        if (seq === searchSeq.current) setSearchResults(res.results ?? []);
+      } catch {
+        if (seq === searchSeq.current) setSearchResults([]);
+      } finally {
+        if (seq === searchSeq.current) setSearching(false);
+      }
+    }, 300);
+    return () => clearTimeout(timer);
+  }, [searchQuery, user?.username]);
 
   async function handleTogglePreferito(file: FileItem) {
     setTogglingFav(file.key);
@@ -128,21 +294,16 @@ export default function ArchivioScreen() {
     }
   }
 
-  async function handleSearch(query: string) {
-    setSearchQuery(query);
-    if (!query.trim()) {
-      setSearchResults([]);
-      setSearching(false);
-      return;
-    }
-    setSearching(true);
-    try {
-      const res = await api.ricerca.search(query.trim(), user?.username);
-      setSearchResults(res.results ?? []);
-    } catch {
-      // silent
-    } finally {
-      setSearching(false);
+  function apriRicerca() {
+    haptics.tap();
+    setSearchOpen(true);
+  }
+
+  function apriRisultato(item: SearchResult) {
+    if (canPreviewFile(item.nome)) {
+      setPreviewFile({ key: item.key, nome: item.nome } as FileItem);
+    } else {
+      handleDownload({ key: item.key, nome: item.nome } as FileItem);
     }
   }
 
@@ -207,7 +368,10 @@ export default function ArchivioScreen() {
     clearSelection();
   }
 
+  /* ---------- Vista ricerca dedicata ---------- */
+
   if (searchOpen) {
+    const q = searchQuery.trim();
     return (
       <SafeAreaView style={styles.safe} edges={['top']}>
         <View style={styles.searchHeader}>
@@ -220,18 +384,30 @@ export default function ArchivioScreen() {
             style={styles.iconBtn}
             accessibilityLabel="Chiudi ricerca"
           >
-            <Text style={styles.iconBtnText}>✕</Text>
+            <Text style={styles.iconBtnText}>←</Text>
           </Pressable>
           <View style={styles.searchInputWrap}>
             <Text style={styles.searchIcon}>🔍</Text>
             <TextInput
               value={searchQuery}
-              onChangeText={handleSearch}
+              onChangeText={setSearchQuery}
               placeholder="Cerca documenti..."
               placeholderTextColor={colors.textTertiary}
               style={styles.searchInput}
               autoFocus
+              autoCorrect={false}
+              autoCapitalize="none"
+              returnKeyType="search"
             />
+            {searchQuery.length > 0 && (
+              <Pressable
+                onPress={() => setSearchQuery('')}
+                style={styles.clearBtn}
+                accessibilityLabel="Cancella testo"
+              >
+                <Text style={styles.clearBtnText}>✕</Text>
+              </Pressable>
+            )}
           </View>
         </View>
 
@@ -240,142 +416,198 @@ export default function ArchivioScreen() {
             <ActivityIndicator size="large" color={colors.accent} />
           </View>
         ) : searchResults.length === 0 ? (
-          <EmptyState title={searchQuery.trim() ? `Nessun risultato per "${searchQuery}"` : 'Cerca documenti'} />
-        ) : (
-          <FlatList
-            style={styles.list}
-            contentContainerStyle={styles.listContent}
-            data={searchResults}
-            keyExtractor={(item) => item.key}
-            renderItem={({ item }) => (
-              <Pressable onPress={() => handleDownload({ key: item.key, nome: item.nome } as FileItem)}>
-                {({ pressed }) => (
-                  <Card style={[styles.row, pressed && styles.rowPressed]}>
-                    <FileIcon filename={item.nome} />
-                    <View style={styles.rowText}>
-                      <Text style={styles.rowTitle} numberOfLines={1}>{item.nome}</Text>
-                      <Text style={styles.rowSubtitle} numberOfLines={1}>{item.cartella}</Text>
-                    </View>
-                    <Text style={styles.downloadIcon}>⬇</Text>
-                  </Card>
-                )}
-              </Pressable>
-            )}
+          <EmptyState
+            icon={<Text style={styles.emptyIcon}>🔍</Text>}
+            title={q.length >= 2 ? `Nessun risultato per "${q}"` : 'Cerca documenti'}
+            subtitle={q.length >= 2 ? 'Prova con un altro nome o annata' : 'Scrivi almeno 2 lettere del nome del file'}
           />
+        ) : (
+          <>
+            <Text style={styles.resultCount}>
+              {searchResults.length === 1 ? '1 risultato' : `${searchResults.length} risultati`} per "{q}"
+            </Text>
+            <FlatList
+              style={styles.list}
+              contentContainerStyle={styles.listContent}
+              data={searchResults}
+              keyExtractor={(item) => item.key}
+              keyboardShouldPersistTaps="handled"
+              renderItem={({ item }) => (
+                <Pressable onPress={() => apriRisultato(item)}>
+                  {({ pressed }) => (
+                    <Card style={[styles.row, pressed && styles.rowPressed]}>
+                      <FileIcon filename={item.nome} />
+                      <View style={styles.rowText}>
+                        <Text style={styles.rowTitle} numberOfLines={1}>
+                          {evidenzia(item.nome, q, styles.matchText)}
+                        </Text>
+                        <Text style={styles.rowSubtitle} numberOfLines={1}>
+                          {item.anno} › {item.cartella}
+                          {item.sizeStr ? ` · ${item.sizeStr}` : ''}
+                        </Text>
+                      </View>
+                      <Text style={styles.downloadIcon}>{canPreviewFile(item.nome) ? '👁' : '⬇'}</Text>
+                    </Card>
+                  )}
+                </Pressable>
+              )}
+            />
+          </>
         )}
       </SafeAreaView>
     );
   }
 
+  /* ---------- Vista principale ---------- */
+
   return (
     <SafeAreaView style={styles.safe} edges={['top']}>
-      <View style={styles.toolbar}>
-        {step !== 'anno' && (
+      {step !== 'anno' && (
+        <View style={styles.toolbar}>
           <Pressable
             onPress={() => {
               if (step === 'file') setCartella(null);
               else setAnno(null);
             }}
-            style={styles.iconBtn}
+            style={({ pressed }) => [styles.iconBtn, pressed && styles.iconBtnPressed]}
             accessibilityLabel="Indietro"
           >
             <Text style={styles.iconBtnText}>←</Text>
           </Pressable>
-        )}
-        <Pressable
-          onPress={() => load(true)}
-          style={({ pressed }) => [styles.iconBtn, pressed && styles.iconBtnPressed]}
-          accessibilityLabel="Aggiorna"
-        >
-          <Text style={[styles.iconBtnText, refreshing && { opacity: 0.5 }]}>↻</Text>
-        </Pressable>
-        <View style={{ flex: 1 }} />
-        {step === 'file' && !selectMode && files.length > 0 && (
-          <Pressable
-            onPress={() => {
-              haptics.tap();
-              setSelectMode(true);
-            }}
-            style={styles.iconBtn}
-            accessibilityLabel="Seleziona"
-          >
-            <Text style={styles.iconBtnText}>☑</Text>
-          </Pressable>
-        )}
-        {selectMode && (
-          <>
-            <Pressable onPress={selectAll} style={styles.iconBtn} accessibilityLabel="Seleziona tutti">
-              <Text style={styles.iconBtnText}>✓✓</Text>
-            </Pressable>
-            <Pressable onPress={clearSelection} style={styles.iconBtn} accessibilityLabel="Annulla selezione">
-              <Text style={styles.iconBtnText}>✕</Text>
-            </Pressable>
-          </>
-        )}
-        {!selectMode && (
-          <Pressable onPress={() => setSearchOpen(true)} style={styles.iconBtn} accessibilityLabel="Cerca">
-            <Text style={styles.iconBtnText}>🔍</Text>
-          </Pressable>
-        )}
-      </View>
-
-      {step === 'anno' && anni.length > 0 && (
-        <ScrollView
-          horizontal
-          showsHorizontalScrollIndicator={false}
-          contentContainerStyle={styles.yearChips}
-        >
-          {anni.map((a) => (
+          <View style={{ flex: 1 }} />
+          {step === 'file' && !selectMode && files.length > 0 && (
             <Pressable
-              key={a}
-              onPress={() => setAnno(a)}
-              style={[styles.yearChip, anno === a && styles.yearChipActive]}
+              onPress={() => {
+                haptics.tap();
+                setSelectMode(true);
+              }}
+              style={styles.iconBtn}
+              accessibilityLabel="Seleziona"
             >
-              <Text style={[styles.yearChipText, anno === a && styles.yearChipTextActive]}>{a}</Text>
+              <Text style={styles.iconBtnText}>☑</Text>
             </Pressable>
-          ))}
-        </ScrollView>
+          )}
+          {selectMode && (
+            <>
+              <Pressable onPress={selectAll} style={styles.iconBtn} accessibilityLabel="Seleziona tutti">
+                <Text style={styles.iconBtnText}>✓✓</Text>
+              </Pressable>
+              <Pressable onPress={clearSelection} style={styles.iconBtn} accessibilityLabel="Annulla selezione">
+                <Text style={styles.iconBtnText}>✕</Text>
+              </Pressable>
+            </>
+          )}
+        </View>
       )}
 
       {step !== 'anno' && (
         <View style={styles.breadcrumb}>
           <Text style={styles.crumbText}>
-            {anno}{cartella ? ` › ${cartella}` : ''}
+            {anno}
+            {cartella ? ` › ${cartella}` : ''}
           </Text>
         </View>
+      )}
+
+      {/* Card di benvenuto: neutra, adatta a persone e società */}
+      {step === 'anno' && (
+        <Entrata style={styles.heroWrap}>
+          <Card style={styles.heroCard} padded={false}>
+            <View style={styles.heroAurora1} pointerEvents="none" />
+            <View style={styles.heroAurora2} pointerEvents="none" />
+            <View style={styles.heroInner}>
+              <Text style={styles.heroOverline}>{`Archivio · ${dataDiOggi()}`}</Text>
+              <Text style={styles.heroTitle}>
+                Benvenuto <Text style={styles.heroWave}>👋</Text>
+              </Text>
+              <Text style={styles.heroSubtitle}>
+                {nomeBello
+                  ? `Qui trovi l'archivio di ${nomeBello}`
+                  : 'Qui trovi tutti i documenti del portale'}
+              </Text>
+              <View style={styles.heroChips}>
+                <View style={styles.heroChip}>
+                  <Text style={styles.heroChipText}>
+                    📁 {anni.length} {anni.length === 1 ? 'anno' : 'anni'} di archivio
+                  </Text>
+                </View>
+                {lastLoad && (
+                  <View style={styles.heroChip}>
+                    <Text style={styles.heroChipText}>✓ Aggiornato alle {oraDi(lastLoad)}</Text>
+                  </View>
+                )}
+              </View>
+              <Text style={styles.heroHint}>Trascina in basso per aggiornare l'archivio</Text>
+            </View>
+          </Card>
+        </Entrata>
+      )}
+
+      {/* Barra di ricerca: sempre visibile, ben staccata dai bordi */}
+      <Entrata delay={90} style={styles.searchWrap}>
+        <ScalablePress onPress={apriRicerca} style={styles.searchBar} accessibilityLabel="Apri ricerca">
+          <View style={styles.searchIconBox}>
+            <Text style={styles.searchIconBoxText}>🔍</Text>
+          </View>
+          <Text style={styles.searchBarText}>Cerca nel portale...</Text>
+        </ScalablePress>
+      </Entrata>
+
+      {step === 'anno' && !loading && anni.length > 0 && (
+        <Text style={styles.sectionLabel}>Sfoglia per anno</Text>
       )}
 
       {loading && !refreshing ? (
         <SkeletonList count={5} height={64} />
       ) : (
         <FlatList<string | Cartella | FileItem>
+          key={step}
           style={styles.list}
           contentContainerStyle={styles.listContent}
-          data={(step === 'anno' ? anni : step === 'cartella' ? cartelle : files) as Array<string | Cartella | FileItem>}
+          numColumns={numColumns}
+          columnWrapperStyle={numColumns > 1 ? styles.gridRow : undefined}
+          data={(step === 'anno' ? anni : step === 'cartella' ? cartelle : files) as Array<
+            string | Cartella | FileItem
+          >}
           keyExtractor={(item, i): string => {
             if (typeof item === 'string') return item;
             if ('key' in item && typeof item.key === 'string') return item.key;
             if ('nome' in item && typeof item.nome === 'string') return item.nome;
             return String(i);
           }}
-          refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => load(true)} />}
-          renderItem={({ item }) => {
+          refreshControl={
+            <RefreshControl
+              refreshing={refreshing}
+              onRefresh={() => load(true)}
+              tintColor={colors.accent}
+              colors={[colors.accent]}
+              progressBackgroundColor={colors.surface}
+            />
+          }
+          renderItem={({ item, index }) => {
             if (typeof item === 'string') {
               return (
-                <Pressable onPress={() => setAnno(item)}>
-                  {({ pressed }) => (
-                    <Card style={[styles.row, pressed && styles.rowPressed]}>
-                      <View style={[styles.folderIcon, { backgroundColor: colors.accentSoft }]}>
-                        <Text style={styles.folderIconText}>📁</Text>
+                <Entrata delay={Math.min(160 + index * 60, 700)} style={styles.yearCell}>
+                  <ScalablePress
+                    onPress={() => {
+                      haptics.tap();
+                      setAnno(item);
+                    }}
+                  >
+                    <Card style={styles.yearCard} padded={false}>
+                      <View style={styles.yearCardInner}>
+                        <View style={styles.yearIconBox}>
+                          <Text style={styles.yearIconBoxText}>📁</Text>
+                        </View>
+                        <Text style={styles.yearCardTitle}>{item}</Text>
+                        <View style={styles.yearCardFoot}>
+                          <Text style={styles.yearCardSub}>Apri</Text>
+                          <Text style={styles.yearCardArrow}>›</Text>
+                        </View>
                       </View>
-                      <View style={styles.rowText}>
-                        <Text style={styles.rowTitle}>{item}</Text>
-                        <Text style={styles.rowSubtitle}>Anno</Text>
-                      </View>
-                      <Text style={styles.chevron}>›</Text>
                     </Card>
-                  )}
-                </Pressable>
+                  </ScalablePress>
+                </Entrata>
               );
             }
             if ('nome' in item && 'count' in item) {
@@ -385,14 +617,21 @@ export default function ArchivioScreen() {
                 c.nuovi ? `${c.nuovi} nuovi` : null,
               ].filter(Boolean);
               return (
-                <Pressable onPress={() => setCartella(c.nome)}>
+                <Pressable
+                  onPress={() => {
+                    haptics.tap();
+                    setCartella(c.nome);
+                  }}
+                >
                   {({ pressed }) => (
                     <Card style={[styles.row, pressed && styles.rowPressed]}>
                       <View style={[styles.folderIcon, { backgroundColor: colors.accentSoft }]}>
                         <Text style={styles.folderIconText}>📁</Text>
                       </View>
                       <View style={styles.rowText}>
-                        <Text style={styles.rowTitle} numberOfLines={2}>{c.nome}</Text>
+                        <Text style={styles.rowTitle} numberOfLines={2}>
+                          {c.nome}
+                        </Text>
                         {subparts.length > 0 && <Text style={styles.rowSubtitle}>{subparts.join(' · ')}</Text>}
                       </View>
                       {c.nuovi ? <Badge label={c.nuovi} variant="danger" /> : null}
@@ -420,7 +659,9 @@ export default function ArchivioScreen() {
                 }}
               >
                 {({ pressed }) => (
-                  <Card style={[styles.row, pressed && styles.rowPressed, selectMode && isSelected && styles.rowSelected]}>
+                  <Card
+                    style={[styles.row, pressed && styles.rowPressed, selectMode && isSelected && styles.rowSelected]}
+                  >
                     {selectMode ? (
                       <View style={styles.checkboxWrap}>
                         <View style={[styles.checkbox, isSelected && styles.checkboxChecked]}>
@@ -440,11 +681,13 @@ export default function ArchivioScreen() {
                         />
                       </View>
                     )}
-                    <FileIcon filename={f.nome} />
                     <View style={styles.rowText}>
-                      <Text style={styles.rowTitle} numberOfLines={1}>{f.nome}</Text>
+                      <Text style={styles.rowTitle} numberOfLines={1}>
+                        {f.nome}
+                      </Text>
                       <Text style={styles.rowSubtitle} numberOfLines={1}>
-                        {f.sizeStr}{f.lastModified ? ` · ${formatDate(f.lastModified)}` : ''}
+                        {f.sizeStr}
+                        {f.lastModified ? ` · ${formatDate(f.lastModified)}` : ''}
                       </Text>
                     </View>
                     {!selectMode && (
@@ -460,7 +703,11 @@ export default function ArchivioScreen() {
                           </Text>
                         </Pressable>
                         {canPreviewFile(f.nome) && (
-                          <Pressable onPress={() => setPreviewFile(f)} style={styles.actionBtn} accessibilityLabel="Anteprima">
+                          <Pressable
+                            onPress={() => setPreviewFile(f)}
+                            style={styles.actionBtn}
+                            accessibilityLabel="Anteprima"
+                          >
                             <Text style={styles.actionIcon}>👁</Text>
                           </Pressable>
                         )}
@@ -483,8 +730,17 @@ export default function ArchivioScreen() {
             <EmptyState
               icon={<Text style={styles.emptyIcon}>📂</Text>}
               title="Nessun documento trovato"
-              subtitle={step === 'anno' ? 'Seleziona un anno per iniziare' : undefined}
+              subtitle={
+                step === 'anno'
+                  ? 'Trascina in basso per aggiornare'
+                  : 'Trascina in basso per aggiornare la cartella'
+              }
             />
+          }
+          ListFooterComponent={
+            step === 'file' && files.length > 0 ? (
+              <Text style={styles.tipText}>💡 Tieni premuto un file per selezionarne più di uno</Text>
+            ) : null
           }
         />
       )}
@@ -518,22 +774,17 @@ const makeStyles = (colors: ThemeColors) =>
   StyleSheet.create({
     safe: { flex: 1, backgroundColor: colors.background },
     toolbar: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: spacing.md, paddingVertical: spacing.sm, gap: spacing.xs },
-    iconBtn: { width: 44, height: 44, borderRadius: 12, alignItems: 'center', justifyContent: 'center' },
+    iconBtn: { width: 44, height: 44, borderRadius: radius.md, alignItems: 'center', justifyContent: 'center' },
     iconBtnPressed: { backgroundColor: colors.surfaceAlt },
     iconBtnText: { fontSize: 20, color: colors.textSecondary },
-    yearChips: { paddingHorizontal: spacing.md, paddingBottom: spacing.md, gap: spacing.sm },
-    yearChip: { paddingHorizontal: spacing.lg, height: 36, borderRadius: 18, backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.border, alignItems: 'center', justifyContent: 'center', marginRight: spacing.sm },
-    yearChipActive: { backgroundColor: colors.accent, borderColor: colors.accent },
-    yearChipText: { ...typography.bodySmall, color: colors.textSecondary, fontWeight: '600' },
-    yearChipTextActive: { color: colors.textInverse },
     breadcrumb: { paddingHorizontal: spacing.lg, paddingVertical: spacing.sm, backgroundColor: colors.surfaceAlt },
     crumbText: { ...typography.caption, color: colors.textSecondary },
     list: { flex: 1 },
-    listContent: { padding: spacing.lg, gap: spacing.sm },
+    listContent: { padding: spacing.lg, gap: spacing.md },
     center: { flex: 1, alignItems: 'center', justifyContent: 'center' },
     row: { flexDirection: 'row', alignItems: 'center', gap: spacing.md, minHeight: 64 },
     rowPressed: { borderColor: colors.accent, transform: [{ scale: 0.98 }] },
-    folderIcon: { width: 40, height: 40, borderRadius: 10, alignItems: 'center', justifyContent: 'center' },
+    folderIcon: { width: 40, height: 40, borderRadius: radius.md, alignItems: 'center', justifyContent: 'center' },
     folderIconText: { fontSize: 20 },
     rowText: { flex: 1, gap: 2 },
     rowTitle: { ...typography.body, color: colors.textPrimary, fontWeight: '500' },
@@ -545,16 +796,72 @@ const makeStyles = (colors: ThemeColors) =>
     statusDotSeen: { backgroundColor: colors.textTertiary },
     statusDotDownloaded: { backgroundColor: colors.success },
     rowActions: { flexDirection: 'row', alignItems: 'center' },
-    actionBtn: { width: 36, height: 36, borderRadius: 8, alignItems: 'center', justifyContent: 'center' },
+    actionBtn: { width: 36, height: 36, borderRadius: radius.sm, alignItems: 'center', justifyContent: 'center' },
     starIcon: { fontSize: 18, color: colors.textTertiary },
     starIconActive: { color: colors.warning },
     actionIcon: { fontSize: 16 },
     downloadIcon: { fontSize: 18, color: colors.accent },
     emptyIcon: { fontSize: 48 },
+    matchText: { color: colors.accent, fontWeight: '700' },
+    resultCount: { ...typography.caption, color: colors.textSecondary, paddingHorizontal: spacing.lg, paddingTop: spacing.xs },
+    tipText: { ...typography.caption, color: colors.textTertiary, textAlign: 'center', paddingVertical: spacing.lg },
+
+    // Card di benvenuto (v2)
+    heroWrap: { paddingHorizontal: spacing.lg, paddingTop: spacing.xs, marginBottom: spacing.xs },
+    heroCard: { backgroundColor: colors.surface, borderColor: colors.border, overflow: 'hidden', ...shadow.md },
+    heroAurora1: { position: 'absolute', top: -70, right: -50, width: 210, height: 210, borderRadius: 105, backgroundColor: colors.accent, opacity: 0.12 },
+    heroAurora2: { position: 'absolute', bottom: -80, left: -40, width: 190, height: 190, borderRadius: 95, backgroundColor: colors.accent, opacity: 0.07 },
+    heroInner: { padding: spacing.xl, gap: spacing.sm },
+    heroOverline: { ...typography.labelSmall, color: colors.textTertiary, letterSpacing: 1.2 },
+    heroTitle: { ...typography.h1, color: colors.textPrimary, marginTop: 2 },
+    heroWave: { fontSize: 26 },
+    heroSubtitle: { ...typography.body, color: colors.textSecondary },
+    heroChips: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm, marginTop: spacing.xs },
+    heroChip: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: spacing.md, paddingVertical: 6, borderRadius: radius.full, backgroundColor: colors.surfaceAlt, borderWidth: 1, borderColor: colors.border },
+    heroChipText: { ...typography.caption, color: colors.textPrimary, fontWeight: '600' },
+    heroHint: { ...typography.caption, color: colors.textTertiary, marginTop: spacing.xs },
+
+    // Barra di ricerca (v2: staccata dal bordo, piu' alta, icona visibile)
+    searchWrap: { marginTop: spacing.lg, marginBottom: spacing.sm, marginHorizontal: spacing.lg },
+    searchBar: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: spacing.md,
+      paddingHorizontal: spacing.md,
+      height: 56,
+      borderRadius: radius.full,
+      backgroundColor: colors.surface,
+      borderWidth: 1,
+      borderColor: colors.border,
+      ...shadow.sm,
+    },
+    searchIconBox: { width: 38, height: 38, borderRadius: radius.md, alignItems: 'center', justifyContent: 'center', backgroundColor: colors.accentSoft },
+    searchIconBoxText: { fontSize: 16 },
+    searchBarText: { ...typography.body, color: colors.textTertiary },
+
+    // Intestazione sezione anni
+    sectionLabel: { ...typography.labelSmall, color: colors.textTertiary, paddingHorizontal: spacing.lg, paddingTop: spacing.sm, paddingBottom: spacing.xs, letterSpacing: 1.2 },
+
+    // Griglia anni (v2: card grandi con icona, anno e invito all'apertura)
+    gridRow: { gap: spacing.md },
+    yearCell: { flex: 1 },
+    yearCard: { flex: 1, minHeight: 128 },
+    yearCardInner: { flex: 1, alignItems: 'flex-start', justifyContent: 'space-between', gap: spacing.sm, padding: spacing.lg },
+    yearIconBox: { width: 46, height: 46, borderRadius: radius.md + 4, alignItems: 'center', justifyContent: 'center', backgroundColor: colors.accentSoft },
+    yearIconBoxText: { fontSize: 22 },
+    yearCardTitle: { ...typography.h2, color: colors.textPrimary },
+    yearCardFoot: { flexDirection: 'row', alignItems: 'center', gap: spacing.xs },
+    yearCardSub: { ...typography.caption, color: colors.accent, fontWeight: '700' },
+    yearCardArrow: { fontSize: 16, color: colors.accent, fontWeight: '700', marginTop: -1 },
+
+    // Vista ricerca dedicata
     searchHeader: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: spacing.md, paddingVertical: spacing.sm, gap: spacing.xs, backgroundColor: colors.surface, borderBottomWidth: 1, borderBottomColor: colors.border },
-    searchInputWrap: { flex: 1, flexDirection: 'row', alignItems: 'center', backgroundColor: colors.surfaceAlt, borderRadius: 10, paddingHorizontal: spacing.md, height: 44, gap: spacing.sm },
+    searchInputWrap: { flex: 1, flexDirection: 'row', alignItems: 'center', backgroundColor: colors.surfaceAlt, borderRadius: radius.md, paddingHorizontal: spacing.md, height: 44, gap: spacing.sm },
     searchIcon: { fontSize: 14 },
     searchInput: { flex: 1, ...typography.bodySmall, color: colors.textPrimary, paddingVertical: 0 },
+    clearBtn: { width: 24, height: 24, borderRadius: 12, alignItems: 'center', justifyContent: 'center', backgroundColor: colors.border },
+    clearBtnText: { fontSize: 12, color: colors.textSecondary, fontWeight: '700' },
+
     rowSelected: { borderColor: colors.accent, backgroundColor: colors.accentSoft },
     checkboxWrap: { width: 24, alignItems: 'center', justifyContent: 'center' },
     checkbox: { width: 22, height: 22, borderRadius: 6, borderWidth: 2, borderColor: colors.borderStrong, alignItems: 'center', justifyContent: 'center' },
@@ -563,7 +870,7 @@ const makeStyles = (colors: ThemeColors) =>
     bulkBar: { position: 'absolute', bottom: 0, left: 0, right: 0, backgroundColor: colors.surface, borderTopWidth: 1, borderTopColor: colors.border, padding: spacing.lg, paddingBottom: spacing.xl, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: spacing.md, shadowColor: colors.primary, shadowOffset: { width: 0, height: -2 }, shadowOpacity: 0.05, shadowRadius: 8, elevation: 4 },
     bulkCount: { ...typography.body, color: colors.textPrimary, fontWeight: '700' },
     bulkActions: { flexDirection: 'row', gap: spacing.sm },
-    bulkBtn: { paddingHorizontal: spacing.md, paddingVertical: spacing.md, borderRadius: 10, backgroundColor: colors.surfaceAlt },
+    bulkBtn: { paddingHorizontal: spacing.md, paddingVertical: spacing.md, borderRadius: radius.md, backgroundColor: colors.surfaceAlt },
     bulkBtnText: { ...typography.bodySmall, color: colors.textPrimary, fontWeight: '600' },
     bulkBtnPrimary: { backgroundColor: colors.accent },
     bulkBtnPrimaryText: { ...typography.bodySmall, color: colors.textInverse, fontWeight: '700' },
