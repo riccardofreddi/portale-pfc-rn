@@ -15,6 +15,9 @@
     "clean:android": "cd android && ./gradlew clean",
     "pods": "cd ios && bundle install && RCT_NEW_ARCH_ENABLED=1 bundle exec pod install"
   },
+  "overrides": {
+    "@react-native-async-storage/async-storage": "$@react-native-async-storage/async-storage"
+  },
   "dependencies": {
     "@react-native-async-storage/async-storage": "^2.1.0",
     "@react-native-firebase/app": "^21.6.0",
