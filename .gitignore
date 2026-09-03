@@ -48,3 +48,5 @@ bundle-output/
 
 # Log
 *.log
+GUIDA-MIGRAZIONE.md
+setup-github.ps1
