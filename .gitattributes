@@ -1,0 +1,17 @@
+# Fine righe uniformi (evita problemi CRLF/LF tra Windows e CI)
+* text=auto
+
+# Script che devono restare in LF ed eseguibili
+gradlew text eol=lf
+*.sh text eol=lf
+
+# Binari
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.webp binary
+*.ttf binary
+*.otf binary
+*.jks binary
+*.json.example text eol=lf

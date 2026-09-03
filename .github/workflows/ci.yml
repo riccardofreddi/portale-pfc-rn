@@ -1,0 +1,100 @@
+name: CI
+
+on:
+  push:
+    branches: ["**"]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  verify:
+    name: Verify (typecheck + lint)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+
+      - name: Install dependencies
+        run: npm ci --no-audit --no-fund
+
+      - name: TypeScript
+        run: npx tsc --noEmit
+
+      - name: ESLint
+        run: npx eslint . --quiet
+
+  build-apk:
+    name: Build release APK
+    needs: verify
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+
+      - name: Setup JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: "temurin"
+          java-version: "17"
+
+      - name: Setup Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Install npm dependencies
+        run: npm ci --no-audit --no-fund
+
+      - name: Leggi versione app
+        id: version
+        run: |
+          VERSION=$(node -p "require('./package.json').version")
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "Versione app: $VERSION"
+
+      - name: google-services.json dal secret
+        env:
+          GOOGLE_SERVICES_B64: ${{ secrets.GOOGLE_SERVICES_B64 }}
+        run: |
+          if [ -z "$GOOGLE_SERVICES_B64" ]; then
+            echo "::error::Secret GOOGLE_SERVICES_B64 mancante. Vedi README → CI/CD."
+            exit 1
+          fi
+          echo "$GOOGLE_SERVICES_B64" | base64 -d > android/app/google-services.json
+
+      - name: Build release APK
+        working-directory: android
+        run: ./gradlew assembleRelease -x lintVitalRelease
+
+      - name: Upload APK artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: app-release-apk
+          path: android/app/build/outputs/apk/release/app-release.apk
+          if-no-files-found: error
+
+      - name: Pubblica APK su Release latest-apk
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: latest-apk
+          name: App APK (latest)
+          make_latest: true
+          body: |
+            APK React Native — generato dalla CI di GitHub Actions.
+
+            **Versione:** ${{ steps.version.outputs.version }}
+          files: android/app/build/outputs/apk/release/app-release.apk
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

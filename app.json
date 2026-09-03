@@ -1,0 +1,24 @@
+{
+  "name": "PortalePFCRN",
+  "displayName": "Portale PFC",
+  "expo": {
+    "name": "Portale PFC",
+    "slug": "portale-pfc",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "userInterfaceStyle": "automatic",
+    "android": {
+      "package": "com.portalepfcrn",
+      "edgeToEdgeEnabled": false
+    },
+    "extra": {
+      "eas": {
+        "projectId": ""
+      }
+    },
+    "plugins": [
+      "expo-asset",
+      "expo-font"
+    ]
+  }
+}
