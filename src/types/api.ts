@@ -142,3 +142,16 @@ export interface PreferitoToggleResponse {
   ok: boolean;
   isPreferito: boolean;
 }
+
+// === Scadenze (v4.3: promemoria locali) ===
+
+/** Una scadenza imminente del cliente (endpoint /api/documenti/scadenza/list). */
+export interface ScadenzaItem {
+  id: string;
+  titolo: string;
+  filePath: string;
+  /** Data ISO di scadenza (mezzanotte UTC del giorno, = 02:00 ora italiana). */
+  dataScadenza: string;
+  anticipoGiorni: number;
+  pagata: boolean;
+}

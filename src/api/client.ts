@@ -14,6 +14,7 @@ import type {
   Messaggio,
   Notifica,
   PreferitoToggleResponse,
+  ScadenzaItem,
   SearchResult,
   User,
 } from '@/types/api';
@@ -160,6 +161,24 @@ export const api = {
         method: 'POST',
         body: JSON.stringify({ filePath }),
       });
+    },
+  },
+
+  scadenze: {
+    /** v4.3: scadenze imminenti del cliente loggato (per i promemoria locali). */
+    async list(): Promise<{ scadenze: ScadenzaItem[] }> {
+      const res = await apiFetch<{ scadenze: Array<Record<string, unknown>> }>(
+        '/api/documenti/scadenza/list',
+      );
+      const mapped: ScadenzaItem[] = (res.scadenze ?? []).map((s) => ({
+        id: String(s.id ?? ''),
+        titolo: String(s.titolo ?? ''),
+        filePath: String(s.filePath ?? ''),
+        dataScadenza: String(s.dataScadenza ?? ''),
+        anticipoGiorni: Number(s.anticipoGiorni ?? 10),
+        pagata: Boolean(s.pagata),
+      }));
+      return { scadenze: mapped };
     },
   },
 

@@ -1,26 +1,45 @@
 ﻿/**
  * Schermata Impostazioni (bottom sheet modal).
- * Sezioni: Info app (versione reale), Aspetto (tema), Notifiche (diagnostica FCM),
- * controllo aggiornamenti, profilo, logout.
+ * Sezioni: Aspetto (tema), Stato notifiche (diagnostica FCM), test push, logout.
+ *
+ * Novità v4.2 (pannello CORTO: si arriva a "Esci" senza fatica):
+ * - TOLTA la sezione "APPLICAZIONE" (nome app, versione, utente, controllo
+ *   aggiornamenti): era solo roba da tecnici, allungava la lista per nulla.
+ *   Il pannello ora parte da "Aspetto" e finisce presto.
+ * - Il pannello è anche più ALTO (fino al 75% dello schermo, sempre dentro
+ *   il limite dell'85% del pannello: maniglia e padding calcolati) e mentre
+ *   scorri si vede la barretta di scorrimento (prima nascosta).
+ * -nestedScrollEnabled: aiuta Android a capire che il gesto serve alla lista
+ *   anche se parte su un pulsante interno.
+ *
+ * Novità v4.1:
+ * - FIX SCROLL: prima il limite di altezza del pannello era sul contenitore
+ *   esterno, quindi la lista interna non capiva di dover scorrere e su molti
+ *   telefoni "Esci dall'account" e "Invia notifica di test" restavano fuori
+ *   schermo. Ora il limite è DIRETTO sulla lista (stesso trucco già usato
+ *   dalla schermata notifiche): lo scorrimento funziona davvero.
+ * - RIMOSSO il pulsante "Profilo e impostazioni": mandava a una schermata
+ *   "Profile" che non esiste ed era la causa dell'errore "NAVIGATE ... Profile"
+ *   nei log. In meno nella lista = meno strada da scorrere.
  */
 import React, { useEffect, useState } from 'react';
 import {
   Pressable,
+  ScrollView,
   StyleSheet,
   Text,
   View,
+  useWindowDimensions,
 } from 'react-native';
 import { Modal } from '@/components/Modal';
 import { Button } from '@/components/Button';
 import { toast } from '@/components/Toaster';
-import { confirmDialog } from '@/components/ConfirmDialog';
 import { haptics } from '@/lib/haptics';
 import { api } from '@/api/client';
 import { useAppStore } from '@/store/auth';
-import { pushState, registerPushForCurrentUser, unregisterPush } from '@/lib/push';
-import { APP_VERSION, checkForUpdates, openReleasesPage } from '@/lib/updates';
+import { pushState, registerPushForCurrentUser, resetStatoPushLocale } from '@/lib/push';
 import type { FcmStatusResponse } from '@/types/api';
-import { spacing, typography, useColors, useTheme, type ThemeColors, type ThemeMode } from '@/theme';
+import { spacing, typography, useColors, useTheme, type ThemeColors, type ThemeMode, radius } from '@/theme';
 
 const THEME_OPTIONS: Array<{ value: ThemeMode; label: string; icon: string }> = [
   { value: 'system', label: 'Sistema', icon: '📱' },
@@ -32,11 +51,19 @@ export function SettingsModal() {
   const colors = useColors();
   const styles = makeStyles(colors);
   const { mode: themeMode, setMode: setThemeMode } = useTheme();
+  const { height: altezzaSchermo } = useWindowDimensions();
+
+  // v4.2: la lista può arrivare fino al 75% dello schermo, MA mai oltre
+  // l'85% del pannello (maniglia 24 + padding fondo 48 = 72 riservati):
+  // il min() garantisce che non venga mai tagliata, su qualsiasi telefono.
+  const maxLista = Math.min(
+    Math.round(altezzaSchermo * 0.75),
+    Math.round(altezzaSchermo * 0.85) - 72,
+  );
 
   const visible = useAppStore((s) => s.settingsOpen);
   const setVisible = useAppStore((s) => s.setSettingsOpen);
   const setUser = useAppStore((s) => s.setUser);
-  const user = useAppStore((s) => s.user);
 
   const [server, setServer] = useState<FcmStatusResponse | null>(null);
   const [diag, setDiag] = useState({
@@ -46,7 +73,6 @@ export function SettingsModal() {
   });
   const [testing, setTesting] = useState(false);
   const [reregistering, setReregistering] = useState(false);
-  const [checkingUpdates, setCheckingUpdates] = useState(false);
 
   useEffect(() => {
     if (!visible) return;
@@ -110,33 +136,14 @@ export function SettingsModal() {
     }
   }
 
-  async function handleCheckUpdates() {
-    setCheckingUpdates(true);
-    haptics.tap();
-    try {
-      const res = await checkForUpdates();
-      if (res.status === 'available') {
-        confirmDialog({
-          title: `Aggiornamento v${res.latest} disponibile`,
-          message: `Versione attuale: v${res.current}. Aprire la pagina delle release su GitHub per scaricare il nuovo APK?`,
-          confirmText: 'Apri GitHub',
-          onConfirm: () => openReleasesPage(res.url),
-        });
-      } else {
-        toast.success('App aggiornata', `Sei già all'ultima versione (v${res.current}).`);
-      }
-    } catch (err) {
-      toast.error(
-        'Aggiornamenti non disponibili',
-        err instanceof Error ? err.message : 'Errore di rete',
-      );
-    } finally {
-      setCheckingUpdates(false);
-    }
-  }
-
   async function handleLogout() {
-    await unregisterPush().catch(() => {});
+    // v4.4: al logout NON si cancella piu' il token FCM dal server (la
+    // vecchia unregisterPush e' stata tolta): il telefono resta agganciato
+    // all'account e le notifiche continuano ad arrivare anche con la
+    // sessione chiusa, come su WhatsApp. Il backend riassocia da solo il
+    // token se sul telefono entra un altro cliente; se l'app viene
+    // disinstallata, il server ripulisce il token da solo.
+    resetStatoPushLocale();
     try {
       await api.auth.logout();
     } catch {
@@ -148,32 +155,21 @@ export function SettingsModal() {
 
   return (
     <Modal visible={visible} onClose={() => setVisible(false)}>
-      <View style={styles.content}>
-        <Text style={styles.title}>ℹ Informazioni</Text>
+      {/* v4.1: maxHeight DIRETTO sulla lista => lo scroll funziona davvero.
+       * v4.2: nestedScrollEnabled (gesto sicuro anche su pulsanti interni)
+       * e barretta di scorrimento VISIBILE (prima nascosta: non si capiva
+       * che si poteva scorrere). */}
+      <ScrollView
+        style={{ maxHeight: maxLista }}
+        contentContainerStyle={styles.content}
+        nestedScrollEnabled
+        showsVerticalScrollIndicator
+      >
+        <Text style={styles.title}>⚙ Impostazioni</Text>
 
-        <View style={styles.section}>
-          <Text style={styles.sectionLabel}>APPLICAZIONE</Text>
-          <View style={styles.row}>
-            <Text style={styles.rowLabel}>App</Text>
-            <Text style={styles.rowValue}>Portale PFC Mobile</Text>
-          </View>
-          <View style={styles.row}>
-            <Text style={styles.rowLabel}>Versione</Text>
-            <Text style={styles.rowValue}>v{APP_VERSION}</Text>
-          </View>
-          <View style={styles.row}>
-            <Text style={styles.rowLabel}>Utente</Text>
-            <Text style={styles.rowValue}>@{user?.username ?? '-'}</Text>
-          </View>
-          <Button
-            label={checkingUpdates ? '⏳ Verifica in corso…' : '🔄 Controlla aggiornamenti'}
-            onPress={handleCheckUpdates}
-            loading={checkingUpdates}
-            variant="secondary"
-            size="md"
-            style={styles.updateBtn}
-          />
-        </View>
+        {/* v4.2: tolta la sezione "APPLICAZIONE" (nome app, versione, utente,
+         * controllo aggiornamenti): solo roba da tecnici, allungava la strada
+         * verso "Esci dall'account" senza dare nulla al cliente. */}
 
         <View style={styles.section}>
           <Text style={styles.sectionLabel}>ASPETTO</Text>
@@ -268,28 +264,20 @@ export function SettingsModal() {
           loading={testing}
         />
         <Text style={styles.helpText}>
-          Invia una notifica FCM di prova al tuo telefono per verificare che le push funzionino.
-          Devi aver effettuato il login con l'app installata.
+          Ricevi una notifica di prova: se arriva, le notifiche funzionano.
         </Text>
 
-        <Pressable
-          onPress={() => {
-            setVisible(false);
-            // @ts-expect-error global augmentation
-            setTimeout(() => global.__navigateToProfile?.(), 200);
-          }}
-          style={({ pressed }) => [styles.profileBtn, pressed && { opacity: 0.7 }]}
-        >
-          <Text style={styles.profileText}>👤 Profilo e impostazioni</Text>
-        </Pressable>
+        {/* v4.1: rimosso il pulsante "Profilo e impostazioni": navigava verso
+         * una schermata "Profile" inesistente (errore NOBRIDGE in console e
+         * nessun effetto visibile). Il pannello impostazioni È il profilo. */}
 
         <Pressable
           onPress={handleLogout}
-          style={({ pressed }) => [styles.logoutBtn, pressed && { opacity: 0.7 }]}
+          style={({ pressed }) => [styles.logoutBtn, pressed && styles.logoutBtnPressed]}
         >
           <Text style={styles.logoutText}>🚪 Esci dall'account</Text>
         </Pressable>
-      </View>
+      </ScrollView>
     </Modal>
   );
 }
@@ -301,10 +289,6 @@ const makeStyles = (colors: ThemeColors) =>
     section: { backgroundColor: colors.surfaceAlt, borderRadius: 12, padding: spacing.lg, gap: spacing.sm },
     sectionLabel: { ...typography.labelSmall, color: colors.textTertiary, fontWeight: '700' },
     sectionHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
-    row: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
-    rowLabel: { ...typography.bodySmall, color: colors.textSecondary },
-    rowValue: { ...typography.bodySmall, color: colors.textPrimary, fontWeight: '500' },
-    updateBtn: { marginTop: spacing.xs },
     themeRow: { flexDirection: 'row', gap: spacing.sm },
     themeBtn: {
       flex: 1,
@@ -336,8 +320,7 @@ const makeStyles = (colors: ThemeColors) =>
     serverErr: { color: colors.danger, fontWeight: '700' },
     reregisterBtn: { marginTop: spacing.xs },
     helpText: { ...typography.caption, color: colors.textTertiary, marginTop: -spacing.sm },
-    logoutBtn: { paddingVertical: spacing.lg, alignItems: 'center', borderTopWidth: 1, borderTopColor: colors.border },
-    logoutText: { ...typography.body, color: colors.danger, fontWeight: '600' },
-    profileBtn: { paddingVertical: spacing.lg, alignItems: 'center', backgroundColor: colors.surfaceAlt, borderRadius: 10 },
-    profileText: { ...typography.body, color: colors.textPrimary, fontWeight: '600' },
+    logoutBtn: { marginTop: spacing.xs, minHeight: 54, borderRadius: radius.lg, borderWidth: 1.5, borderColor: colors.danger, backgroundColor: colors.dangerSoft, alignItems: 'center', justifyContent: 'center' },
+    logoutBtnPressed: { opacity: 0.8, transform: [{ scale: 0.98 }] },
+    logoutText: { ...typography.body, color: colors.danger, fontWeight: '800' },
   });

@@ -5,12 +5,15 @@
  * 2. Setup push listeners → imposta pendingDeepLink nel store
  * 3. Polling notifiche + messaggi non letti ogni 30s
  * 4. Render NavigationContainer + Toaster globale
+ * 5. v4.3: promemoria scadenze LOCALI (arrivano anche a app chiusa)
  */
-import React, { useEffect } from 'react';
+import React, { useEffect, useRef } from 'react';
+import { AppState } from 'react-native';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { api } from '@/api/client';
 import { useAppStore } from '@/store/auth';
 import { setupPushListeners } from '@/lib/push';
+import { aggiornaPromemoriaScadenze } from '@/lib/scadenze-locali';
 import { AppNavigator } from '@/navigation/AppNavigator';
 import { Toaster } from '@/components/Toaster';
 import { ThemeProvider } from '@/theme/ThemeContext';
@@ -84,6 +87,34 @@ export default function App() {
       clearInterval(interval);
     };
   }, [user, setNNotifiche, setNMessaggiNonLetti]);
+
+  // v4.3: promemoria scadenze LOCALI. Al login e ogni volta che l'utente
+  // torna sull'app (max 1 volta ogni 30 minuti) riallineiamo i promemoria
+  // all'orologio interno di Android: scattano anche a app CHIUSA. Se una
+  // scadenza e' stata pagata il suo promemoria sparisce, se ne e' arrivata
+  // una nuova viene aggiunta. Tutto silenzioso: se qualcosa fallisce
+  // semplicemente si riprova alla prossima apertura.
+  const ultimaSyncScadenze = useRef(0);
+  useEffect(() => {
+    if (!user) return;
+
+    const sincronizza = () => {
+      const ora = Date.now();
+      if (ora - ultimaSyncScadenze.current < 30 * 60 * 1000) return;
+      ultimaSyncScadenze.current = ora;
+      aggiornaPromemoriaScadenze();
+    };
+
+    // Al login: sync immediata (prima volta: nessun limite).
+    ultimaSyncScadenze.current = 0;
+    sincronizza();
+
+    // Al ritorno sull'app: sync se sono passati almeno 30 minuti.
+    const sub = AppState.addEventListener('change', (stato) => {
+      if (stato === 'active') sincronizza();
+    });
+    return () => sub.remove();
+  }, [user]);
 
   return (
     <SafeAreaProvider>

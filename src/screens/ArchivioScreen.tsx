@@ -40,6 +40,59 @@
  * - Fix: i file dentro le sottocartelle non si scaricavano (nome con "/"),
  *   e gli errori di sessione venivano salvati come se fossero file.
  *
+ * Novità v4.4 (le notifiche non muoiono più al logout):
+ * - Prima, premendo "Esci dall'account", l'app cancellava il token del
+ *   telefono dal server: il cliente smetteva di ricevere TUTTO (sintomo
+ *   "esco e non arriva più nulla"). Ora il telefono resta agganciato
+ *   all'account come su WhatsApp: le notifiche arrivano anche a sessione
+ *   chiusa. Se entra un altro cliente sul telefono, il server riassocia
+ *   da solo il token; se l'app si disinstalla, il server ripulisce.
+ * - I promemoria di scadenza ora si ricreano SOLO se la lettura delle
+ *   scadenze riesce: un problema di rete non li cancella più.
+ *
+ * Novità v4.3 (promemoria scadenze che arrivano ANCHE a app chiusa):
+ * - I promemoria di scadenza non dipendono più solo dal server: l'app li
+ *   SCHEDULA nell'orologio interno di Android (allarmi esatti) quando la
+ *   apri, e scattano alle 08:30 del giorno di scadenza anche con l'app
+ *   chiusa da giorni. Se una scadenza viene pagata, il suo promemoria
+ *   sparisce alla prossima apertura.
+ * - Toccando il promemoria l'app si apre sulla cartella del documento.
+ * - Lato server (vedi pacchetto backend) il cron notturno che non riusciva
+ *   ad autenticarsi (le push di scadenza non erano MAI partite di notte) è
+ *   sistemato: orario diurno + ritenta negli ultimi 3 giorni.
+ *
+ * Novità v4.2 (impostazioni corte e notifiche immediate):
+ * - Il pannello impostazioni (dall'avatar in alto) è più CORTO: tolta la
+ *   sezione "Informazioni sull'app" (nome app, versione, utente, controllo
+ *   aggiornamenti): era roba da tecnici e allungava la strada verso "Esci".
+ * - Il pannello è anche più ALTO (75% dello schermo) e mentre scorri si
+ *   vede la barretta di scorrimento (prima era nascosta).
+ * - Le notifiche a app aperta arrivano SUBITO: tolto il timer di 1 secondo
+ *   (verificato nel codice della libreria: il canale di riserva è già ad
+ *   alta importanza, stesso effetto a schermo, zero attesa).
+ *
+ * Novità v4.1 (pannello impostazioni che si scorre e niente più errori):
+ * - FIX GRAVE: nel pannello impostazioni (dall'avatar in alto a destra) la
+ *   lista interna non scolleeva: il limite di altezza era sul contenitore
+ *   sbagliato, quindi "Esci dall'account" e "Invia notifica di test"
+ *   restavano fuori schermo e il cliente non poteva usarli. Ora la lista
+ *   sa fino dove può arrivare e scorre fino in fondo.
+ * - RIMOSSO il pulsante "Profilo e impostazioni": mandava a una schermata
+ *   che non esiste (era l'errore "NAVIGATE ... Profile" nei log) e non
+ *   faceva nulla se non chiudere il pannello.
+ * - La versione mostrata in Impostazioni ora è quella vera (1.2.0): prima
+ *   leggeva da un file mai aggiornato e diceva 1.0.0.
+ *
+ * Novità v4.0 (la pagina iniziale ti guida, il trascinare funziona DAVVERO):
+ * - FIX "trascina in basso" la scritta stava nella card di benvenuto, che
+ *   era FUORI dalla lista: tiravi lì e non succedeva nulla. Ora la card
+ *   sta DENTRO la lista: trascina da QUALUNQUE punto e l'archivio si
+ *   aggiorna (e il cerchietto di aggiornamento appare).
+ * - Sulla pagina iniziale ogni anno mostra "1 nuovo" / "2 nuovi" con un
+ *   pallino rosso (prima niente: il cliente non sapeva dove andare).
+ * - Il numero rosso delle cartelle ora dice "1 nuovo" / "2 nuovi" invece
+ *   di un numero secco: si capisce che ci sono cose da vedere.
+ *
  * Novità v3.9 (Condividi ora allega il file DAVVERO):
  * - TROVATO IL DIFETTO: la libreria di condivisione pretende l'indirizzo
  *   del file con "file://" davanti; l'app gli dava l'indirizzo senza e
@@ -500,6 +553,9 @@ export default function ArchivioScreen() {
   const [files, setFiles] = useState<FileItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
+  // v4.0: quante cose nuove ci sono in ogni anno (es. { 2026: 2 }):
+  // serve alla pagina iniziale per mostrare "1 nuovo / 2 nuovi".
+  const [nuoviAnno, setNuoviAnno] = useState<Record<string, number>>({});
   const [lastLoad, setLastLoad] = useState<Date | null>(null);
   const [searchOpen, setSearchOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
@@ -583,7 +639,32 @@ export default function ArchivioScreen() {
           anno: anno ?? undefined,
           cartella: cartella ?? undefined,
         });
-        if (res.anni) setAnni(res.anni.sort((a, b) => b.localeCompare(a)));
+        if (res.anni) {
+          const ordine = [...res.anni].sort((a, b) => b.localeCompare(a));
+          setAnni(ordine);
+          // v4.0: per ogni anno chiedo al server quante cose nuove contiene
+          // (somma dei "nuovi" delle cartelle + i file nuovi diretti): cosi'
+          // la pagina iniziale mostra "1 nuovo / 2 nuovi" su ogni anno e il
+          // cliente capisce subito dove vale la pena entrare.
+          Promise.all(
+            ordine.map(async (a): Promise<[string, number]> => {
+              try {
+                const r = await api.documenti.list({ username: user.username, anno: a });
+                const quanto =
+                  (r.cartelle ?? []).reduce(
+                    (somma, c) => somma + (campoNumero(c, 'nuovi', 'nNuovi') ?? 0),
+                    0,
+                  ) +
+                  (r.files ?? []).filter((f) => f.stato === 'nuovo').length;
+                return [a, quanto];
+              } catch {
+                return [a, 0];
+              }
+            }),
+          )
+            .then((coppie) => setNuoviAnno(Object.fromEntries(coppie)))
+            .catch(() => {});
+        }
         setCartelle(res.cartelle ?? []);
         setFiles(res.files ?? []);
         setLastLoad(new Date());
@@ -1050,68 +1131,64 @@ export default function ArchivioScreen() {
 
       {step !== 'anno' && (
         <View style={styles.breadcrumb}>
-          <Text style={styles.crumbText}>{percorsoBello} · v3.9</Text>
+          <Text style={styles.crumbText}>{percorsoBello} · v4.4</Text>
         </View>
       )}
 
-      {/* Card di benvenuto: neutra, adatta a persone e società */}
-      {step === 'anno' && (
-        <Entrata style={styles.heroWrap}>
-          <Card style={styles.heroCard} padded={false}>
-            <View style={styles.heroAurora1} pointerEvents="none" />
-            <View style={styles.heroAurora2} pointerEvents="none" />
-            <View style={styles.heroInner}>
-              <Text style={styles.heroOverline}>{`Archivio v3.9 · ${dataDiOggi()}`}</Text>
-              <Text style={styles.heroTitle}>
-                Benvenuto <Text style={styles.heroWave}>👋</Text>
-              </Text>
-              <Text style={styles.heroSubtitle}>
-                {nomeBello
-                  ? `Qui trovi l'archivio di ${nomeBello}`
-                  : 'Qui trovi tutti i documenti del portale'}
-              </Text>
-              <View style={styles.heroChips}>
-                <View style={styles.heroChip}>
-                  <Text style={styles.heroChipText}>
-                    📁 {anni.length} {anni.length === 1 ? 'anno' : 'anni'} di archivio
-                  </Text>
-                </View>
-                {lastLoad && (
-                  <View style={styles.heroChip}>
-                    <Text style={styles.heroChipText}>✓ Aggiornato alle {oraDi(lastLoad)}</Text>
-                  </View>
-                )}
-              </View>
-              <Text style={styles.heroHint}>Trascina in basso per aggiornare l'archivio</Text>
-            </View>
-          </Card>
-        </Entrata>
-      )}
-
-      {/* Barra di ricerca: sempre visibile, ben staccata dai bordi */}
-      <Entrata delay={90} style={styles.searchWrap}>
-        <ScalablePress onPress={apriRicerca} style={styles.searchBar} accessibilityLabel="Apri ricerca">
-          <View style={styles.searchIconBox}>
-            <Text style={styles.searchIconBoxText}>🔍</Text>
-          </View>
-          <Text style={styles.searchBarText}>Cerca nel portale...</Text>
-        </ScalablePress>
-      </Entrata>
-
-      {step === 'anno' && !loading && anni.length > 0 && (
-        <Text style={styles.sectionLabel}>Sfoglia per anno</Text>
-      )}
-
-      {loading && !refreshing ? (
-        <SkeletonList count={5} height={64} />
-      ) : (
         <FlatList<ItemArchivio>
           key={step}
           style={styles.list}
+          ListHeaderComponent={
+            <View style={styles.testataLista}>
+              {step === 'anno' && (
+                <Entrata>
+                  <Card style={styles.heroCard} padded={false}>
+                    <View style={styles.heroAurora1} pointerEvents="none" />
+                    <View style={styles.heroAurora2} pointerEvents="none" />
+                    <View style={styles.heroInner}>
+                      <Text style={styles.heroOverline}>{`Archivio v4.4 · ${dataDiOggi()}`}</Text>
+                      <Text style={styles.heroTitle}>
+                        Benvenuto <Text style={styles.heroWave}>👋</Text>
+                      </Text>
+                      <Text style={styles.heroSubtitle}>
+                        {nomeBello
+                          ? `Qui trovi l'archivio di ${nomeBello}`
+                          : 'Qui trovi tutti i documenti del portale'}
+                      </Text>
+                      <View style={styles.heroChips}>
+                        <View style={styles.heroChip}>
+                          <Text style={styles.heroChipText}>
+                            📁 {anni.length} {anni.length === 1 ? 'anno' : 'anni'} di archivio
+                          </Text>
+                        </View>
+                        {lastLoad && (
+                          <View style={styles.heroChip}>
+                            <Text style={styles.heroChipText}>✓ Aggiornato alle {oraDi(lastLoad)}</Text>
+                          </View>
+                        )}
+                      </View>
+                      <Text style={styles.heroHint}>Trascina in basso per aggiornare l'archivio</Text>
+                    </View>
+                  </Card>
+                </Entrata>
+              )}
+              <Entrata delay={90}>
+                <ScalablePress onPress={apriRicerca} style={styles.searchBar} accessibilityLabel="Apri ricerca">
+                  <View style={styles.searchIconBox}>
+                    <Text style={styles.searchIconBoxText}>🔍</Text>
+                  </View>
+                  <Text style={styles.searchBarText}>Cerca nel portale...</Text>
+                </ScalablePress>
+              </Entrata>
+              {step === 'anno' && !loading && anni.length > 0 && (
+                <Text style={styles.sectionLabel}>Sfoglia per anno</Text>
+              )}
+            </View>
+          }
           contentContainerStyle={styles.listContent}
           numColumns={numColumns}
           columnWrapperStyle={numColumns > 1 ? styles.gridRow : undefined}
-          data={items}
+          data={loading && !refreshing ? [] : items}
           keyExtractor={(item): string =>
             item.kind === 'file' ? item.file.key : `${item.kind}:${item.nome}`
           }
@@ -1140,6 +1217,14 @@ export default function ArchivioScreen() {
                           <Text style={styles.yearIconBoxText}>📁</Text>
                         </View>
                         <Text style={styles.yearCardTitle}>{item.nome}</Text>
+                        {(nuoviAnno[item.nome] ?? 0) > 0 && (
+                          <View style={styles.nuoviChip}>
+                            <View style={styles.nuoviPallino} />
+                            <Text style={styles.nuoviChipText}>
+                              {nuoviAnno[item.nome]} {nuoviAnno[item.nome] === 1 ? 'nuovo' : 'nuovi'}
+                            </Text>
+                          </View>
+                        )}
                         <View style={styles.yearCardFoot}>
                           <Text style={styles.yearCardSub}>Apri</Text>
                           <Text style={styles.yearCardArrow}>›</Text>
@@ -1153,7 +1238,7 @@ export default function ArchivioScreen() {
             if (item.kind === 'cartella' || item.kind === 'sottocartella') {
               const subparts = [
                 item.count != null ? `${item.count} file` : null,
-                item.nuovi ? `${item.nuovi} nuovi` : null,
+                item.nuovi ? `${item.nuovi} ${item.nuovi === 1 ? 'nuovo' : 'nuovi'}` : null,
               ].filter(Boolean);
               return (
                 <Pressable
@@ -1174,7 +1259,9 @@ export default function ArchivioScreen() {
                         </Text>
                         {subparts.length > 0 && <Text style={styles.rowSubtitle}>{subparts.join(' · ')}</Text>}
                       </View>
-                      {item.nuovi ? <Badge label={item.nuovi} variant="danger" /> : null}
+                      {item.nuovi ? (
+                        <Badge label={`${item.nuovi} ${item.nuovi === 1 ? 'nuovo' : 'nuovi'}`} variant="danger" />
+                      ) : null}
                       <Text style={styles.chevron}>›</Text>
                     </Card>
                   )}
@@ -1240,15 +1327,21 @@ export default function ArchivioScreen() {
             );
           }}
           ListEmptyComponent={
-            <EmptyState
-              icon={<Text style={styles.emptyIcon}>📂</Text>}
-              title="Nessun documento trovato"
-              subtitle={
-                step === 'anno'
-                  ? 'Trascina in basso per aggiornare'
-                  : 'Trascina in basso per aggiornare la cartella'
-              }
-            />
+            loading && !refreshing ? (
+              <View style={styles.skeletonInList}>
+                <SkeletonList count={5} height={64} />
+              </View>
+            ) : (
+              <EmptyState
+                icon={<Text style={styles.emptyIcon}>📂</Text>}
+                title="Nessun documento trovato"
+                subtitle={
+                  step === 'anno'
+                    ? 'Trascina in basso per aggiornare'
+                    : 'Trascina in basso per aggiornare la cartella'
+                }
+              />
+            )
           }
           ListFooterComponent={
             step === 'file' && nFileDiretti > 0 ? (
@@ -1258,7 +1351,6 @@ export default function ArchivioScreen() {
             ) : null
           }
         />
-      )}
 
       {selectMode && selected.size > 0 && (
         <View style={styles.bulkBar}>
@@ -1337,7 +1429,7 @@ const makeStyles = (colors: ThemeColors) =>
     tipText: { ...typography.caption, color: colors.textTertiary, textAlign: 'center', paddingVertical: spacing.lg },
 
     // Card di benvenuto (v2)
-    heroWrap: { paddingHorizontal: spacing.lg, paddingTop: spacing.xs, marginBottom: spacing.xs },
+    testataLista: { gap: spacing.md, paddingBottom: spacing.xs },
     heroCard: { backgroundColor: colors.surface, borderColor: colors.border, overflow: 'hidden', ...shadow.md },
     heroAurora1: { position: 'absolute', top: -70, right: -50, width: 210, height: 210, borderRadius: 105, backgroundColor: colors.accent, opacity: 0.12 },
     heroAurora2: { position: 'absolute', bottom: -80, left: -40, width: 190, height: 190, borderRadius: 95, backgroundColor: colors.accent, opacity: 0.07 },
@@ -1352,7 +1444,7 @@ const makeStyles = (colors: ThemeColors) =>
     heroHint: { ...typography.caption, color: colors.textTertiary, marginTop: spacing.xs },
 
     // Barra di ricerca (v2: staccata dal bordo, piu' alta, icona visibile)
-    searchWrap: { marginTop: spacing.lg, marginBottom: spacing.sm, marginHorizontal: spacing.lg },
+    skeletonInList: { paddingVertical: spacing.sm },
     searchBar: {
       flexDirection: 'row',
       alignItems: 'center',
@@ -1370,7 +1462,7 @@ const makeStyles = (colors: ThemeColors) =>
     searchBarText: { ...typography.body, color: colors.textTertiary },
 
     // Intestazione sezione anni
-    sectionLabel: { ...typography.labelSmall, color: colors.textTertiary, paddingHorizontal: spacing.lg, paddingTop: spacing.sm, paddingBottom: spacing.xs, letterSpacing: 1.2 },
+    sectionLabel: { ...typography.labelSmall, color: colors.textTertiary, letterSpacing: 1.2 },
 
     // Griglia anni (v2: card grandi con icona, anno e invito all'apertura)
     gridRow: { gap: spacing.md },
@@ -1383,6 +1475,10 @@ const makeStyles = (colors: ThemeColors) =>
     yearCardFoot: { flexDirection: 'row', alignItems: 'center', gap: spacing.xs },
     yearCardSub: { ...typography.caption, color: colors.accent, fontWeight: '700' },
     yearCardArrow: { fontSize: 16, color: colors.accent, fontWeight: '700', marginTop: -1 },
+    // v4.0: chip "N nuovo / N nuovi" sulla card dell'anno
+    nuoviChip: { flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 10, paddingVertical: 5, borderRadius: radius.full, backgroundColor: colors.dangerSoft, borderWidth: 1, borderColor: colors.danger },
+    nuoviPallino: { width: 7, height: 7, borderRadius: 4, backgroundColor: colors.danger },
+    nuoviChipText: { ...typography.caption, color: colors.danger, fontWeight: '800' },
 
     // Vista ricerca dedicata
     searchHeader: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: spacing.md, paddingVertical: spacing.sm, gap: spacing.xs, backgroundColor: colors.surface, borderBottomWidth: 1, borderBottomColor: colors.border },

@@ -3,6 +3,11 @@
 
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <!-- v4.3: allarmi esatti per i promemoria di scadenza a app chiusa
+         ( USE_EXACT_ALARM: concessa all'installazione su Android 13+;
+           SCHEDULE_EXACT_ALARM: per Android 12 ) -->
+    <uses-permission android:name="android.permission.SCHEDULE_EXACT_ALARM" />
+    <uses-permission android:name="android.permission.USE_EXACT_ALARM" />
     <uses-permission android:name="android.permission.WAKE_LOCK" />
     <uses-permission android:name="com.google.android.c2dm.permission.RECEIVE" />
     <permission android:name="${applicationId}.permission.C2D_MESSAGE" android:protectionLevel="signature" />
@@ -30,7 +35,7 @@
       </activity>
       <meta-data
         android:name="com.google.firebase.messaging.default_notification_channel_id"
-        android:value="pfc-notifications"
+        android:value="pfc-alerts-v2"
         tools:replace="android:value" />
     </application>
 </manifest>

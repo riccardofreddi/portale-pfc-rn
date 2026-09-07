@@ -38,7 +38,10 @@ import { typography, useColors, useTheme } from '@/theme';
 export type AppStackParamList = {
   MainTabs: undefined;
   PdfPreview: { key: string; nome: string };
-  Profile: undefined;
+  // v4.1: rimossa la voce "Profile" — quella schermata non è mai esistita
+  // nel navigatore e il pulsante che ci saltava generava l'errore
+  // "The action 'NAVIGATE' with payload {name: 'Profile'}..." in console.
+  // Le impostazioni sono e restano il pannello che si apre dall'avatar in alto.
 };
 
 export type AuthStackParamList = {
@@ -69,19 +72,6 @@ function MainTabsScreen() {
   const setCartella = useAppStore((s) => s.setCartella);
   const setShowNotifPanel = useAppStore((s) => s.setShowNotifPanel);
   const nMessaggiNonLetti = useAppStore((s) => s.nMessaggiNonLetti);
-
-  // Esponi funzione globale per navigare a Profile (chiamata da SettingsModal)
-  useEffect(() => {
-    // @ts-expect-error global augmentation
-    global.__navigateToProfile = () => {
-      // @ts-expect-error navigate with params
-      navigation.navigate('Profile');
-    };
-    return () => {
-      // @ts-expect-error global augmentation
-      delete global.__navigateToProfile;
-    };
-  }, [navigation]);
 
   // Naviga al PdfPreview quando previewFile è impostato
   useEffect(() => {

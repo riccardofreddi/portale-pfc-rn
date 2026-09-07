@@ -4,11 +4,15 @@
   "expo": {
     "name": "Portale PFC",
     "slug": "portale-pfc",
-    "version": "1.0.0",
+    "version": "1.4.0",
     "orientation": "portrait",
     "userInterfaceStyle": "automatic",
     "android": {
       "package": "com.portalepfcrn",
+      "permissions": [
+        "SCHEDULE_EXACT_ALARM",
+        "USE_EXACT_ALARM"
+      ],
       "edgeToEdgeEnabled": false
     },
     "extra": {

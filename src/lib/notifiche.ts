@@ -29,6 +29,36 @@
  *
  * Attivazione definitiva (una volta sola): ricostruire il dev client
  * dopo `npm install` - vedi istruzioni consegnate a parte.
+ *
+ * Novita' v4.0 (gli avvisi del server si VEDONO anche a app aperta):
+ * - canale Android "pfc-alerts-v2" ("Avvisi del portale"): e' il canale
+ *   che il server usa per le push FCM (nuovi documenti, messaggi,
+ *   scadenze): creato dentro l'app perche' Android lo raggruppi bene
+ *   e lo trovi nelle impostazioni notifiche dell'app.
+ * - mostraAvvisoLocale(): quando arriva una push CON L'APP APERTA,
+ *   Android non mostra da solo niente: lo publichiamo noi come notifica
+ *   locale nella barra di stato (prima il messaggio finiva solo nei log
+ *   e al cliente non arrivava nulla).
+ * - sulToccoNotifica(): se il cliente tocca l'avviso, l'app si apre
+ *   esattamente sul documento/messaggio giusto (deep-link).
+ *
+ * Novita' v4.2 (arrivi IMMEDIATI, via il secondo di attesa):
+ * - mostraAvvisoLocale ora pubblica la notifica SUBITO (trigger null):
+ *   prima c'era un timer di 1 secondo per agganciare il canale giusto.
+ *   Verificato nel codice Kotlin della libreria (BaseNotificationBuilder):
+ *   le notifiche immediate finiscono nel canale di riserva
+ *   "expo_notifications_fallback_notification_channel", che la libreria
+ *   crea con IMPORTANCE_HIGH, vibrazione e badge: STESSO effetto a
+ *   schermo (popup in alto, suono, vibrazione) ma ZERO attesa.
+ * - Il canale "pfc-alerts-v2" resta creato: serve alle push del server
+ *   quando l'app e' CHIUSA (e' Android a mostrarle, col canale che il
+ *   server indica nel messaggio).
+ *
+ * Novita' v4.3 (promemoria scadenze che arrivano ANCHE a app chiusa):
+ * - esposto caricaModuloNotifiche(): il nuovo modulo scadenze-locali.ts
+ *   usa lo STESSO gate silenzioso (12 pezzi nativi) per schedulare i
+ *   promemoria di scadenza nell'orologio interno di Android (Alarm
+ *   Manager esatti), che scattano anche se l'app e' chiusa da giorni.
  */
 import { Platform } from 'react-native';
 import { requireOptionalNativeModule } from 'expo-modules-core';
@@ -95,6 +125,15 @@ async function caricaModulo(): Promise<ModuloNotifiche | null> {
 }
 
 /**
+ * v4.3: accesso al modulo notifiche PER IL GATE (usato da scadenze-locali.ts
+ * per schedulare i promemoria di scadenza). Stessa regola: se i pezzi
+ * nativi non ci sono, ritorna null senza alcun errore nei log.
+ */
+export async function caricaModuloNotifiche(): Promise<ModuloNotifiche | null> {
+  return caricaModulo();
+}
+
+/**
  * Prepara tutto il necessario (gestore, permesso, canale "Download").
  * Idempotente: si puo' chiamare a ogni download senza sprechi.
  * Ritorna true se le notifiche sono realmente disponibili.
@@ -131,6 +170,17 @@ export async function preparaNotifiche(): Promise<boolean> {
       name: 'Download di documenti',
       importance: Notifications.AndroidImportance.HIGH,
     });
+
+    // v4.0: canale degli AVVISI del portale. Il server (push FCM di
+    // nuovi documenti, messaggi e scadenze) usa proprio questo id:
+    // creandolo dentro l'app, le push di sistema cadono nel canale
+    // giusto e sono ben visibili (importanza alta = compaiono anche
+    // a schermo spento con il popup).
+    await Notifications.setNotificationChannelAsync('pfc-alerts-v2', {
+      name: 'Avvisi del portale',
+      description: 'Nuovi documenti, messaggi e scadenze dello studio',
+      importance: Notifications.AndroidImportance.HIGH,
+    });
     return true;
   } catch {
     // Dev client senza i moduli nativi (ricostruzione non ancora fatta).
@@ -156,4 +206,74 @@ export async function notificaDownload(titolo: string, corpo: string): Promise<b
   } catch {
     return false;
   }
+}
+
+/**
+ * v4.0: publica un AVVISO del portale (nuovo documento, messaggio,
+ * scadenza) nella barra di stato, per gli arrivi mentre l'app e' APERTA
+ * (a app chiusa e' Android che mostra da solo le push del server).
+ * In "dati" si puo' passare { url: '...' } per aprire il punto giusto
+ * dell'app quando l'avviso viene toccato (vedi sulToccoNotifica).
+ * Ritorna true se l'avviso e' stato davvero creato.
+ */
+export async function mostraAvvisoLocale(
+  titolo: string,
+  corpo: string,
+  dati?: Record<string, string>,
+): Promise<boolean> {
+  try {
+    if (!(await preparaNotifiche())) return false;
+    const Notifications = await caricaModulo();
+    if (!Notifications) return false;
+    await Notifications.scheduleNotificationAsync({
+      content: { title: titolo, body: corpo, data: dati ?? {} },
+      // v4.2: SUBITO. La libreria non permette il canale nelle richieste
+      // immediate, ma le manda nel suo canale di riserva che e' gia'
+      // IMPORTANCE_HIGH (popup, vibrazione, badge: verificato nel sorgente
+      // Kotlin BaseNotificationBuilder.kt). Il canale "pfc-alerts-v2"
+      // resta per le push a app CHIUSA (che mostra Android da solo).
+      trigger: null,
+    });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * v4.0: chiama la funzione quando il cliente TOCCA un avviso locale
+ * dell'app (anche a app chiusa, se l'avviso l'ha aperta). Passa i dati
+ * dell'avviso (es. { url: '/?tab=archivio&anno=...' }) cosi' l'app si
+ * apre esattamente sul documento o messaggio giusto. Ritorna la
+ * funzione per staccare l'ascolto. Se le notifiche non sono attive
+ * (pezzi nativi mancanti) non ascolta nulla e non rompe niente.
+ */
+export function sulToccoNotifica(
+  cb: (dati: Record<string, unknown>) => void,
+): () => void {
+  let stacca: (() => void) | null = null;
+  caricaModulo()
+    .then((Notifications) => {
+      if (!Notifications) return;
+      const sub = Notifications.addNotificationResponseReceivedListener(
+        (response) => {
+          const dati = response.notification.request.content.data ?? {};
+          cb(dati as Record<string, unknown>);
+        },
+      );
+      stacca = () => sub.remove();
+      // Avvio "freddo": se l'app era CHIUSA e il cliente ha aperto
+      // toccando l'avviso, lo intercettiamo qui (una sola volta).
+      Notifications.getLastNotificationResponseAsync()
+        .then((response) => {
+          if (!response) return;
+          const dati = response.notification.request.content.data ?? {};
+          cb(dati as Record<string, unknown>);
+        })
+        .catch(() => {});
+    })
+    .catch(() => {});
+  return () => {
+    if (stacca) stacca();
+  };
 }

@@ -1,5 +1,5 @@
 /**
- * Portale PFC RN — Notifiche push native (FCM).
+ * Portale PFC RN — Notifiche push native (FCM). (v4.0)
  *
  * Stack:
  * - @react-native-firebase/messaging — SDK nativo Firebase, push vere (no proxy)
@@ -8,14 +8,18 @@
  * Flusso:
  * 1. registerPushForCurrentUser() — richiesta permessi + registrazione token
  * 2. messaging().getToken() → POST /api/push/fcm (backend registra token↔user)
- * 3. onMessage (foreground) → notifica locale con notifee o alert
+ * 3. onMessage (foreground) → NOTIFICA LOCALE visibile nella barra di stato
+ *    (v4.0: prima il messaggio finiva solo nei log e il cliente non
+ *    vedeva niente con l'app aperta)
  * 4. onNotificationOpenedApp (background tap) → navigazione alla schermata
+ * 5. tocco sugli avvisi locali → stessa navigazione (deep-link)
  */
 
 import messaging from '@react-native-firebase/messaging';
 import { Platform } from 'react-native';
 import { api } from '@/api/client';
 import { parseDeepLink, type DeepLinkTarget } from '@/lib/deeplink';
+import { mostraAvvisoLocale, sulToccoNotifica } from '@/lib/notifiche';
 
 export const pushState = {
   registered: false,
@@ -75,11 +79,25 @@ export function setupPushListeners(
   listenersAttached = true;
 
   // Foreground: messaggio ricevuto a app aperta.
+  // v4.0: FIX - il vecchio codice lo scriveva solo nei LOG (il cliente
+  // non vedeva NIENTE). Con l'app aperta Android non mostra da solo le
+  // push FCM: la publichiamo noi come notifica locale nella barra di
+  // stato (dove c'e' l'orologio), canale "Avvisi del portale". Se le
+  // notifiche non sono attive su questa copia, resta solo il log come
+  // prima (nessun errore).
   const unsub1 = messaging().onMessage(async (remoteMessage) => {
-    console.log('[PUSH] foreground message:', remoteMessage.messageId);
-    const title = remoteMessage.notification?.title || remoteMessage.data?.title || 'Portale PFC';
-    const body = remoteMessage.notification?.body || remoteMessage.data?.body || '';
-    console.log(`[PUSH] foreground: ${title} - ${body}`);
+    const notifica = remoteMessage.notification;
+    const datiMsg = remoteMessage.data ?? {};
+    const title = String(notifica?.title ?? datiMsg.title ?? 'Portale PFC');
+    const body = String(notifica?.body ?? datiMsg.body ?? '');
+    const urlRaw = datiMsg.url;
+    const url = typeof urlRaw === 'string' ? urlRaw : '';
+    const mostrata = await mostraAvvisoLocale(title, body, url ? { url } : undefined);
+    if (mostrata) {
+      console.log('[PUSH] avviso mostrato a app aperta:', title);
+    } else {
+      console.log('[PUSH] foreground (notifiche non attive):', title, '-', body);
+    }
   });
 
   // Background/quit: tap su notifica che apre l'app
@@ -102,22 +120,44 @@ export function setupPushListeners(
       }
     });
 
+  // v4.0: tocco su un avviso LOCALE dell'app (mostrato a app aperta):
+  // stessa navigazione delle push di sistema (deep-link al documento).
+  const staccaTocco = sulToccoNotifica((dati) => {
+    const url = typeof dati.url === 'string' ? dati.url : undefined;
+    const target = parseDeepLink(url);
+    onNotificationTap?.(target);
+  });
+
   return () => {
     unsub1();
+    staccaTocco();
     listenersAttached = false;
   };
 }
 
-/** Rimuove il token dal backend (logout). */
-export async function unregisterPush(): Promise<void> {
-  try {
-    if (pushState.token) {
-      await api.push.fcmUnregister(pushState.token).catch(() => {});
-    }
-    pushState.registered = false;
-    pushState.token = '';
-    pushState.error = '';
-  } catch (err) {
-    console.error('[PUSH] errore unregister:', err);
-  }
+/*
+ * v4.4 - RIMOSSA DI PROPOSITO la vecchia unregisterPush() che al logout
+ * cancellava il token FCM dal backend. Quello era il motivo per cui, una
+ * volta premuto "Esci dall'account", il telefono non riceveva piu' NIENTE:
+ * il server perdeva l'indirizzo del dispositivo e nessuna notifica poteva
+ * piu' essere consegnata (ne' documenti, ne' messaggi, ne' scadenze).
+ *
+ * Da v4.4 il logout NON tocca piu' il registro delle notifiche: il
+ * telefono resta agganciato all'ultimo account con cui ha fatto login,
+ * esattamente come WhatsApp. Le conseguenze sono volute e sicure:
+ * - logout => le notifiche CONTINUANO ad arrivare (richiesta esplicita
+ *   del titolare: il cliente deve vedere le scadenze anche se esce);
+ * - se sullo stesso telefono entra un ALTRO cliente, il backend riassocia
+ *   da solo il token al nuovo utente (upsert in POST /api/push/fcm);
+ * - se l'app viene DISINSTALLATA, FCM rifiuta l'invio
+ *   (messaging/registration-token-not-registered) e il backend ripulisce
+ *   il token da solo: nessun dato resta appeso a un telefono morto.
+ *
+ * Resta solo un reset dello stato INTERNO all'app (per il prossimo
+ * login), che non tocca il registro sul server.
+ */
+export function resetStatoPushLocale(): void {
+  pushState.registered = false;
+  pushState.token = '';
+  pushState.error = '';
 }
