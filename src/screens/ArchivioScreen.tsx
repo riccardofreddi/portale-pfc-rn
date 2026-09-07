@@ -40,6 +40,25 @@
  * - Fix: i file dentro le sottocartelle non si scaricavano (nome con "/"),
  *   e gli errori di sessione venivano salvati come se fossero file.
  *
+ * Novità v3.9 (Condividi ora allega il file DAVVERO):
+ * - TROVATO IL DIFETTO: la libreria di condivisione pretende l'indirizzo
+ *   del file con "file://" davanti; l'app gli dava l'indirizzo senza e
+ *   lei rifiutava: si apriva solo il pannello col testo, senza file.
+ *   (Email invece sistema l'indirizzo da sola: per questo funzionava.)
+ * - Ora l'indirizzo viene sistemato sempre e nel pannello parte il file
+ *   vero, anche col nome giusto (es. "Verbale.pdf").
+ * - Se il pannello proprio non si apre, ora lo dice ("Condivisione non
+ *   riuscita") invece di fingere tutto normale col solo testo.
+ *
+ * Novità v3.8 (parole al posto dei simboli):
+ * - In alto a destra niente più simboli misteriosi: la spunta ☑ diventa
+ *   la scritta "Seleziona"; in selezione compaiono "Tutti" e "Annulla"
+ *   al posto dei simboli ✓✓ e ✕.
+ * - "Condividi" ora dice "Condividi file" e "Email" dice "Email col
+ *   file": si capisce che parte il documento vero, non solo un testo.
+ * - La barra in basso durante la selezione dice "Scarica 3 file"
+ *   invece di "Scarica (3)".
+ *
  * Novità v3.7 (meno rumore, tutto come lo aspetti):
  * - La conferma del download è SOLO la notifica di sistema "Download
  *   completato" di Android, in alto (toccala per aprire il file):
@@ -406,7 +425,7 @@ function DettaglioFileModal({
               </Text>
             </Pressable>
 
-            {/* Condividi ed email (v3.5): tutto quello che fa una vera app Android */}
+            {/* Condividi ed email (v3.5, scritte chiare dalla v3.8) */}
             <View style={styles.shareRow}>
               <Pressable
                 onPress={() => onCondividi(file)}
@@ -420,7 +439,7 @@ function DettaglioFileModal({
               >
                 <Text style={styles.shareIcon}>📤</Text>
                 <Text style={styles.shareText} numberOfLines={1}>
-                  {condividendo ? 'Preparo...' : 'Condividi'}
+                  {condividendo ? 'Preparo...' : 'Condividi file'}
                 </Text>
               </Pressable>
               <Pressable
@@ -435,7 +454,7 @@ function DettaglioFileModal({
               >
                 <Text style={styles.shareIcon}>✉️</Text>
                 <Text style={styles.shareText} numberOfLines={1}>
-                  {inviandoEmail ? 'Preparo...' : 'Email'}
+                  {inviandoEmail ? 'Preparo...' : 'Email col file'}
                 </Text>
               </Pressable>
             </View>
@@ -681,7 +700,7 @@ export default function ArchivioScreen() {
       } else if (esito === 'solo-testo') {
         toast.info('Pannello aperto', "Per allegare il FILE serve l'aggiornamento dell'app");
       } else if (esito === 'errore') {
-        toast.error('Condivisione', 'Nessuna app disponibile sul telefono');
+        toast.error('Condivisione', 'Non sono riuscito ad aprire il pannello. Riprova');
       }
     } finally {
       setCondividendo(null);
@@ -996,19 +1015,33 @@ export default function ArchivioScreen() {
                 haptics.tap();
                 setSelectMode(true);
               }}
-              style={styles.iconBtn}
+              style={({ pressed }) => [styles.selectPill, pressed && styles.selectPillPressed]}
               accessibilityLabel="Seleziona"
             >
-              <Text style={styles.iconBtnText}>☑</Text>
+              <Text style={styles.selectPillText}>Seleziona</Text>
             </Pressable>
           )}
           {selectMode && (
             <>
-              <Pressable onPress={selectAll} style={styles.iconBtn} accessibilityLabel="Seleziona tutti">
-                <Text style={styles.iconBtnText}>✓✓</Text>
+              <Pressable
+                onPress={() => {
+                  haptics.tap();
+                  selectAll();
+                }}
+                style={({ pressed }) => [styles.selectPill, pressed && styles.selectPillPressed]}
+                accessibilityLabel="Seleziona tutti"
+              >
+                <Text style={styles.selectPillText}>Tutti</Text>
               </Pressable>
-              <Pressable onPress={clearSelection} style={styles.iconBtn} accessibilityLabel="Annulla selezione">
-                <Text style={styles.iconBtnText}>✕</Text>
+              <Pressable
+                onPress={() => {
+                  haptics.tap();
+                  clearSelection();
+                }}
+                style={({ pressed }) => [styles.selectPill, pressed && styles.selectPillPressed]}
+                accessibilityLabel="Annulla selezione"
+              >
+                <Text style={styles.selectPillText}>Annulla</Text>
               </Pressable>
             </>
           )}
@@ -1017,7 +1050,7 @@ export default function ArchivioScreen() {
 
       {step !== 'anno' && (
         <View style={styles.breadcrumb}>
-          <Text style={styles.crumbText}>{percorsoBello} · v3.7</Text>
+          <Text style={styles.crumbText}>{percorsoBello} · v3.9</Text>
         </View>
       )}
 
@@ -1028,7 +1061,7 @@ export default function ArchivioScreen() {
             <View style={styles.heroAurora1} pointerEvents="none" />
             <View style={styles.heroAurora2} pointerEvents="none" />
             <View style={styles.heroInner}>
-              <Text style={styles.heroOverline}>{`Archivio v3.7 · ${dataDiOggi()}`}</Text>
+              <Text style={styles.heroOverline}>{`Archivio v3.9 · ${dataDiOggi()}`}</Text>
               <Text style={styles.heroTitle}>
                 Benvenuto <Text style={styles.heroWave}>👋</Text>
               </Text>
@@ -1243,7 +1276,7 @@ export default function ArchivioScreen() {
               onPress={handleBulkDownload}
               style={({ pressed }) => [styles.bulkBtn, styles.bulkBtnPrimary, pressed && { opacity: 0.85 }]}
             >
-              <Text style={styles.bulkBtnPrimaryText}>⬇ Scarica ({selected.size})</Text>
+              <Text style={styles.bulkBtnPrimaryText}>⬇ Scarica {selected.size} file</Text>
             </Pressable>
           </View>
         </View>
@@ -1274,9 +1307,9 @@ const makeStyles = (colors: ThemeColors) =>
   StyleSheet.create({
     safe: { flex: 1, backgroundColor: colors.background },
     toolbar: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: spacing.md, paddingVertical: spacing.sm, gap: spacing.xs },
-    iconBtn: { width: 44, height: 44, borderRadius: radius.md, alignItems: 'center', justifyContent: 'center' },
-    iconBtnPressed: { backgroundColor: colors.surfaceAlt },
-    iconBtnText: { fontSize: 20, color: colors.textSecondary },
+    selectPill: { minHeight: 38, paddingHorizontal: 12, borderRadius: radius.full, borderWidth: 1, borderColor: colors.border, backgroundColor: colors.surfaceAlt, alignItems: 'center', justifyContent: 'center' },
+    selectPillPressed: { opacity: 0.8, transform: [{ scale: 0.97 }] },
+    selectPillText: { ...typography.button, fontSize: 13, color: colors.textPrimary },
     backBtn: { flexDirection: 'row', alignItems: 'center', gap: spacing.xs, paddingHorizontal: spacing.md, height: 40, borderRadius: radius.full, backgroundColor: colors.accentSoft, borderWidth: 1, borderColor: colors.accent },
     backBtnPressed: { opacity: 0.8, transform: [{ scale: 0.97 }] },
     backBtnArrow: { fontSize: 16, color: colors.accentDark, fontWeight: '800' },
