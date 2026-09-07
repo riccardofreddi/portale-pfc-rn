@@ -1,5 +1,13 @@
-﻿/**
- * Schermata Preview PDF.
+/**
+ * Schermata Preview PDF (v3.2 — metodo robusto).
+ *
+ * Prima il PDF veniva caricato DA INTERNET dentro il lettore, passando il
+ * cookie: bastava poco (cookie mancante, risposta di errore del server) e
+ * l'anteprima restava "Caricamento..." o dava errore. Ora il file viene
+ * PRIMA scaricato in una cartella temporanea con il metodo sicuro usato
+ * anche per i download (stessa sessione, controllo dello stato HTTP, errore
+ * chiaro) e POI aperto da lì: funziona sempre, e se lo riapri è immediato
+ * perché riusa la copia già scaricata.
  */
 import React, { useEffect, useState } from 'react';
 import {
@@ -12,11 +20,10 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useNavigation } from '@react-navigation/native';
 import Pdf from 'react-native-pdf';
-import ReactNativeBlobUtil from 'react-native-blob-util';
-import { api } from '@/api/client';
 import { useAppStore } from '@/store/auth';
 import { toast } from '@/components/Toaster';
 import { haptics } from '@/lib/haptics';
+import { scaricaInDownload, scaricaInCache } from '@/lib/download';
 import { spacing, typography, useColors, type ThemeColors } from '@/theme';
 
 interface Props {
@@ -30,49 +37,42 @@ export default function PdfPreviewScreen({ route }: Props) {
   const { key, nome } = route.params;
   const navigation = useNavigation();
   const setPreviewFile = useAppStore((s) => s.setPreviewFile);
-  const [loading, setLoading] = useState(true);
-  const [cookie, setCookie] = useState<string | null>(null);
+  const [fileUri, setFileUri] = useState<string | null>(null);
+  const [salvando, setSalvando] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  const carica = React.useCallback(async () => {
+    setError(null);
+    setFileUri(null);
+    try {
+      const path = await scaricaInCache(key);
+      setFileUri(`file://${path}`);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Impossibile aprire il file');
+    }
+  }, [key]);
+
   useEffect(() => {
-    api.documenti
-      .sessionCookieHeader()
-      .then(setCookie)
-      .catch(() => setCookie(''));
+    carica();
     const unsub = navigation.addListener('blur', () => {
       setPreviewFile(null);
     });
     return unsub;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [navigation, setPreviewFile]);
-
-  const previewUrl = api.documenti.previewUrl(key);
 
   async function handleDownload() {
     haptics.impact();
+    setSalvando(true);
     try {
-      const cookieHeader = await api.documenti.sessionCookieHeader();
-      const url = api.documenti.downloadUrl(key);
-      const ext = nome.includes('.') ? '' : '.pdf';
-      const localPath = `${ReactNativeBlobUtil.fs.dirs.DownloadDir}/${nome}${ext}`;
-      const res = await ReactNativeBlobUtil.config({
-        path: localPath,
-        fileCache: true,
-      }).fetch('GET', url, { Cookie: cookieHeader });
-      toast.success('Download completato', `Salvato in: ${res.path()}`);
+      await scaricaInDownload(key, nome);
+      haptics.success();
+      toast.success('File scaricato', 'Salvato in Download');
     } catch (err) {
       toast.error('Errore download', err instanceof Error ? err.message : 'Errore sconosciuto');
+    } finally {
+      setSalvando(false);
     }
-  }
-
-  if (cookie === null) {
-    return (
-      <SafeAreaView style={styles.safe} edges={['top']}>
-        <View style={styles.overlay}>
-          <ActivityIndicator size="large" color={colors.accent} />
-          <Text style={styles.loadingText}>Preparazione...</Text>
-        </View>
-      </SafeAreaView>
-    );
   }
 
   return (
@@ -91,13 +91,17 @@ export default function PdfPreviewScreen({ route }: Props) {
         <Text style={styles.title} numberOfLines={1}>
           {nome}
         </Text>
-        <Pressable onPress={handleDownload} hitSlop={8} style={styles.downloadBtn}>
-          <Text style={styles.downloadBtnText}>⬇ Scarica</Text>
+        <Pressable onPress={handleDownload} hitSlop={8} style={styles.downloadBtn} disabled={salvando}>
+          {salvando ? (
+            <ActivityIndicator size="small" color={colors.accent} />
+          ) : (
+            <Text style={styles.downloadBtnText}>⬇ Scarica</Text>
+          )}
         </Pressable>
       </View>
 
       <View style={styles.pdfContainer}>
-        {loading && !error && (
+        {!fileUri && !error && (
           <View style={styles.overlay}>
             <ActivityIndicator size="large" color={colors.accent} />
             <Text style={styles.loadingText}>Caricamento...</Text>
@@ -106,26 +110,23 @@ export default function PdfPreviewScreen({ route }: Props) {
         {error ? (
           <View style={styles.overlay}>
             <Text style={styles.errorText}>{error}</Text>
+            <Pressable onPress={carica} style={styles.retryBtn}>
+              <Text style={styles.retryText}>↻ Riprova</Text>
+            </Pressable>
           </View>
         ) : null}
-        <Pdf
-          source={{
-            uri: previewUrl,
-            headers: {
-              Cookie: cookie,
-            },
-            cache: true,
-          }}
-          onLoadComplete={() => setLoading(false)}
-          onError={(err) => {
-            setLoading(false);
-            const msg = err && typeof err === 'object' && 'message' in err
-              ? String((err as { message: unknown }).message)
-              : 'Errore caricamento PDF';
-            setError(msg);
-          }}
-          style={styles.pdf}
-        />
+        {fileUri ? (
+          <Pdf
+            source={{ uri: fileUri }}
+            onError={(err) => {
+              const msg = err && typeof err === 'object' && 'message' in err
+                ? String((err as { message: unknown }).message)
+                : 'Errore caricamento PDF';
+              setError(msg);
+            }}
+            style={styles.pdf}
+          />
+        ) : null}
       </View>
     </SafeAreaView>
   );
@@ -170,6 +171,9 @@ const makeStyles = (colors: ThemeColors) =>
       paddingVertical: spacing.sm,
       borderRadius: 8,
       backgroundColor: colors.accentSoft,
+      minHeight: 36,
+      alignItems: 'center',
+      justifyContent: 'center',
     },
     downloadBtnText: {
       ...typography.bodySmall,
@@ -204,5 +208,16 @@ const makeStyles = (colors: ThemeColors) =>
       color: colors.danger,
       textAlign: 'center',
       paddingHorizontal: spacing.xl,
+    },
+    retryBtn: {
+      paddingHorizontal: spacing.lg,
+      paddingVertical: spacing.md,
+      borderRadius: 10,
+      backgroundColor: colors.accent,
+    },
+    retryText: {
+      ...typography.button,
+      color: colors.textInverse,
+      fontWeight: '700',
     },
   });

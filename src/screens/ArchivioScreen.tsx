@@ -13,12 +13,83 @@
  * - Griglia anni a 2 colonne con card grandi e leggibili.
  * - Pulsante "Aggiorna" rimosso: si usa il trascina-per-aggiornare (RefreshControl).
  * - Ricerca con debounce (300 ms), minimo 2 caratteri, evidenziazione dei termini
- *   trovati, conteggio risultati e anteprima diretta dei PDF.
+ *   trovati, conteggio risultati.
+ *
+ * Novità v3 (l'archivio diventa un vero "contenitore di file"):
+ * - Le righe dei file NON hanno più pulsanti (niente stellina, niente scarica
+ *   immediata): un tocco sulla riga apre il DETTAGLIO del file.
+ * - Dettaglio file = pannello inferiore con icona, nome, stato, percorso,
+ *   data, dimensione e azioni chiare: Anteprima (PDF), Scarica, Preferito.
+ * - Anche i risultati della ricerca si aprono nello stesso dettaglio.
+ * - Niente più download accidentali: scaricare è sempre una scelta consapevole.
+ *
+ * Novità v3.1 (cartelle vere, dentro le cartelle):
+ * - Fix: le cartelle dell'anno venivano mostrate come "file" (l'app leggeva
+ *   campi diversi da quelli del backend) e il dettaglio proponeva "Scarica"
+ *   per una cartella: ora le cartelle sono cartelle, con conteggio file.
+ * - Fix: dentro una cartella le SOTTOCARTELLE ora appaiono e si aprono
+ *   (il server le manda appiattite nei nomi dei file, es. "Sotto/file.pdf",
+ *   e l'app non le distingueva). Navigazione a livelli, indietro per livello.
+ *
+ * Novità v3.2 (apertura e download senza pensieri):
+ * - "Apri" è il pulsante principale: i PDF si aprono dentro l'app, gli altri
+ *   file con l'app adeguata del telefono. L'anteprima PDF ora usa una copia
+ *   locale del file: funziona sempre, non dipende più da cookie/internet.
+ * - "Scarica" mostra la percentuale e, finito, il file SI APRE DA SOLO;
+ *   la riga diventa subito "scaricato" (pallino verde) senza aspettare.
+ * - Fix: i file dentro le sottocartelle non si scaricavano (nome con "/"),
+ *   e gli errori di sessione venivano salvati come se fossero file.
+ *
+ * Novità v3.7 (meno rumore, tutto come lo aspetti):
+ * - La conferma del download è SOLO la notifica di sistema "Download
+ *   completato" di Android, in alto (toccala per aprire il file):
+ *   tolta la doppia notifica dell'app, inutile.
+ * - "Scarica" NON apre più il file da solo: resti dove sei; il file
+ *   è in Download e nella barra di stato.
+ *
+ * Novità v3.6 (il download si comporta come tutti i download Android):
+ * - Finito il download, Android stesso mostra la notifica di sistema
+ *   "File scaricato" nella barra di stato, in alto dove c'è l'orologio,
+ *   col nome del file. Toccandola il file si apre. Non serve più cercare
+ *   la cartella Download a mano: il file è anche nell'app File del
+ *   telefono, sezione Download.
+ * - Meccanismo standard di Android (DownloadManager, come il browser):
+ *   già dentro l'app, funziona SUBITO, senza ricostruire nulla. Se un
+ *   telefono rifiuta, tutto prosegue come prima (mai errori in più).
+ *
+ * Novità v3.5 (l'app fa tutto quello che fa una vera app Android):
+ * - Pulsante "Condividi" nel dettaglio: apre il pannello di sistema di
+ *   Android (WhatsApp, Gmail, Drive, Telegram...) con il FILE allegato.
+ * - Pulsante "Email": apre la posta con il file GIA' allegato, oggetto
+ *   e testo pronti: resta solo da scrivere il destinatario e inviare.
+ * - Stessa protezione della v3.4 (gate silenzioso): finché l'app non
+ *   viene ricostruita, i due pulsanti usano il piano B che funziona
+ *   comunque (pannello col nome / posta senza allegato), zero errori.
+ *
+ * Correzione v3.4 (silenziosa):
+ * - La libreria notifiche ora viene caricata SOLO se i 12 moduli nativi
+ *   esistono davvero (gate silenzioso in src/lib/notifiche.ts): sparito
+ *   l'errore "ExpoPushTokenManager" dai log; tutto il resto invariato.
+ *
+ * Novità v3.3 (notifica di sistema e pulsanti impossibili da fraintendere):
+ * - Download finito = NOTIFICA di Android nella barra di stato, in alto
+ *   (dove ci sono ora e batteria), come per tutti i download del telefono
+ *   (modulo src/lib/notifiche.ts, completamente protetto: finché il dev
+ *   client non include il modulo notifiche, tutto funziona come prima).
+ * - Pulsanti del dettaglio IMPILATI e grandi: "Apri il file" in accento e
+ *   "Scarica nel telefono" con la BARRA DI AVANZAMENTO animata dentro il
+ *   pulsante; finito diventa chiaro che il file è nella cartella Download.
+ * - "Torna indietro" ora è un pulsante con la scritta "Indietro" (non solo
+ *   una freccia); le righe file mostrano l'icona del tipo (PDF, DOC...) con
+ *   un pallino di stato: rosso = nuovo, verde con spunta = scaricato.
+ * - Il tasto indietro FISICO del telefono risale le cartelle, chiude il
+ *   dettaglio e chiude la ricerca: navigazione come ci si aspetta su Android.
  */
-import React, { useCallback, useEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Animated,
+  BackHandler,
   Easing,
   FlatList,
   Pressable,
@@ -31,17 +102,20 @@ import {
   type ViewStyle,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import ReactNativeBlobUtil from 'react-native-blob-util';
 import { Card } from '@/components/Card';
 import { EmptyState } from '@/components/EmptyState';
 import { FileIcon, canPreviewFile } from '@/components/FileIcon';
 import { Badge } from '@/components/Badge';
+import { Button } from '@/components/Button';
+import { Modal } from '@/components/Modal';
 import { SkeletonList } from '@/components/Skeleton';
 import { toast } from '@/components/Toaster';
 import { haptics } from '@/lib/haptics';
 import { api } from '@/api/client';
 import { useAppStore } from '@/store/auth';
 import { formatDate } from '@/lib/utils';
+import { scaricaInDownload, scaricaInCache, apriConApp } from '@/lib/download';
+import { condividiDocumento, inviaDocumentoEmail } from '@/lib/condividi';
 import type { Cartella, FileItem, SearchResult } from '@/types/api';
 import { radius, shadow, spacing, typography, useColors, type ThemeColors } from '@/theme';
 
@@ -163,6 +237,231 @@ function ScalablePress({
 }
 
 /* ============================================================
+ * Dettaglio file (v3) — pannello inferiore con tutte le azioni.
+ * Il tocco su una riga NON scarica più: apre questo dettaglio,
+ * così si vede sempre cosa si sta per aprire o scaricare.
+ * ============================================================ */
+
+const STATO_BADGE: Record<
+  string,
+  { label: string; variant: 'danger' | 'neutral' | 'success' | 'warning' }
+> = {
+  nuovo: { label: 'Nuovo', variant: 'danger' },
+  visto: { label: 'Visto', variant: 'neutral' },
+  scaricato: { label: 'Scaricato', variant: 'success' },
+  preferito: { label: 'Preferito', variant: 'warning' },
+};
+
+/** Riga della lista archivio: anno, cartella (con conteggio), sottocartella o file. */
+type ItemArchivio =
+  | { kind: 'anno'; nome: string }
+  | { kind: 'cartella'; nome: string; count?: number; nuovi?: number }
+  | { kind: 'sottocartella'; nome: string; count: number; nuovi?: number }
+  | { kind: 'file'; file: FileItem };
+
+/** Legge un campo numerico accettando i nomi del backend (nFiles/nNuovi) e quelli previsti (count/nuovi). */
+function campoNumero(o: Record<string, unknown>, nome1: string, nome2: string): number | undefined {
+  const v = o[nome1] ?? o[nome2];
+  return typeof v === 'number' ? v : undefined;
+}
+
+function DettaglioFileModal({
+  file,
+  percorso,
+  downloading,
+  progresso,
+  aprendo,
+  togglingFav,
+  condividendo,
+  inviandoEmail,
+  onClose,
+  onApri,
+  onDownload,
+  onCondividi,
+  onEmail,
+  onTogglePreferito,
+}: {
+  file: FileItem | null;
+  percorso?: string;
+  downloading: boolean;
+  progresso: number | null;
+  aprendo: boolean;
+  togglingFav: boolean;
+  condividendo: boolean;
+  inviandoEmail: boolean;
+  onClose: () => void;
+  onApri: (f: FileItem) => void;
+  onDownload: (f: FileItem) => void;
+  onCondividi: (f: FileItem) => void;
+  onEmail: (f: FileItem) => void;
+  onTogglePreferito: (f: FileItem) => void;
+}) {
+  const colors = useColors();
+  const styles = makeStyles(colors);
+  const previewabile = file ? canPreviewFile(file.nome) : false;
+  const badge = file?.stato ? STATO_BADGE[file.stato] : null;
+  // Barra di avanzamento DENTRO il pulsante Scarica (v3.3, RN core).
+  const fill = useRef(new Animated.Value(0)).current;
+  useEffect(() => {
+    Animated.timing(fill, {
+      toValue: downloading ? (progresso ?? 0) : 0,
+      duration: 220,
+      easing: Easing.out(Easing.quad),
+      useNativeDriver: false,
+    }).start();
+  }, [downloading, progresso, fill]);
+  const larghezzaFill = fill.interpolate({ inputRange: [0, 100], outputRange: ['0%', '100%'] });
+  return (
+    <Modal visible={!!file} onClose={onClose}>
+      {file && (
+        <View style={styles.detailWrap}>
+          {/* Intestazione: icona tipo file + nome + stato */}
+          <View style={styles.detailHead}>
+            <FileIcon filename={file.nome} size={56} />
+            <View style={styles.detailHeadText}>
+              <Text style={styles.detailName} numberOfLines={3}>
+                {file.nome}
+              </Text>
+              {(badge || file.isPreferito) && (
+                <View style={styles.detailBadgeRow}>
+                  {badge && <Badge label={badge.label} variant={badge.variant} />}
+                  {file.isPreferito && !badge && <Badge label="Preferito" variant="warning" />}
+                </View>
+              )}
+            </View>
+            <Pressable
+              onPress={onClose}
+              style={styles.detailClose}
+              accessibilityLabel="Chiudi dettaglio"
+            >
+              <Text style={styles.detailCloseText}>✕</Text>
+            </Pressable>
+          </View>
+
+          {/* Scheda informazioni del file */}
+          <View style={styles.detailInfoCard}>
+            {percorso ? (
+              <View style={styles.detailInfoRow}>
+                <Text style={styles.detailInfoLabel}>📁 Percorso</Text>
+                <Text style={styles.detailInfoValue} numberOfLines={2}>
+                  {percorso}
+                </Text>
+              </View>
+            ) : null}
+            {file.lastModified ? (
+              <View style={styles.detailInfoRow}>
+                <Text style={styles.detailInfoLabel}>📅 Data modifica</Text>
+                <Text style={styles.detailInfoValue}>{formatDate(file.lastModified)}</Text>
+              </View>
+            ) : null}
+            {file.sizeStr ? (
+              <View style={styles.detailInfoRow}>
+                <Text style={styles.detailInfoLabel}>💾 Dimensione</Text>
+                <Text style={styles.detailInfoValue}>{file.sizeStr}</Text>
+              </View>
+            ) : null}
+          </View>
+
+          {/* Azioni (v3.3): impilate e grandi, impossibili da fraintendere */}
+          <View style={styles.detailActions}>
+            <Pressable
+              onPress={() => onApri(file)}
+              disabled={downloading || aprendo}
+              style={({ pressed }) => [
+                styles.bigPrimary,
+                (downloading || aprendo) && styles.bigDisabled,
+                pressed && !downloading && !aprendo && styles.bigPressed,
+              ]}
+              accessibilityLabel="Apri il file"
+            >
+              <Text style={styles.bigPrimaryIcon}>👁</Text>
+              <Text style={styles.bigPrimaryText}>{aprendo ? 'Apro...' : 'Apri il file'}</Text>
+            </Pressable>
+
+            <Pressable
+              onPress={() => onDownload(file)}
+              disabled={downloading || aprendo}
+              style={({ pressed }) => [
+                styles.bigDownload,
+                downloading && styles.bigDownloadActive,
+                pressed && !downloading && !aprendo && styles.bigPressed,
+              ]}
+              accessibilityLabel={
+                downloading ? 'Download in corso' : 'Scarica il file nel telefono'
+              }
+            >
+              <Animated.View
+                style={[styles.bigDownloadFill, { width: larghezzaFill }]}
+                pointerEvents="none"
+              />
+              <Text
+                style={[styles.bigDownloadText, downloading && styles.bigDownloadTextActive]}
+                numberOfLines={1}
+              >
+                {downloading
+                  ? `Scarico... ${progresso ?? 0}%`
+                  : file.stato === 'scaricato' || file.stato === 'preferito'
+                    ? '⬇ Scarica di nuovo'
+                    : '⬇ Scarica nel telefono'}
+              </Text>
+            </Pressable>
+
+            {/* Condividi ed email (v3.5): tutto quello che fa una vera app Android */}
+            <View style={styles.shareRow}>
+              <Pressable
+                onPress={() => onCondividi(file)}
+                disabled={downloading || aprendo || condividendo || inviandoEmail}
+                style={({ pressed }) => [
+                  styles.shareBtn,
+                  (downloading || aprendo || condividendo || inviandoEmail) && styles.bigDisabled,
+                  pressed && !condividendo && !inviandoEmail && styles.bigPressed,
+                ]}
+                accessibilityLabel="Condividi il documento"
+              >
+                <Text style={styles.shareIcon}>📤</Text>
+                <Text style={styles.shareText} numberOfLines={1}>
+                  {condividendo ? 'Preparo...' : 'Condividi'}
+                </Text>
+              </Pressable>
+              <Pressable
+                onPress={() => onEmail(file)}
+                disabled={downloading || aprendo || condividendo || inviandoEmail}
+                style={({ pressed }) => [
+                  styles.shareBtn,
+                  (downloading || aprendo || condividendo || inviandoEmail) && styles.bigDisabled,
+                  pressed && !condividendo && !inviandoEmail && styles.bigPressed,
+                ]}
+                accessibilityLabel="Invia il documento per email"
+              >
+                <Text style={styles.shareIcon}>✉️</Text>
+                <Text style={styles.shareText} numberOfLines={1}>
+                  {inviandoEmail ? 'Preparo...' : 'Email'}
+                </Text>
+              </Pressable>
+            </View>
+
+            <Text style={styles.detailHint}>
+              {previewabile
+                ? 'Si apre dentro l\'app. Con "Scarica" lo conservi nella cartella Download del telefono.'
+                : 'Si apre con l\'app adeguata del telefono. Con "Scarica" lo conservi anche in Download.'}
+            </Text>
+          </View>
+
+          {file.isPreferito !== undefined && (
+            <Button
+              label={file.isPreferito ? '★ Rimuovi dai preferiti' : '☆ Aggiungi ai preferiti'}
+              variant="ghost"
+              loading={togglingFav}
+              onPress={() => onTogglePreferito(file)}
+            />
+          )}
+        </View>
+      )}
+    </Modal>
+  );
+}
+
+/* ============================================================
  * Schermata
  * ============================================================ */
 
@@ -189,6 +488,13 @@ export default function ArchivioScreen() {
   const [searching, setSearching] = useState(false);
   const [togglingFav, setTogglingFav] = useState<string | null>(null);
   const [downloading, setDownloading] = useState<string | null>(null);
+  const [progresso, setProgresso] = useState<number | null>(null);
+  const [opening, setOpening] = useState<string | null>(null);
+  // v3.5: condivisione e invio email in corso (chiave del file)
+  const [condividendo, setCondividendo] = useState<string | null>(null);
+  const [inviandoEmail, setInviandoEmail] = useState<string | null>(null);
+  const [detailFile, setDetailFile] = useState<FileItem | null>(null);
+  const [detailPercorso, setDetailPercorso] = useState<string | undefined>(undefined);
 
   const [selectMode, setSelectMode] = useState(false);
   const [selected, setSelected] = useState<Set<string>>(new Set());
@@ -198,6 +504,51 @@ export default function ArchivioScreen() {
 
   const step: Step = cartella ? 'file' : anno ? 'cartella' : 'anno';
   const numColumns = step === 'anno' ? 2 : 1;
+
+  // Percorso leggibile per breadcrumb e dettaglio: "2025 › Altro › Sotto"
+  const percorsoBello = anno
+    ? cartella
+      ? `${anno} › ${cartella.split('/').join(' › ')}`
+      : anno
+    : undefined;
+
+  // Lista normalizzata per la FlatList (fix v3.1):
+  // - le cartelle del backend mandano nFiles/nNuovi: prima l'app leggeva solo
+  //   count/nuovi e le cartelle venivano mostrate come "file"!
+  // - dentro una cartella il backend restituisce anche le SOTTOCARTELLE,
+  //   appiattite nei nomi dei file ("Sotto/file.pdf"): qui le separo e le
+  //   rendo navigabili come cartelle vere, con conteggio file e "nuovi".
+  const items: ItemArchivio[] = useMemo(() => {
+    if (step === 'anno') return anni.map((a) => ({ kind: 'anno', nome: a }) as ItemArchivio);
+    if (step === 'cartella') {
+      return cartelle.map((c) => ({
+        kind: 'cartella',
+        nome: c.nome,
+        count: campoNumero(c, 'count', 'nFiles'),
+        nuovi: campoNumero(c, 'nuovi', 'nNuovi'),
+      }));
+    }
+    const sotto = new Map<string, { count: number; nuovi: number }>();
+    const diretti: FileItem[] = [];
+    for (const f of files) {
+      const slash = f.nome.indexOf('/');
+      if (slash === -1) {
+        diretti.push(f);
+      } else {
+        const nome = f.nome.slice(0, slash);
+        const cur = sotto.get(nome) ?? { count: 0, nuovi: 0 };
+        cur.count += 1;
+        if (f.stato === 'nuovo') cur.nuovi = (cur.nuovi ?? 0) + 1;
+        sotto.set(nome, cur);
+      }
+    }
+    const righeSotto: ItemArchivio[] = [...sotto.entries()]
+      .sort((a, b) => a[0].localeCompare(b[0]))
+      .map(([nome, v]) => ({ kind: 'sottocartella', nome, count: v.count, nuovi: v.nuovi }));
+    return [...righeSotto, ...diretti.map((file) => ({ kind: 'file', file }) as ItemArchivio)];
+  }, [step, anni, cartelle, files]);
+
+  const nFileDiretti = items.filter((i) => i.kind === 'file').length;
 
   const nome = (user?.name?.trim() || user?.username || '').trim();
   const nomeBello = nome ? nome.charAt(0).toUpperCase() + nome.slice(1) : '';
@@ -267,6 +618,11 @@ export default function ArchivioScreen() {
             : f,
         ),
       );
+      setDetailFile((prev) =>
+        prev && prev.key === file.key
+          ? { ...prev, isPreferito: res.isPreferito, stato: res.isPreferito ? 'preferito' : 'visto' }
+          : prev,
+      );
       toast.success(res.isPreferito ? 'Aggiunto ai preferiti' : 'Rimosso dai preferiti');
     } catch {
       toast.error('Errore', 'Impossibile aggiornare i preferiti');
@@ -277,20 +633,88 @@ export default function ArchivioScreen() {
 
   async function handleDownload(file: FileItem) {
     setDownloading(file.key);
+    setProgresso(0);
     haptics.impact();
     try {
-      const cookie = await api.documenti.sessionCookieHeader();
-      const url = api.documenti.downloadUrl(file.key);
-      const localPath = `${ReactNativeBlobUtil.fs.dirs.DownloadDir}/${file.nome}`;
-      const res = await ReactNativeBlobUtil.config({
-        path: localPath,
-        fileCache: true,
-      }).fetch('GET', url, { Cookie: cookie });
-      toast.success('Download completato', `Salvato in: ${res.path()}`);
+      await scaricaInDownload(file.key, file.nome, setProgresso);
+      setFiles((prev) =>
+        prev.map((f) =>
+          f.key === file.key && f.stato !== 'preferito' ? { ...f, stato: 'scaricato' } : f,
+        ),
+      );
+      setDetailFile((prev) =>
+        prev && prev.key === file.key && prev.stato !== 'preferito'
+          ? { ...prev, stato: 'scaricato' }
+          : prev,
+      );
+      haptics.success();
+      // v3.7: nessuna apertura automatica e nessuna notifica dell'app.
+      // La conferma e' SOLO la notifica di sistema "Download completato"
+      // di Android, in alto nella barra di stato (toccala per aprire il
+      // file); l'utente resta dove si trova, senza sorprese.
+      toast.success('Download completato', 'Il file è in Download e nella barra in alto');
     } catch (err) {
       toast.error('Errore download', err instanceof Error ? err.message : 'Errore sconosciuto');
     } finally {
       setDownloading(null);
+      setProgresso(null);
+    }
+  }
+
+  // v3.5: apre il pannello di condivisione di Android con il file (se le
+  // librerie native sono attive) oppure con il nome del documento.
+  async function handleCondividi(file: FileItem) {
+    setCondividendo(file.key);
+    haptics.tap();
+    try {
+      let percorso: string | null = null;
+      try {
+        percorso = await scaricaInCache(file.key);
+      } catch (err) {
+        toast.error('Condivisione', err instanceof Error ? err.message : 'Impossibile scaricare');
+        return;
+      }
+      const esito = await condividiDocumento(percorso, file.nome);
+      if (esito === 'ok') {
+        haptics.success();
+        toast.success('Condivisione pronta', "Scegli l'app con cui inviarlo");
+      } else if (esito === 'solo-testo') {
+        toast.info('Pannello aperto', "Per allegare il FILE serve l'aggiornamento dell'app");
+      } else if (esito === 'errore') {
+        toast.error('Condivisione', 'Nessuna app disponibile sul telefono');
+      }
+    } finally {
+      setCondividendo(null);
+    }
+  }
+
+  // v3.5: apre la posta con il documento gia' allegato (dopo il rebuild);
+  // prima di allora apre l'app email con oggetto e testo pronti.
+  async function handleEmail(file: FileItem) {
+    setInviandoEmail(file.key);
+    haptics.tap();
+    try {
+      let percorso: string | null = null;
+      try {
+        percorso = await scaricaInCache(file.key);
+      } catch (err) {
+        toast.error('Email', err instanceof Error ? err.message : 'Impossibile scaricare');
+        return;
+      }
+      const esito = await inviaDocumentoEmail(percorso, file.nome);
+      if (esito === 'ok') {
+        haptics.success();
+        toast.success('Email pronta', 'Aggiungi il destinatario e invia');
+      } else if (esito === 'solo-testo') {
+        toast.info('Posta aperta', "L'allegato parte dopo l'aggiornamento dell'app");
+      } else if (esito === 'niente-email') {
+        toast.error('Email', 'Nessuna app di posta configurata sul telefono');
+      } else if (esito === 'errore') {
+        toast.error('Email', 'Impossibile aprire la posta');
+      }
+      // 'annullato': l'utente ha chiuso la posta, non e' un errore
+    } finally {
+      setInviandoEmail(null);
     }
   }
 
@@ -300,10 +724,91 @@ export default function ArchivioScreen() {
   }
 
   function apriRisultato(item: SearchResult) {
-    if (canPreviewFile(item.nome)) {
-      setPreviewFile({ key: item.key, nome: item.nome } as FileItem);
+    haptics.tap();
+    setDetailPercorso(`${item.anno} › ${item.cartella}`);
+    setDetailFile({
+      nome: item.nome,
+      key: item.key,
+      size: item.size,
+      sizeStr: item.sizeStr,
+      lastModified: null,
+    });
+  }
+
+  function chiudiDettaglio() {
+    setDetailFile(null);
+    setDetailPercorso(undefined);
+  }
+
+  function chiudiRicerca() {
+    setSearchOpen(false);
+    setSearchQuery('');
+    setSearchResults([]);
+  }
+
+  /** Risale di un livello: da sottocartella a cartella, da cartella ad anni. */
+  function tornaSu() {
+    haptics.tap();
+    if (step === 'file') {
+      if (cartella && cartella.includes('/')) {
+        setCartella(cartella.slice(0, cartella.lastIndexOf('/')));
+      } else {
+        setCartella(null);
+      }
     } else {
-      handleDownload({ key: item.key, nome: item.nome } as FileItem);
+      setAnno(null);
+    }
+  }
+
+  // Tasto indietro FISICO di Android (v3.3): chiude dettaglio e ricerca e
+  // risale le cartelle, come ci si aspetta. All'elenco anni non interferisce
+  // (false = comportamento standard). Si riregistra a ogni render con le
+  // funzioni sempre aggiornate: nessuna closure stantia.
+  useEffect(() => {
+    const sub = BackHandler.addEventListener('hardwareBackPress', () => {
+      if (detailFile) {
+        chiudiDettaglio();
+        return true;
+      }
+      if (searchOpen) {
+        chiudiRicerca();
+        return true;
+      }
+      if (selectMode) {
+        clearSelection();
+        return true;
+      }
+      if (step === 'file' || step === 'cartella') {
+        tornaSu();
+        return true;
+      }
+      return false;
+    });
+    return () => sub.remove();
+  });
+
+  /** Apri (v3.2): i PDF nell'app, gli altri con l'app giusta del telefono. */
+  async function apriDocumento(file: FileItem) {
+    if (canPreviewFile(file.nome)) {
+      haptics.tap();
+      chiudiDettaglio();
+      setPreviewFile(file);
+      return;
+    }
+    setOpening(file.key);
+    haptics.tap();
+    try {
+      const percorsoLocale = await scaricaInCache(file.key);
+      const aperto = await apriConApp(percorsoLocale, file.nome);
+      if (!aperto) {
+        // Nessuna app per questo tipo di file: lo salvo comunque in Download
+        await scaricaInDownload(file.key, file.nome);
+        toast.info('File salvato', 'Nessuna app per questo tipo di file: lo trovi in Download');
+      }
+    } catch (err) {
+      toast.error('Errore apertura', err instanceof Error ? err.message : 'Errore sconosciuto');
+    } finally {
+      setOpening(null);
     }
   }
 
@@ -333,10 +838,7 @@ export default function ArchivioScreen() {
     let success = 0;
     for (const f of selectedFiles) {
       try {
-        const cookie = await api.documenti.sessionCookieHeader();
-        const url = api.documenti.downloadUrl(f.key);
-        const localPath = `${ReactNativeBlobUtil.fs.dirs.DownloadDir}/${f.nome}`;
-        await ReactNativeBlobUtil.config({ path: localPath, fileCache: true }).fetch('GET', url, { Cookie: cookie });
+        await scaricaInDownload(f.key, f.nome);
         success++;
       } catch (err) {
         console.error('[Archivio] bulk download error:', f.nome, err);
@@ -376,15 +878,12 @@ export default function ArchivioScreen() {
       <SafeAreaView style={styles.safe} edges={['top']}>
         <View style={styles.searchHeader}>
           <Pressable
-            onPress={() => {
-              setSearchOpen(false);
-              setSearchQuery('');
-              setSearchResults([]);
-            }}
-            style={styles.iconBtn}
-            accessibilityLabel="Chiudi ricerca"
+            onPress={chiudiRicerca}
+            style={({ pressed }) => [styles.backBtn, pressed && styles.backBtnPressed]}
+            accessibilityLabel="Chiudi ricerca e torna all'archivio"
           >
-            <Text style={styles.iconBtnText}>←</Text>
+            <Text style={styles.backBtnArrow}>←</Text>
+            <Text style={styles.backBtnLabel}>Indietro</Text>
           </Pressable>
           <View style={styles.searchInputWrap}>
             <Text style={styles.searchIcon}>🔍</Text>
@@ -446,7 +945,7 @@ export default function ArchivioScreen() {
                           {item.sizeStr ? ` · ${item.sizeStr}` : ''}
                         </Text>
                       </View>
-                      <Text style={styles.downloadIcon}>{canPreviewFile(item.nome) ? '👁' : '⬇'}</Text>
+                      <Text style={styles.chevron}>›</Text>
                     </Card>
                   )}
                 </Pressable>
@@ -454,6 +953,24 @@ export default function ArchivioScreen() {
             />
           </>
         )}
+
+        {/* Dettaglio file (v3): anche i risultati della ricerca aprono il dettaglio */}
+        <DettaglioFileModal
+          file={detailFile}
+          percorso={detailPercorso}
+          downloading={downloading === detailFile?.key}
+          progresso={downloading === detailFile?.key ? progresso : null}
+          aprendo={opening === detailFile?.key}
+          togglingFav={togglingFav === detailFile?.key}
+          condividendo={condividendo === detailFile?.key}
+          inviandoEmail={inviandoEmail === detailFile?.key}
+          onClose={chiudiDettaglio}
+          onApri={apriDocumento}
+          onDownload={handleDownload}
+          onCondividi={handleCondividi}
+          onEmail={handleEmail}
+          onTogglePreferito={handleTogglePreferito}
+        />
       </SafeAreaView>
     );
   }
@@ -465,17 +982,15 @@ export default function ArchivioScreen() {
       {step !== 'anno' && (
         <View style={styles.toolbar}>
           <Pressable
-            onPress={() => {
-              if (step === 'file') setCartella(null);
-              else setAnno(null);
-            }}
-            style={({ pressed }) => [styles.iconBtn, pressed && styles.iconBtnPressed]}
-            accessibilityLabel="Indietro"
+            onPress={tornaSu}
+            style={({ pressed }) => [styles.backBtn, pressed && styles.backBtnPressed]}
+            accessibilityLabel="Torna indietro"
           >
-            <Text style={styles.iconBtnText}>←</Text>
+            <Text style={styles.backBtnArrow}>←</Text>
+            <Text style={styles.backBtnLabel}>Indietro</Text>
           </Pressable>
           <View style={{ flex: 1 }} />
-          {step === 'file' && !selectMode && files.length > 0 && (
+          {step === 'file' && !selectMode && nFileDiretti > 0 && (
             <Pressable
               onPress={() => {
                 haptics.tap();
@@ -502,10 +1017,7 @@ export default function ArchivioScreen() {
 
       {step !== 'anno' && (
         <View style={styles.breadcrumb}>
-          <Text style={styles.crumbText}>
-            {anno}
-            {cartella ? ` › ${cartella}` : ''}
-          </Text>
+          <Text style={styles.crumbText}>{percorsoBello} · v3.7</Text>
         </View>
       )}
 
@@ -516,7 +1028,7 @@ export default function ArchivioScreen() {
             <View style={styles.heroAurora1} pointerEvents="none" />
             <View style={styles.heroAurora2} pointerEvents="none" />
             <View style={styles.heroInner}>
-              <Text style={styles.heroOverline}>{`Archivio · ${dataDiOggi()}`}</Text>
+              <Text style={styles.heroOverline}>{`Archivio v3.7 · ${dataDiOggi()}`}</Text>
               <Text style={styles.heroTitle}>
                 Benvenuto <Text style={styles.heroWave}>👋</Text>
               </Text>
@@ -560,21 +1072,16 @@ export default function ArchivioScreen() {
       {loading && !refreshing ? (
         <SkeletonList count={5} height={64} />
       ) : (
-        <FlatList<string | Cartella | FileItem>
+        <FlatList<ItemArchivio>
           key={step}
           style={styles.list}
           contentContainerStyle={styles.listContent}
           numColumns={numColumns}
           columnWrapperStyle={numColumns > 1 ? styles.gridRow : undefined}
-          data={(step === 'anno' ? anni : step === 'cartella' ? cartelle : files) as Array<
-            string | Cartella | FileItem
-          >}
-          keyExtractor={(item, i): string => {
-            if (typeof item === 'string') return item;
-            if ('key' in item && typeof item.key === 'string') return item.key;
-            if ('nome' in item && typeof item.nome === 'string') return item.nome;
-            return String(i);
-          }}
+          data={items}
+          keyExtractor={(item): string =>
+            item.kind === 'file' ? item.file.key : `${item.kind}:${item.nome}`
+          }
           refreshControl={
             <RefreshControl
               refreshing={refreshing}
@@ -585,13 +1092,13 @@ export default function ArchivioScreen() {
             />
           }
           renderItem={({ item, index }) => {
-            if (typeof item === 'string') {
+            if (item.kind === 'anno') {
               return (
                 <Entrata delay={Math.min(160 + index * 60, 700)} style={styles.yearCell}>
                   <ScalablePress
                     onPress={() => {
                       haptics.tap();
-                      setAnno(item);
+                      setAnno(item.nome);
                     }}
                   >
                     <Card style={styles.yearCard} padded={false}>
@@ -599,7 +1106,7 @@ export default function ArchivioScreen() {
                         <View style={styles.yearIconBox}>
                           <Text style={styles.yearIconBoxText}>📁</Text>
                         </View>
-                        <Text style={styles.yearCardTitle}>{item}</Text>
+                        <Text style={styles.yearCardTitle}>{item.nome}</Text>
                         <View style={styles.yearCardFoot}>
                           <Text style={styles.yearCardSub}>Apri</Text>
                           <Text style={styles.yearCardArrow}>›</Text>
@@ -610,17 +1117,17 @@ export default function ArchivioScreen() {
                 </Entrata>
               );
             }
-            if ('nome' in item && 'count' in item) {
-              const c = item as Cartella;
+            if (item.kind === 'cartella' || item.kind === 'sottocartella') {
               const subparts = [
-                c.count != null ? `${c.count} file` : null,
-                c.nuovi ? `${c.nuovi} nuovi` : null,
+                item.count != null ? `${item.count} file` : null,
+                item.nuovi ? `${item.nuovi} nuovi` : null,
               ].filter(Boolean);
               return (
                 <Pressable
                   onPress={() => {
                     haptics.tap();
-                    setCartella(c.nome);
+                    if (item.kind === 'cartella') setCartella(item.nome);
+                    else setCartella(`${cartella}/${item.nome}`);
                   }}
                 >
                   {({ pressed }) => (
@@ -630,25 +1137,28 @@ export default function ArchivioScreen() {
                       </View>
                       <View style={styles.rowText}>
                         <Text style={styles.rowTitle} numberOfLines={2}>
-                          {c.nome}
+                          {item.nome}
                         </Text>
                         {subparts.length > 0 && <Text style={styles.rowSubtitle}>{subparts.join(' · ')}</Text>}
                       </View>
-                      {c.nuovi ? <Badge label={c.nuovi} variant="danger" /> : null}
+                      {item.nuovi ? <Badge label={item.nuovi} variant="danger" /> : null}
                       <Text style={styles.chevron}>›</Text>
                     </Card>
                   )}
                 </Pressable>
               );
             }
-            const f = item as FileItem;
+            const f = item.file;
             const isSelected = selected.has(f.key);
             return (
               <Pressable
                 onPress={() => {
                   if (selectMode) toggleSelect(f.key);
-                  else if (canPreviewFile(f.nome)) setPreviewFile(f);
-                  else handleDownload(f);
+                  else {
+                    haptics.tap();
+                    setDetailPercorso(percorsoBello);
+                    setDetailFile(f);
+                  }
                 }}
                 onLongPress={() => {
                   if (!selectMode) {
@@ -669,16 +1179,16 @@ export default function ArchivioScreen() {
                         </View>
                       </View>
                     ) : (
-                      <View style={styles.statusDotWrap}>
-                        <View
-                          style={[
-                            styles.statusDot,
-                            f.stato === 'nuovo' && styles.statusDotNew,
-                            f.stato === 'visto' && styles.statusDotSeen,
-                            f.stato === 'scaricato' && styles.statusDotDownloaded,
-                            f.stato === 'preferito' && styles.statusDotDownloaded,
-                          ]}
-                        />
+                      <View style={styles.fileIconWrap}>
+                        <FileIcon filename={f.nome} size={40} />
+                        {f.stato === 'nuovo' && (
+                          <View style={[styles.fileIconMini, { backgroundColor: colors.danger }]} />
+                        )}
+                        {(f.stato === 'scaricato' || f.stato === 'preferito') && (
+                          <View style={[styles.fileIconMini, styles.fileIconMiniOk]}>
+                            <Text style={styles.fileIconMiniText}>✓</Text>
+                          </View>
+                        )}
                       </View>
                     )}
                     <View style={styles.rowText}>
@@ -690,37 +1200,7 @@ export default function ArchivioScreen() {
                         {f.lastModified ? ` · ${formatDate(f.lastModified)}` : ''}
                       </Text>
                     </View>
-                    {!selectMode && (
-                      <View style={styles.rowActions}>
-                        <Pressable
-                          onPress={() => handleTogglePreferito(f)}
-                          disabled={togglingFav === f.key}
-                          style={styles.actionBtn}
-                          accessibilityLabel="Preferito"
-                        >
-                          <Text style={[styles.starIcon, f.isPreferito && styles.starIconActive]}>
-                            {f.isPreferito ? '★' : '☆'}
-                          </Text>
-                        </Pressable>
-                        {canPreviewFile(f.nome) && (
-                          <Pressable
-                            onPress={() => setPreviewFile(f)}
-                            style={styles.actionBtn}
-                            accessibilityLabel="Anteprima"
-                          >
-                            <Text style={styles.actionIcon}>👁</Text>
-                          </Pressable>
-                        )}
-                        <Pressable
-                          onPress={() => handleDownload(f)}
-                          disabled={downloading === f.key}
-                          style={styles.actionBtn}
-                          accessibilityLabel="Scarica"
-                        >
-                          <Text style={styles.actionIcon}>{downloading === f.key ? '⏳' : '⬇'}</Text>
-                        </Pressable>
-                      </View>
-                    )}
+                    {!selectMode && <Text style={styles.chevron}>›</Text>}
                   </Card>
                 )}
               </Pressable>
@@ -738,8 +1218,10 @@ export default function ArchivioScreen() {
             />
           }
           ListFooterComponent={
-            step === 'file' && files.length > 0 ? (
-              <Text style={styles.tipText}>💡 Tieni premuto un file per selezionarne più di uno</Text>
+            step === 'file' && nFileDiretti > 0 ? (
+              <Text style={styles.tipText}>
+                💡 Tocca un file per vederne i dettagli · tieni premuto per selezionarne più di uno
+              </Text>
             ) : null
           }
         />
@@ -766,6 +1248,24 @@ export default function ArchivioScreen() {
           </View>
         </View>
       )}
+
+      {/* Dettaglio file (v3): si apre al tocco su una riga file */}
+      <DettaglioFileModal
+        file={detailFile}
+        percorso={detailPercorso}
+        downloading={downloading === detailFile?.key}
+        progresso={downloading === detailFile?.key ? progresso : null}
+        aprendo={opening === detailFile?.key}
+        togglingFav={togglingFav === detailFile?.key}
+        condividendo={condividendo === detailFile?.key}
+        inviandoEmail={inviandoEmail === detailFile?.key}
+        onClose={chiudiDettaglio}
+        onApri={apriDocumento}
+        onDownload={handleDownload}
+        onCondividi={handleCondividi}
+        onEmail={handleEmail}
+        onTogglePreferito={handleTogglePreferito}
+      />
     </SafeAreaView>
   );
 }
@@ -777,6 +1277,10 @@ const makeStyles = (colors: ThemeColors) =>
     iconBtn: { width: 44, height: 44, borderRadius: radius.md, alignItems: 'center', justifyContent: 'center' },
     iconBtnPressed: { backgroundColor: colors.surfaceAlt },
     iconBtnText: { fontSize: 20, color: colors.textSecondary },
+    backBtn: { flexDirection: 'row', alignItems: 'center', gap: spacing.xs, paddingHorizontal: spacing.md, height: 40, borderRadius: radius.full, backgroundColor: colors.accentSoft, borderWidth: 1, borderColor: colors.accent },
+    backBtnPressed: { opacity: 0.8, transform: [{ scale: 0.97 }] },
+    backBtnArrow: { fontSize: 16, color: colors.accentDark, fontWeight: '800' },
+    backBtnLabel: { ...typography.button, color: colors.accentDark, fontSize: 14 },
     breadcrumb: { paddingHorizontal: spacing.lg, paddingVertical: spacing.sm, backgroundColor: colors.surfaceAlt },
     crumbText: { ...typography.caption, color: colors.textSecondary },
     list: { flex: 1 },
@@ -790,17 +1294,10 @@ const makeStyles = (colors: ThemeColors) =>
     rowTitle: { ...typography.body, color: colors.textPrimary, fontWeight: '500' },
     rowSubtitle: { ...typography.caption, color: colors.textSecondary },
     chevron: { fontSize: 22, color: colors.textTertiary, fontWeight: '300' },
-    statusDotWrap: { width: 8, alignItems: 'center' },
-    statusDot: { width: 8, height: 8, borderRadius: 4, backgroundColor: colors.textTertiary },
-    statusDotNew: { backgroundColor: colors.danger },
-    statusDotSeen: { backgroundColor: colors.textTertiary },
-    statusDotDownloaded: { backgroundColor: colors.success },
-    rowActions: { flexDirection: 'row', alignItems: 'center' },
-    actionBtn: { width: 36, height: 36, borderRadius: radius.sm, alignItems: 'center', justifyContent: 'center' },
-    starIcon: { fontSize: 18, color: colors.textTertiary },
-    starIconActive: { color: colors.warning },
-    actionIcon: { fontSize: 16 },
-    downloadIcon: { fontSize: 18, color: colors.accent },
+    fileIconWrap: { width: 40, height: 40, alignItems: 'center', justifyContent: 'center' },
+    fileIconMini: { position: 'absolute', right: -4, top: -4, width: 16, height: 16, borderRadius: 8, borderWidth: 2, borderColor: colors.surface },
+    fileIconMiniOk: { backgroundColor: colors.success },
+    fileIconMiniText: { fontSize: 9, fontWeight: '800', color: '#FFFFFF', lineHeight: 13, textAlign: 'center' },
     emptyIcon: { fontSize: 48 },
     matchText: { color: colors.accent, fontWeight: '700' },
     resultCount: { ...typography.caption, color: colors.textSecondary, paddingHorizontal: spacing.lg, paddingTop: spacing.xs },
@@ -874,4 +1371,34 @@ const makeStyles = (colors: ThemeColors) =>
     bulkBtnText: { ...typography.bodySmall, color: colors.textPrimary, fontWeight: '600' },
     bulkBtnPrimary: { backgroundColor: colors.accent },
     bulkBtnPrimaryText: { ...typography.bodySmall, color: colors.textInverse, fontWeight: '700' },
+
+    // Dettaglio file (v3)
+    detailWrap: { paddingHorizontal: spacing.xl, paddingTop: spacing.sm, gap: spacing.lg },
+    detailHead: { flexDirection: 'row', alignItems: 'center', gap: spacing.md },
+    detailHeadText: { flex: 1, gap: 6 },
+    detailName: { ...typography.h3, color: colors.textPrimary },
+    detailBadgeRow: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.xs },
+    detailClose: { width: 36, height: 36, borderRadius: 18, alignItems: 'center', justifyContent: 'center', backgroundColor: colors.surfaceAlt },
+    detailCloseText: { fontSize: 15, color: colors.textSecondary },
+    detailInfoCard: { backgroundColor: colors.surfaceAlt, borderRadius: radius.lg, borderWidth: 1, borderColor: colors.border, padding: spacing.md, gap: spacing.sm },
+    detailInfoRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: spacing.md },
+    detailInfoLabel: { ...typography.bodySmall, color: colors.textSecondary },
+    detailInfoValue: { ...typography.bodySmall, color: colors.textPrimary, fontWeight: '600', flex: 1, textAlign: 'right' },
+    detailActions: { gap: spacing.sm },
+    bigPrimary: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: spacing.sm, minHeight: 58, borderRadius: radius.lg, backgroundColor: colors.accent, ...shadow.md },
+    bigPrimaryIcon: { fontSize: 16 },
+    bigPrimaryText: { ...typography.button, color: colors.textInverse, fontSize: 16, fontWeight: '800' },
+    bigDownload: { overflow: 'hidden', flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: spacing.sm, minHeight: 58, borderRadius: radius.lg, borderWidth: 2, borderColor: colors.borderStrong, backgroundColor: colors.surface },
+    bigDownloadActive: { borderColor: colors.accent },
+    bigDownloadFill: { position: 'absolute', left: 0, top: 0, bottom: 0, backgroundColor: colors.accentSoft, opacity: 0.9 },
+    bigDownloadText: { ...typography.button, color: colors.textPrimary, fontWeight: '700' },
+    bigDownloadTextActive: { color: colors.accentDark, fontWeight: '800' },
+    bigPressed: { opacity: 0.85, transform: [{ scale: 0.98 }] },
+    bigDisabled: { opacity: 0.5 },
+    detailHint: { ...typography.caption, color: colors.textTertiary, textAlign: 'center' },
+    // v3.5: riga Condividi / Email nel dettaglio
+    shareRow: { flexDirection: 'row', gap: spacing.sm },
+    shareBtn: { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: spacing.xs, minHeight: 50, borderRadius: radius.lg, borderWidth: 1.5, borderColor: colors.border, backgroundColor: colors.surfaceAlt },
+    shareIcon: { fontSize: 15 },
+    shareText: { ...typography.button, color: colors.textPrimary, fontWeight: '700' },
   });

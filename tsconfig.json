@@ -12,6 +12,7 @@
     "resolveJsonModule": true,
     "skipLibCheck": true,
     "esModuleInterop": true,
+    "module": "esnext",
     "types": []
   },
   "include": ["src", "index.js", "App.tsx"]

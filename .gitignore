@@ -50,3 +50,6 @@ bundle-output/
 *.log
 GUIDA-MIGRAZIONE.md
 setup-github.ps1
+*.bak
+archivio-*.zip
+APPLICA-MODIFICA.bat

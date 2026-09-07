@@ -1,6 +1,6 @@
 {
   "name": "PortalePFCRN",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "private": true,
   "main": "index.js",
   "scripts": {
@@ -32,6 +32,9 @@
     "expo-dev-launcher": "5.0.35",
     "expo-file-system": "~18.0.12",
     "expo-font": "~13.0.4",
+    "expo-mail-composer": "~14.0.2",
+    "expo-notifications": "~0.29.14",
+    "expo-sharing": "~13.0.1",
     "react": "18.3.1",
     "react-native": "0.76.5",
     "react-native-biometrics": "^3.0.0",
