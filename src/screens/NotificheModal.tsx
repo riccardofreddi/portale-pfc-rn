@@ -1,8 +1,21 @@
 ﻿/**
  * Schermata Notifiche (bottom sheet modal).
+ *
+ * v4.5:
+ * - Le righe sono CLICCABILI: il tocco segna la notifica come letta e
+ *   porta direttamente al contenuto (messaggi, archivio, attivita').
+ * - Chiudendo il pannello, le notifiche gia' lette si ELIMINANO DA SOLE
+ *   (non restano piu' "a vita").
+ * - Nuovo bottone "Cancella tutte" (con conferma).
+ *
+ * v4.6: la riga di una scadenza apre DIRETTAMENTE IL DOCUMENTO (cartella
+ * + anteprima del file): il percorso completo e' gia' dentro la notifica
+ * (campo detail), basta leggerlo. Per il tocco sulle notifiche di sistema
+ * a app chiusa vedi il manifest (clickAction FCM_PLUGIN_ACTIVITY).
  */
 import React, { useCallback, useEffect, useState } from 'react';
 import {
+  Alert,
   FlatList,
   Pressable,
   StyleSheet,
@@ -16,6 +29,8 @@ import { toast } from '@/components/Toaster';
 import { haptics } from '@/lib/haptics';
 import { api } from '@/api/client';
 import { useAppStore } from '@/store/auth';
+import type { DeepLinkTarget } from '@/lib/deeplink';
+import { partiFilePath } from '@/lib/deeplink';
 import { formatDate } from '@/lib/utils';
 import type { Notifica, TipoNotifica } from '@/types/api';
 import { spacing, typography, useColors, type ThemeColors } from '@/theme';
@@ -51,6 +66,7 @@ export function NotificheModal() {
   const visible = useAppStore((s) => s.showNotifPanel);
   const setVisible = useAppStore((s) => s.setShowNotifPanel);
   const setNNotifiche = useAppStore((s) => s.setNNotifiche);
+  const setPendingDeepLink = useAppStore((s) => s.setPendingDeepLink);
 
   const [notifiche, setNotifiche] = useState<Notifica[]>([]);
   const [loading, setLoading] = useState(true);
@@ -106,17 +122,115 @@ export function NotificheModal() {
     }
   }
 
+  // v4.5: chiude il pannello e pulisce da sola le notifiche gia' lette:
+  // chi l'ha lette non le deve rivedere mai piu' (niente notifiche
+  // che restano appese "a vita").
+  function chiudiEPulisci() {
+    setVisible(false);
+    if (notifiche.some((n) => n.letta)) {
+      api.notifiche.pulisciLette().catch(() => {
+        // silent: alla prossima apertura si riprova
+      });
+    }
+  }
+
+  // v4.5: tappando una notifica si va direttamente al contenuto:
+  // messaggi => tab Messaggi, documento => Archivio (anno/cartella),
+  // scadenza => tab Attivita'. La notifica diventa letta e il pannello
+  // si chiude (con la pulizia automatica).
+  // v4.6: la scadenza ora apre DIRETTAMENTE IL DOCUMENTO: il percorso
+  // completo del file e' gia' dentro la notifica (campo "detail"), quindi
+  // ricaviamo anno, cartella e file e l'Archivio apre l'anteprima appena
+  // caricata la cartella. Solo se il percorso manca o non si capisce,
+  // ripieghiamo sul tab Attivita' come prima.
+  function targetPerTipo(n: Notifica): DeepLinkTarget | null {
+    const tipo = String(n.tipo);
+    if (tipo === 'messaggio' || tipo === 'richiesta_upload') {
+      return { tab: 'messaggi' };
+    }
+    if (tipo === 'documento_nuovo' || tipo === 'upload_confermato') {
+      if (n.year) return { tab: 'archivio', anno: n.year, cartella: n.folder };
+      return { tab: 'archivio' };
+    }
+    if (tipo === 'scadenza') {
+      // v4.6: apri il documento in scadenza (cartella + file).
+      if (n.detail) {
+        const parti = partiFilePath(n.detail);
+        if (parti) {
+          return { tab: 'archivio', ...parti };
+        }
+      }
+      // Ripiego: la notifica conosce almeno anno/cartella...
+      if (n.year && n.folder) {
+        return { tab: 'archivio', anno: n.year, cartella: n.folder };
+      }
+      // ...altrimenti il tab Attivita' (elenco scadenze) come nella v4.5.
+      return { tab: 'attivita' };
+    }
+    return null; // avvisi generici: solo chiudi
+  }
+
+  async function handleApriNotifica(n: Notifica) {
+    haptics.tap();
+    if (!n.letta) {
+      try {
+        await api.notifiche.segnaLetta(n.id);
+        setNotifiche((prev) => prev.map((x) => (x.id === n.id ? { ...x, letta: true } : x)));
+        setNNotifiche(Math.max(0, useAppStore.getState().nNotifiche - 1));
+      } catch {
+        // silent: la navigazione funziona comunque
+      }
+    }
+    setVisible(false);
+    const target = targetPerTipo(n);
+    if (target) setPendingDeepLink(target);
+  }
+
+  // v4.5: cancella TUTTE le notifiche (con conferma, perche' non si
+  // puo' tornare indietro).
+  function handlePulisciTutte() {
+    haptics.warning();
+    Alert.alert(
+      'Cancellare tutte le notifiche?',
+      'Verranno eliminate tutte le notifiche della campanella, anche quelle non lette.',
+      [
+        { text: 'Annulla', style: 'cancel' },
+        {
+          text: 'Cancella tutte',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              await api.notifiche.pulisciTutte();
+              setNotifiche([]);
+              setNNotifiche(0);
+              toast.success('Notifiche eliminate');
+            } catch {
+              toast.error('Errore', 'Impossibile cancellare le notifiche');
+            }
+          },
+        },
+      ],
+    );
+  }
+
   const nonLette = notifiche.filter((n) => !n.letta);
 
   return (
-    <Modal visible={visible} onClose={() => setVisible(false)}>
+    <Modal visible={visible} onClose={chiudiEPulisci}>
       <View style={styles.header}>
         <Text style={styles.title}>🔔 Notifiche</Text>
-        {nonLette.length > 0 && (
-          <Pressable onPress={handleSegnaTutteLette} style={styles.headerAction}>
-            <Text style={styles.headerActionText}>✓ Tutte</Text>
-          </Pressable>
-        )}
+        <View style={styles.headerActions}>
+          {nonLette.length > 0 && (
+            <Pressable onPress={handleSegnaTutteLette} style={styles.headerAction}>
+              <Text style={styles.headerActionText}>✓ Tutte</Text>
+            </Pressable>
+          )}
+          {notifiche.length > 0 && (
+            <Pressable onPress={handlePulisciTutte} style={styles.headerActionCancella}>
+              <Text style={styles.headerActionCancellaText}>🗑 Tutte</Text>
+            </Pressable>
+          )}
+        </View>
       </View>
 
       {loading ? (
@@ -129,8 +243,13 @@ export function NotificheModal() {
           keyExtractor={(item) => item.id}
           renderItem={({ item: n }) => {
             const cfg = getConfig(n.tipo);
+            const navigabile = targetPerTipo(n) !== null;
             return (
-              <View style={[styles.notifCard, !n.letta && styles.notifCardUnread]}>
+              <Pressable
+                onPress={() => handleApriNotifica(n)}
+                style={[styles.notifCard, !n.letta && styles.notifCardUnread]}
+                accessibilityLabel={navigabile ? 'Apri notifica' : 'Notifica'}
+              >
                 <View style={[styles.notifIcon, { backgroundColor: cfg.bg }]}>
                   <Text style={styles.notifIconText}>{cfg.icon}</Text>
                 </View>
@@ -158,7 +277,7 @@ export function NotificheModal() {
                     <Text style={styles.notifActionText}>✓</Text>
                   </Pressable>
                 )}
-              </View>
+              </Pressable>
             );
           }}
           ListFooterComponent={
@@ -186,6 +305,9 @@ export function NotificheModal() {
 const makeStyles = (colors: ThemeColors) =>
   StyleSheet.create({
     header: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: spacing.xl, paddingBottom: spacing.md },
+    headerActions: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
+    headerActionCancella: { paddingHorizontal: spacing.md, paddingVertical: spacing.sm, borderRadius: 8, backgroundColor: colors.dangerSoft },
+    headerActionCancellaText: { ...typography.caption, color: colors.danger, fontWeight: '600' },
     title: { ...typography.h4, color: colors.textPrimary, fontWeight: '700' },
     headerAction: { paddingHorizontal: spacing.md, paddingVertical: spacing.sm, borderRadius: 8, backgroundColor: colors.accentSoft },
     headerActionText: { ...typography.caption, color: colors.accent, fontWeight: '600' },

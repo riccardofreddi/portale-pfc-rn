@@ -9,6 +9,18 @@ import type { FileItem, User } from '@/types/api';
 
 export type ClienteTab = 'archivio' | 'messaggi' | 'cassetto' | 'attivita';
 
+/**
+ * v4.6: documento da aprire in automatico nell'Archivio (deep-link da una
+ * notifica di scadenza). Arriva dal tap sulla notifica (promemoria locale,
+ * push del server o riga della campanella); l'Archivio lo consuma appena
+ * ha caricato la cartella giusta e poi lo azzera.
+ */
+export interface PendingDocumento {
+  anno: string;
+  cartella: string;
+  documento: string;
+}
+
 interface AppState {
   // === Auth ===
   user: User | null;
@@ -29,6 +41,10 @@ interface AppState {
   // === Preview PDF ===
   previewFile: FileItem | null;
   setPreviewFile: (f: FileItem | null) => void;
+
+  // === v4.6: documento da aprire da una notifica (deep-link) ===
+  pendingDocumento: PendingDocumento | null;
+  setPendingDocumento: (d: PendingDocumento | null) => void;
 
   // === Badge contatori ===
   nNotifiche: number;
@@ -63,12 +79,20 @@ export const useAppStore = create<AppState>((set) => ({
           annoSelezionato: null,
           cartellaSelezionata: null,
           previewFile: null,
+          pendingDocumento: null,
           nNotifiche: 0,
           nMessaggiNonLetti: 0,
           showNotifPanel: false,
           settingsOpen: false,
-          pendingDeepLink: null,
           clienteTab: 'archivio',
+          // v4.7: NON cancellare il deep-link pendente. Quando l'app parte
+          // da una notifica toccata a telefono chiuso, il tap arriva PRIMA
+          // della verifica della sessione (getInitialNotification e' locale
+          // e veloce, api.auth.me() passa dalla rete): se qui lo azzerassimo,
+          // l'app si aprirebbe senza portare l'utente nel contenuto giusto.
+          // Lo teniamo e lo consumera' la tab bar appena montata; a fine
+          // consumazione viene pulito dal consumatore del deep-link.
+          pendingDeepLink: s.pendingDeepLink,
         };
       }
       return { user: u };
@@ -88,6 +112,10 @@ export const useAppStore = create<AppState>((set) => ({
   // Preview
   previewFile: null,
   setPreviewFile: (f) => set({ previewFile: f }),
+
+  // v4.6: documento da aprire da notifica
+  pendingDocumento: null,
+  setPendingDocumento: (d) => set({ pendingDocumento: d }),
 
   // Badge
   nNotifiche: 0,
@@ -113,6 +141,7 @@ export const useAppStore = create<AppState>((set) => ({
       annoSelezionato: null,
       cartellaSelezionata: null,
       previewFile: null,
+      pendingDocumento: null,
       nNotifiche: 0,
       nMessaggiNonLetti: 0,
       showNotifPanel: false,

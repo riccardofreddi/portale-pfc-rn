@@ -32,6 +32,17 @@
             <action android:name="android.intent.action.MAIN" />
             <category android:name="android.intent.category.LAUNCHER" />
         </intent-filter>
+        <!-- v4.6: il server mette in ogni push "clickAction: FCM_PLUGIN_ACTIVITY"
+             (ereditato dal portale web di origine). Senza questo intent-filter
+             Android non sa che schermata aprire quando il cliente TOCCA la
+             notifica a app in background o chiusa: la notifica restava morta.
+             Registrando MainActivity su quella azione, il tocco apre l'app
+             e la libreria Firebase passa il messaggio all'app, che naviga
+             alla tab/cartella/file giusti (deep-link). -->
+        <intent-filter>
+            <action android:name="FCM_PLUGIN_ACTIVITY" />
+            <category android:name="android.intent.category.DEFAULT" />
+        </intent-filter>
       </activity>
       <meta-data
         android:name="com.google.firebase.messaging.default_notification_channel_id"

@@ -94,6 +94,12 @@ export interface Notifica {
   tipo: TipoNotifica | string;
   titolo: string;
   corpo?: string;
+  /**
+   * v4.6: contenuto grezzo della notifica lato server. Per le scadenze e'
+   * il percorso completo del file ("Documenti/<utente>/<anno>/<cartella>/..."):
+   * e' da qui che ricaviamo anno, cartella e documento da aprire.
+   */
+  detail?: string;
   letta: boolean;
   dataCreazione: string;
   year?: string;

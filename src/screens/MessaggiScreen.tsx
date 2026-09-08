@@ -17,6 +17,7 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
   Animated,
+  DeviceEventEmitter,
   Easing,
   FlatList,
   Pressable,
@@ -117,6 +118,9 @@ export default function MessaggiScreen() {
   const styles = makeStyles(colors);
 
   const user = useAppStore((s) => s.user);
+  // v4.5: tab attivo e controllo del badge rosso sul tab Messaggi
+  const clienteTab = useAppStore((s) => s.clienteTab);
+  const setNMessaggiNonLetti = useAppStore((s) => s.setNMessaggiNonLetti);
   const [tab, setTab] = useState<Tab>('attivi');
   const [messaggi, setMessaggi] = useState<Messaggio[]>([]);
   const [loading, setLoading] = useState(true);
@@ -132,6 +136,11 @@ export default function MessaggiScreen() {
       try {
         const res = await api.messaggi.list(user.username);
         setMessaggi(res.messaggi);
+        // v4.5: il badge rosso sul tab e' SEMPRE in linea con la lista
+        // appena caricata (prima si aggiornava solo col polling dei 30s).
+        setNMessaggiNonLetti(
+          res.messaggi.filter((m) => !m.letto && !m.archiviato).length,
+        );
       } catch (err) {
         toast.error('Errore caricamento', err instanceof Error ? err.message : 'Errore caricamento messaggi');
       } finally {
@@ -139,11 +148,65 @@ export default function MessaggiScreen() {
         setRefreshing(false);
       }
     },
-    [user],
+    [user, setNMessaggiNonLetti],
   );
 
   useEffect(() => {
     load();
+  }, [load]);
+
+  // v4.5: segna tutto letto SENZA avvisi a schermo (usato quando il
+  // cliente sta gia' guardando la tab Messaggi: quello che sta vedendo
+  // e' letto, non ha senso il pallino rosso).
+  const segnaLettiSilenzioso = useCallback(async () => {
+    try {
+      await api.messaggi.segnaLetti();
+      setMessaggi((prev) => prev.map((m) => ({ ...m, letto: true })));
+      setNMessaggiNonLetti(0);
+    } catch {
+      // silent: si riprova alla prossima apertura della tab
+    }
+  }, [setNMessaggiNonLetti]);
+
+  // v4.5: entrando nella tab Messaggi i messaggi si considerano letti
+  // (li sta guardando apposta) => niente rosso che resta appeso.
+  useEffect(() => {
+    if (clienteTab !== 'messaggi') return;
+    (async () => {
+      await segnaLettiSilenzioso();
+      await load();
+    })();
+  }, [clienteTab, load, segnaLettiSilenzioso]);
+
+  // v4.5: evento "arrivata una push" a app aperta: se e' un messaggio la
+  // lista si aggiorna da sola (senza trascinare in giu'); e se il cliente
+  // sta guardando proprio la tab Messaggi, il nuovo messaggio e' letto.
+  useEffect(() => {
+    const sub = DeviceEventEmitter.addListener('pfc-push-ricevuta', (dati) => {
+      const url =
+        dati && typeof dati === 'object'
+          ? String((dati as Record<string, unknown>).url ?? '')
+          : '';
+      if (!url.includes('tab=messaggi')) return;
+      if (clienteTab === 'messaggi') {
+        (async () => {
+          await segnaLettiSilenzioso();
+          await load();
+        })();
+      } else {
+        load();
+      }
+    });
+    return () => sub.remove();
+  }, [clienteTab, load, segnaLettiSilenzioso]);
+
+  // v4.5: ritorno sull'app (era in background) => lista fresca subito:
+  // il messaggio arrivato fuori app e' LI', senza pull-to-refresh.
+  useEffect(() => {
+    const sub = DeviceEventEmitter.addListener('pfc-app-risentita', () => {
+      load();
+    });
+    return () => sub.remove();
   }, [load]);
 
   const attivi = messaggi.filter((m) => !m.archiviato);
@@ -156,6 +219,7 @@ export default function MessaggiScreen() {
     try {
       await api.messaggi.segnaLetti();
       setMessaggi((prev) => prev.map((m) => ({ ...m, letto: true })));
+      setNMessaggiNonLetti(0);
       toast.success('Tutti contrassegnati come letti');
     } catch {
       toast.error('Errore', 'Impossibile aggiornare i messaggi');
@@ -166,7 +230,9 @@ export default function MessaggiScreen() {
     haptics.tap();
     try {
       await api.messaggi.archivia(id);
-      setMessaggi((prev) => prev.map((m) => (m.id === id ? { ...m, archiviato: true } : m)));
+      const nuova = messaggi.map((m) => (m.id === id ? { ...m, archiviato: true } : m));
+      setMessaggi(nuova);
+      setNMessaggiNonLetti(nuova.filter((m) => !m.letto && !m.archiviato).length);
       toast.success('Messaggio archiviato');
     } catch {
       toast.error('Errore', 'Impossibile archiviare');
@@ -177,7 +243,9 @@ export default function MessaggiScreen() {
     haptics.tap();
     try {
       await api.messaggi.dearchivia(id);
-      setMessaggi((prev) => prev.map((m) => (m.id === id ? { ...m, archiviato: false } : m)));
+      const nuova = messaggi.map((m) => (m.id === id ? { ...m, archiviato: false } : m));
+      setMessaggi(nuova);
+      setNMessaggiNonLetti(nuova.filter((m) => !m.letto && !m.archiviato).length);
       toast.success('Messaggio ripristinato');
     } catch {
       toast.error('Errore', 'Impossibile ripristinare');

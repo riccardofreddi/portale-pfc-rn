@@ -40,7 +40,19 @@
  * - Fix: i file dentro le sottocartelle non si scaricavano (nome con "/"),
  *   e gli errori di sessione venivano salvati come se fossero file.
  *
- * Novità v4.4 (le notifiche non muoiono più al logout):
+ * Novità v4.6 (tocchi la notifica, l'app si apre sul documento giusto):
+ * - Toccando una notifica con l'app in background o CHIUSA, l'app si apre
+ *   e va al contenuto: messaggi → tab Messaggi, scadenze → cartella con il
+ *   file aperto in anteprima, documenti nuovi → cartella. Fino alla v4.5 il
+ *   tocco non faceva nulla: il server "firma" ogni push con un'azione di
+ *   apertura (clickAction) che l'app non aveva mai registrato nel manifest
+ *   Android — ora è registrata e il tocco funziona (serve l'APK nuovo).
+ * - I promemoria di scadenza locali portano nell'URL anche il nome del file.
+ * - Le push scadenza del server (che portano solo anno+cartella) vengono
+ *   completate dall'app: consulta le scadenze imminenti e apre il documento
+ *   più vicino in quella cartella.
+ *
+ * Novità v4.5 (notifiche vive: toast a schermo, campanella cliccabile e autopulita; v4.4: le notifiche non muoiono più al logout):
  * - Prima, premendo "Esci dall'account", l'app cancellava il token del
  *   telefono dal server: il cliente smetteva di ricevere TUTTO (sintomo
  *   "esco e non arriva più nulla"). Ora il telefono resta agganciato
@@ -547,6 +559,9 @@ export default function ArchivioScreen() {
   const setAnno = useAppStore((s) => s.setAnno);
   const setCartella = useAppStore((s) => s.setCartella);
   const setPreviewFile = useAppStore((s) => s.setPreviewFile);
+  // v4.6: documento da aprire automaticamente (deep-link da notifica scadenza)
+  const pendingDocumento = useAppStore((s) => s.pendingDocumento);
+  const setPendingDocumento = useAppStore((s) => s.setPendingDocumento);
 
   const [anni, setAnni] = useState<string[]>([]);
   const [cartelle, setCartelle] = useState<Cartella[]>([]);
@@ -681,6 +696,40 @@ export default function ArchivioScreen() {
   useEffect(() => {
     load();
   }, [load]);
+
+  // v4.6: deep-link a un documento preciso (notifica di scadenza toccata:
+  // promemoria locale, push del server o riga della campanella).
+  // Appena la cartella giusta e' caricata apriamo il file richiesto: i PDF
+  // nell'anteprima dell'app, gli altri con l'app giusta del telefono (stessa
+  // azione del tocco normale su una riga). Se il file non c'e' piu' (spostato
+  // o eliminato dallo studio) restiamo nella cartella: sempre un posto
+  // utile, mai un errore a schermo.
+  useEffect(() => {
+    if (!pendingDocumento) return;
+    if (loading) return;
+    if (
+      anno !== pendingDocumento.anno ||
+      cartella !== pendingDocumento.cartella
+    ) {
+      return;
+    }
+    const cercato = pendingDocumento.documento;
+    setPendingDocumento(null);
+    const file =
+      files.find((f) => f.nome === cercato) ??
+      files.find((f) => f.nome.endsWith('/' + cercato));
+    if (file) {
+      apriDocumento(file);
+    } else {
+      console.log(
+        '[ARCHIVIO] documento dal deep-link non trovato, resto in cartella:',
+        cercato,
+      );
+    }
+    // apriDocumento e' una funzione del componente: volutamente fuori dalle
+    // dipendenze (il comportamento giusto e' reagire a pendingDocumento/files).
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pendingDocumento, loading, files, anno, cartella, setPendingDocumento]);
 
   // Ricerca con debounce: parte dopo 300 ms, solo da 2 caratteri, e ignora
   // le risposte ormai superate da query più recenti (guardia di sequenza).
@@ -1131,7 +1180,7 @@ export default function ArchivioScreen() {
 
       {step !== 'anno' && (
         <View style={styles.breadcrumb}>
-          <Text style={styles.crumbText}>{percorsoBello} · v4.4</Text>
+          <Text style={styles.crumbText}>{percorsoBello} · v4.7</Text>
         </View>
       )}
 
@@ -1146,7 +1195,7 @@ export default function ArchivioScreen() {
                     <View style={styles.heroAurora1} pointerEvents="none" />
                     <View style={styles.heroAurora2} pointerEvents="none" />
                     <View style={styles.heroInner}>
-                      <Text style={styles.heroOverline}>{`Archivio v4.4 · ${dataDiOggi()}`}</Text>
+                      <Text style={styles.heroOverline}>{`Archivio v4.7 · ${dataDiOggi()}`}</Text>
                       <Text style={styles.heroTitle}>
                         Benvenuto <Text style={styles.heroWave}>👋</Text>
                       </Text>

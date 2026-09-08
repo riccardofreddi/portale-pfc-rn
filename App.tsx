@@ -6,9 +6,11 @@
  * 3. Polling notifiche + messaggi non letti ogni 30s
  * 4. Render NavigationContainer + Toaster globale
  * 5. v4.3: promemoria scadenze LOCALI (arrivano anche a app chiusa)
+ * 6. v4.5: i badge si aggiornano SUBITO quando arriva una push (a app
+ *    aperta) e quando si torna sull'app, senza aspettare il polling
  */
 import React, { useEffect, useRef } from 'react';
-import { AppState } from 'react-native';
+import { AppState, DeviceEventEmitter } from 'react-native';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { api } from '@/api/client';
 import { useAppStore } from '@/store/auth';
@@ -55,6 +57,9 @@ export default function App() {
   }, [setPendingDeepLink]);
 
   // Polling notifiche + messaggi non letti ogni 30s (quando l'utente è loggato)
+  // v4.5: pollRef rende poll richiamabile anche da fuori (eventi push e
+  // ritorno sull'app) senza dover ricreare i listener.
+  const pollRef = useRef<() => Promise<void>>(async () => {});
   useEffect(() => {
     if (!user) return;
     const username = user.username;
@@ -80,6 +85,7 @@ export default function App() {
       }
     }
 
+    pollRef.current = poll;
     poll();
     const interval = setInterval(poll, 30_000);
     return () => {
@@ -87,6 +93,28 @@ export default function App() {
       clearInterval(interval);
     };
   }, [user, setNNotifiche, setNMessaggiNonLetti]);
+
+  // v4.5: notifica push ricevuta con l'app aperta => badge aggiornati
+  // IMMEDIATAMENTE (campanella e tab Messaggi), non dopo 30 secondi.
+  useEffect(() => {
+    const sub = DeviceEventEmitter.addListener('pfc-push-ricevuta', () => {
+      pollRef.current();
+    });
+    return () => sub.remove();
+  }, []);
+
+  // v4.5: ritorno sull'app (era in background) => lista e badge freschi
+  // subito (e MessaggiScreen ricarica da sola): niente piu' "trascinare
+  // in giu' per ricaricare" per vedere un messaggio arrivato fuori app.
+  useEffect(() => {
+    const sub = AppState.addEventListener('change', (stato) => {
+      if (stato === 'active') {
+        pollRef.current();
+        DeviceEventEmitter.emit('pfc-app-risentita');
+      }
+    });
+    return () => sub.remove();
+  }, []);
 
   // v4.3: promemoria scadenze LOCALI. Al login e ogni volta che l'utente
   // torna sull'app (max 1 volta ogni 30 minuti) riallineiamo i promemoria

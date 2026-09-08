@@ -279,16 +279,26 @@ export const api = {
       const res = await apiFetch<{ notifiche: Array<Record<string, unknown>> }>(
         '/api/notifiche',
       );
-      const mapped: Notifica[] = (res.notifiche ?? []).map((n) => ({
-        id: String(n.id ?? ''),
-        tipo: String(n.type ?? ''),
-        titolo: String(n.text ?? ''),
-        corpo: String(n.detail ?? ''),
-        letta: Boolean(n.read),
-        dataCreazione: String(n.ts ?? ''),
-        year: n.year ? String(n.year) : undefined,
-        folder: n.folder ? String(n.folder) : undefined,
-      }));
+      const mapped: Notifica[] = (res.notifiche ?? []).map((n) => {
+        const tipo = String(n.type ?? '');
+        const detail = n.detail ? String(n.detail) : undefined;
+        // v4.6: per le scadenze il campo detail contiene il PERCORSO del file
+        // (Documenti/.../file.pdf): in schermo mostriamo solo il titolo (che
+        // ha gia' "cosa scade e quando"), il percorso resta in "detail" per
+        // il deep-link alla cartella + documento.
+        const corpo = tipo === 'scadenza' ? undefined : String(n.detail ?? '');
+        return {
+          id: String(n.id ?? ''),
+          tipo,
+          titolo: String(n.text ?? ''),
+          corpo,
+          detail,
+          letta: Boolean(n.read),
+          dataCreazione: String(n.ts ?? ''),
+          year: n.year ? String(n.year) : undefined,
+          folder: n.folder ? String(n.folder) : undefined,
+        };
+      });
       return { notifiche: mapped };
     },
 

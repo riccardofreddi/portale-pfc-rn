@@ -35,8 +35,8 @@
  * - se quel momento e' gia' passato (es. l'utente apre l'app alle 10
  *   del giorno di scadenza e nessun promemoria era ancora partito)
  *   mostriamo l'avviso SUBITO, meglio di niente;
- * - toccando l'avviso l'app si apre sulla cartella del documento
- *   (stesso deep-link delle push del server).
+ * - toccando l'avviso l'app si apre SUL DOCUMENTO in scadenza (v4.6:
+ *   cartella + anteprima del file; prima solo la cartella).
  *
  * Sicurezza: identica al resto delle notifiche (gate v3.4: se i 12 pezzi
  * nativi non ci sono, non si carica niente e non compare nessun errore;
@@ -48,6 +48,7 @@ import {
   caricaModuloNotifiche,
   preparaNotifiche,
 } from '@/lib/notifiche';
+import { partiFilePath } from '@/lib/deeplink';
 
 /** Prefisso dell'identificativo dei promemoria scadenze (per cancellarli). */
 const PREFISSO_ID = 'pfc-scad-';
@@ -60,14 +61,29 @@ const ORA_PROMEMORIA = 8;
 const MINUTI_PROMEMORIA = 30;
 
 /**
- * Estrae anno e cartella dal percorso del file
- * ("Documenti/<utente>/<anno>/<cartella>/<file>") e costruisce il
- * deep-link alla cartella dell'archivio (stesso formato delle push).
+ * Estrae anno, cartella e DOCUMENTO dal percorso del file
+ * ("Documenti/<utente>/<anno>/<cartella>[/<sotto>]/<file>") e costruisce
+ * il deep-link all'archivio.
+ *
+ * v4.6: nell'URL entra anche il nome del file (&documento=...): toccando
+ * il promemoria l'app ora si apre DIRETTAMENTE sul documento in scadenza
+ * (anteprima PDF o app del telefono), non solo sulla cartella. Il risolutore
+ * dell'Archivio riconosce il parametro e apre il file appena caricata la
+ * cartella (vedi ArchivioScreen).
  */
 function urlDaFilePath(filePath: string): string | undefined {
-  const parti = filePath.split('/');
-  const anno = parti[2];
-  const cartella = parti[3];
+  const parti = partiFilePath(filePath);
+  if (parti) {
+    return (
+      `/?tab=archivio&anno=${encodeURIComponent(parti.anno)}` +
+      `&cartella=${encodeURIComponent(parti.cartella)}` +
+      `&documento=${encodeURIComponent(parti.documento)}`
+    );
+  }
+  // Percorso non riconoscibile: fallback alla sola cartella (come v4.3)
+  const sezioni = filePath.split('/');
+  const anno = sezioni[2];
+  const cartella = sezioni[3];
   if (anno && cartella) {
     return `/?tab=archivio&anno=${encodeURIComponent(anno)}&cartella=${encodeURIComponent(cartella)}`;
   }

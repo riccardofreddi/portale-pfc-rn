@@ -16,10 +16,28 @@
  */
 
 import messaging from '@react-native-firebase/messaging';
-import { Platform } from 'react-native';
+import { DeviceEventEmitter, Platform } from 'react-native';
 import { api } from '@/api/client';
 import { parseDeepLink, type DeepLinkTarget } from '@/lib/deeplink';
 import { mostraAvvisoLocale, sulToccoNotifica } from '@/lib/notifiche';
+import { toast } from '@/components/Toaster';
+
+/**
+ * v4.6: costruisce il deep-link target dall'url della notifica, aggiungendo
+ * il marcatore "origineScadenza" quando la notifica riguarda una scadenza
+ * (campo "tipo" nel data della push del server). Il risolutore dell'Archivio
+ * usera' quel marcatore per individuare e aprire il FILE in scadenza: le
+ * push scadenza del server portano solo anno+cartella, senza il nome file.
+ */
+function targetDaDati(
+  url: unknown,
+  tipo: unknown,
+): DeepLinkTarget | null {
+  const target = parseDeepLink(typeof url === 'string' ? url : undefined);
+  if (!target) return null;
+  if (tipo === 'scadenza') target.origineScadenza = true;
+  return target;
+}
 
 export const pushState = {
   registered: false,
@@ -92,19 +110,41 @@ export function setupPushListeners(
     const body = String(notifica?.body ?? datiMsg.body ?? '');
     const urlRaw = datiMsg.url;
     const url = typeof urlRaw === 'string' ? urlRaw : '';
-    const mostrata = await mostraAvvisoLocale(title, body, url ? { url } : undefined);
+    const tipoRaw = datiMsg.tipo;
+    const tipo = typeof tipoRaw === 'string' ? tipoRaw : '';
+    // v4.6: nell'avviso locale entriamo anche il tipo, cosi' se il cliente
+    // lo TOCCA sappiamo che e' una scadenza e possiamo aprire il file.
+    const datiAvviso: Record<string, string> = {};
+    if (url) datiAvviso.url = url;
+    if (tipo) datiAvviso.tipo = tipo;
+    const mostrata = await mostraAvvisoLocale(
+      title,
+      body,
+      Object.keys(datiAvviso).length > 0 ? datiAvviso : undefined,
+    );
     if (mostrata) {
       console.log('[PUSH] avviso mostrato a app aperta:', title);
     } else {
       console.log('[PUSH] foreground (notifiche non attive):', title, '-', body);
     }
+
+    // v4.5: con l'app aperta il cliente deve VEDERE l'arrivo SUBITO.
+    // (1) avviso in-app a schermo (il sistema con app aperta puo' restare
+    // silenzioso, quindi aggiungiamo il toast sempre); (2) evento interno:
+    // chi lo ascolta (App.tsx per i badge, MessaggiScreen per la lista)
+    // si aggiorna in tempo reale, senza aspettare il polling dei 30 secondi.
+    toast.info(title, body);
+    DeviceEventEmitter.emit('pfc-push-ricevuta', { url, title });
   });
 
   // Background/quit: tap su notifica che apre l'app
   messaging().onNotificationOpenedApp((remoteMessage) => {
-    const url = remoteMessage?.data?.url as string | undefined;
-    console.log('[PUSH] tap notifica (background):', url);
-    const target = parseDeepLink(url);
+    const dati = remoteMessage?.data ?? {};
+    console.log(
+      '[PUSH] tap notifica (background):',
+      String(dati.url ?? ''),
+    );
+    const target = targetDaDati(dati.url, dati.tipo);
     onNotificationTap?.(target);
   });
 
@@ -113,18 +153,21 @@ export function setupPushListeners(
     .getInitialNotification()
     .then((remoteMessage) => {
       if (remoteMessage) {
-        const url = remoteMessage.data?.url as string | undefined;
-        console.log('[PUSH] tap notifica (cold start):', url);
-        const target = parseDeepLink(url);
+        const dati = remoteMessage.data ?? {};
+        console.log(
+          '[PUSH] tap notifica (cold start):',
+          String(dati.url ?? ''),
+        );
+        const target = targetDaDati(dati.url, dati.tipo);
         if (target) onNotificationTap?.(target);
       }
     });
 
   // v4.0: tocco su un avviso LOCALE dell'app (mostrato a app aperta):
   // stessa navigazione delle push di sistema (deep-link al documento).
+  // v4.6: legge anche il tipo ("scadenza") per il risolutore del file.
   const staccaTocco = sulToccoNotifica((dati) => {
-    const url = typeof dati.url === 'string' ? dati.url : undefined;
-    const target = parseDeepLink(url);
+    const target = targetDaDati(dati.url, dati.tipo);
     onNotificationTap?.(target);
   });
 
