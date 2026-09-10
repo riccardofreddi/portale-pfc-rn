@@ -1,7 +1,8 @@
 /**
  * Portale PFC RN — Design System
  *
- * Palette: navy profondo come primario, coral/amber come accento.
+ * Palette: "Midnight Sapphire & Champagne Gold" (ripresa dall'app Android v4):
+ * blu notte come primario, oro champagne come accento.
  * Supporto light + dark mode tramite la funzione getColors(theme).
  */
 
@@ -43,46 +44,47 @@ export interface ThemeColors {
 }
 
 const lightColors: ThemeColors = {
-  primary: '#0F172A',
-  primaryLight: '#1E293B',
+  primary: '#003566',
+  primaryLight: '#034078',
   background: '#F8FAFC',
   surface: '#FFFFFF',
   surfaceAlt: '#F1F5F9',
 
-  accent: '#F97316',
-  accentSoft: '#FFEDD5',
-  accentDark: '#C2410C',
+  accent: '#D4AF37',
+  accentSoft: '#FFF7E6',
+  accentDark: '#996515',
 
   success: '#10B981',
-  successSoft: '#D1FAE5',
+  successSoft: '#ECFDF5',
   warning: '#F59E0B',
-  warningSoft: '#FEF3C7',
+  warningSoft: '#FFFBEB',
   danger: '#EF4444',
-  dangerSoft: '#FEE2E2',
-  info: '#3B82F6',
-  infoSoft: '#DBEAFE',
+  dangerSoft: '#FEF2F2',
+  info: '#0284C7',
+  infoSoft: '#E0F2FE',
 
   textPrimary: '#0F172A',
   textSecondary: '#475569',
-  textTertiary: '#94A3B8',
+  textTertiary: '#64748B',
   textInverse: '#FFFFFF',
 
   border: '#E2E8F0',
-  borderStrong: '#CBD5E1',
+  borderStrong: '#94A3B8',
 
-  overlay: 'rgba(15, 23, 42, 0.6)',
+  overlay: 'rgba(10, 17, 40, 0.6)',
 };
 
+// Dark: "Midnight Luxury" (dall'app Android v4)
 const darkColors: ThemeColors = {
-  primary: '#020617',
-  primaryLight: '#0F172A',
-  background: '#020617',
-  surface: '#0F172A',
-  surfaceAlt: '#1E293B',
+  primary: '#1C2B4B',
+  primaryLight: '#334A75',
+  background: '#070B19',
+  surface: '#0D1527',
+  surfaceAlt: '#131D36',
 
-  accent: '#FB923C',
-  accentSoft: 'rgba(251, 146, 60, 0.15)',
-  accentDark: '#F97316',
+  accent: '#D4AF37',
+  accentSoft: 'rgba(212, 175, 55, 0.15)',
+  accentDark: '#F7E7B4',
 
   success: '#34D399',
   successSoft: 'rgba(52, 211, 153, 0.15)',
@@ -93,13 +95,13 @@ const darkColors: ThemeColors = {
   info: '#60A5FA',
   infoSoft: 'rgba(96, 165, 250, 0.15)',
 
-  textPrimary: '#F1F5F9',
+  textPrimary: '#F8FAFC',
   textSecondary: '#CBD5E1',
-  textTertiary: '#64748B',
+  textTertiary: '#94A3B8',
   textInverse: '#0F172A',
 
-  border: '#1E293B',
-  borderStrong: '#334155',
+  border: '#1E2D4A',
+  borderStrong: '#334A75',
 
   overlay: 'rgba(0, 0, 0, 0.7)',
 };

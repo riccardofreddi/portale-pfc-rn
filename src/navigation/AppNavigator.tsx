@@ -33,6 +33,7 @@ import {
 } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
+import { Ionicons } from '@expo/vector-icons';
 import LoginScreen from '@/screens/LoginScreen';
 import ArchivioScreen from '@/screens/ArchivioScreen';
 import MessaggiScreen from '@/screens/MessaggiScreen';
@@ -48,7 +49,7 @@ import { useAppStore, type ClienteTab } from '@/store/auth';
 import { api } from '@/api/client';
 import { haptics } from '@/lib/haptics';
 import { scegliScadenza, schermataVisibile } from '@/lib/deeplink';
-import { typography, useColors, useTheme } from '@/theme';
+import { useColors, useTheme } from '@/theme';
 
 export type AppStackParamList = {
   // v4.7: MainTabs puo' ricevere il nome della tab da mostrare (deep-link da
@@ -104,6 +105,7 @@ const TAB_VALIDI: ReadonlySet<string> = new Set([
 
 function MainTabsScreen() {
   const colors = useColors();
+  const { effective } = useTheme();
 
   const navigation = useNavigation();
   const previewFile = useAppStore((s) => s.previewFile);
@@ -222,8 +224,8 @@ function MainTabsScreen() {
   return (
     <>
       <StatusBar
-        barStyle="light-content"
-        backgroundColor={colors.primary}
+        barStyle={effective === 'dark' ? 'light-content' : 'dark-content'}
+        backgroundColor={colors.surface}
       />
       <TopBar />
       <MainTabs.Navigator
@@ -232,19 +234,14 @@ function MainTabsScreen() {
         }}
         screenOptions={{
           headerShown: false,
-          tabBarActiveTintColor: colors.accent,
+          tabBarActiveTintColor: colors.primary,
           tabBarInactiveTintColor: colors.textTertiary,
           tabBarStyle: {
             backgroundColor: colors.surface,
             borderTopColor: colors.border,
             borderTopWidth: 1,
             paddingBottom: 4,
-            height: 60,
-          },
-          tabBarLabelStyle: {
-            ...typography.labelSmall,
-            fontSize: 10,
-            marginTop: 2,
+            height: 62,
           },
           tabBarIconStyle: {
             marginBottom: 0,
@@ -256,8 +253,16 @@ function MainTabsScreen() {
           component={ArchivioScreen}
           options={{
             title: 'Archivio',
+            tabBarLabel: ({ focused, color }) => (
+              <TabLabel label="Archivio" focused={focused} color={color} />
+            ),
             tabBarIcon: ({ color, focused }) => (
-              <TabIcon emoji="📂" color={color} dimmed={!focused} />
+              <TabIcon
+                icon={focused ? 'folder' : 'folder-outline'}
+                color={color}
+                focused={focused}
+                pillBg={colors.accentSoft}
+              />
             ),
           }}
         />
@@ -266,11 +271,17 @@ function MainTabsScreen() {
           component={MessaggiScreen}
           options={{
             title: 'Messaggi',
+            tabBarLabel: ({ focused, color }) => (
+              <TabLabel label="Messaggi" focused={focused} color={color} />
+            ),
             tabBarIcon: ({ color, focused }) => (
               <TabIconWithBadge
-                emoji="💬"
+                icon={
+                  focused ? 'chatbubble-ellipses' : 'chatbubble-ellipses-outline'
+                }
                 color={color}
-                dimmed={!focused}
+                focused={focused}
+                pillBg={colors.accentSoft}
                 badge={nMessaggiNonLetti}
               />
             ),
@@ -281,8 +292,16 @@ function MainTabsScreen() {
           component={CassettoScreen}
           options={{
             title: 'Cassetto',
+            tabBarLabel: ({ focused, color }) => (
+              <TabLabel label="Cassetto" focused={focused} color={color} />
+            ),
             tabBarIcon: ({ color, focused }) => (
-              <TabIcon emoji="💼" color={color} dimmed={!focused} />
+              <TabIcon
+                icon={focused ? 'cloud-upload' : 'cloud-upload-outline'}
+                color={color}
+                focused={focused}
+                pillBg={colors.accentSoft}
+              />
             ),
           }}
         />
@@ -291,8 +310,16 @@ function MainTabsScreen() {
           component={AttivitaScreen}
           options={{
             title: 'Attività',
+            tabBarLabel: ({ focused, color }) => (
+              <TabLabel label="Attività" focused={focused} color={color} />
+            ),
             tabBarIcon: ({ color, focused }) => (
-              <TabIcon emoji="📋" color={color} dimmed={!focused} />
+              <TabIcon
+                icon={focused ? 'time' : 'time-outline'}
+                color={color}
+                focused={focused}
+                pillBg={colors.accentSoft}
+              />
             ),
           }}
         />
@@ -305,38 +332,51 @@ function MainTabsScreen() {
   );
 }
 
+// Icone tab come nell'app Android v4 (NavigationBar Material 3): pillola oro
+// dietro l'icona quando la sezione è attiva, filled/outline altrimenti.
 function TabIcon({
-  emoji,
+  icon,
   color,
-  dimmed,
+  focused,
+  pillBg,
 }: {
-  emoji: string;
+  icon: keyof typeof Ionicons.glyphMap;
   color: string;
-  dimmed: boolean;
+  focused: boolean;
+  pillBg: string;
 }) {
   return (
-    <Text style={{ fontSize: 20, opacity: dimmed ? 0.5 : 1, color }}>
-      {emoji}
+    <View style={[tabPillStyles.pill, focused && { backgroundColor: pillBg }]}>
+      <Ionicons name={icon} size={22} color={color} />
+    </View>
+  );
+}
+
+// Label della tab: 11sp, GRASSETTO quando attiva (come i NavigationBarItem v4)
+function TabLabel({ label, focused, color }: { label: string; focused: boolean; color: string }) {
+  return (
+    <Text style={{ fontSize: 11, fontWeight: focused ? '700' : '400', color }}>
+      {label}
     </Text>
   );
 }
 
 function TabIconWithBadge({
-  emoji,
+  icon,
   color,
-  dimmed,
+  focused,
+  pillBg,
   badge,
 }: {
-  emoji: string;
+  icon: keyof typeof Ionicons.glyphMap;
   color: string;
-  dimmed: boolean;
+  focused: boolean;
+  pillBg: string;
   badge: number;
 }) {
   return (
-    <View>
-      <Text style={{ fontSize: 20, opacity: dimmed ? 0.5 : 1, color }}>
-        {emoji}
-      </Text>
+    <View style={[tabPillStyles.pill, focused && { backgroundColor: pillBg }]}>
+      <Ionicons name={icon} size={22} color={color} />
       {badge > 0 && (
         <View style={tabBadgeStyles.badge}>
           <Text style={tabBadgeStyles.badgeText}>
@@ -348,23 +388,35 @@ function TabIconWithBadge({
   );
 }
 
-// Il badge è rosso su testo bianco in entrambi i temi → stile statico
+// Pillola indicatrice dietro l'icona (come l'indicatorColor M3 dell'app v4)
+const tabPillStyles = StyleSheet.create({
+  pill: {
+    width: 56,
+    height: 29,
+    borderRadius: 14.5,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+});
+
+// Il badge dei messaggi è NAVY su bianco in entrambi i temi (containerColor
+// GeoPrimary nell'app v4) → stile statico
 const tabBadgeStyles = StyleSheet.create({
   badge: {
     position: 'absolute',
-    top: -4,
-    right: -16,
-    minWidth: 18,
-    height: 18,
-    borderRadius: 9,
-    backgroundColor: '#EF4444',
+    top: -5,
+    right: -7,
+    minWidth: 17,
+    height: 17,
+    borderRadius: 8.5,
+    backgroundColor: '#003566',
     alignItems: 'center',
     justifyContent: 'center',
     paddingHorizontal: 4,
   },
   badgeText: {
     color: '#FFFFFF',
-    fontSize: 10,
+    fontSize: 9.5,
     fontWeight: '700',
   },
 });

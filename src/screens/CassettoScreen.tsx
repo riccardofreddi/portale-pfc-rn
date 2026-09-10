@@ -1,5 +1,17 @@
 ﻿/**
  * Schermata Cassetto Personale.
+ *
+ * v4.11 — grafica replicata dall'app Android v4 (CassettoScreen.kt):
+ * - Hero "Caveau Documentale": card blu notte con gradiente Midnight →
+ *   GeoPrimary → Midnight, bordo oro, lucchetto oro in box soft e pulsante
+ *   oro "Aggiungi" (apre lo stesso pannello di sempre).
+ * - Card documento: icona tipo file, nome, dimensione · data, linea di
+ *   separazione e riga azioni: pillola "Anteprima" + icone Scarica /
+ *   Rinomina / Elimina (stesse funzioni di sempre).
+ * - Tolto il pulsante "Aggiorna": si usa il trascina-per-aggiornare
+ *   (il caricamento all'apertura resta identico).
+ * - Logica INTATTA: caricamento, upload con tipo, download, rinomina,
+ *   eliminazione, limite dimensione file.
  */
 import React, { useCallback, useEffect, useState } from 'react';
 import {
@@ -12,6 +24,8 @@ import {
   View,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { Ionicons } from '@expo/vector-icons';
+import Svg, { Defs, Rect, LinearGradient, Stop } from 'react-native-svg';
 import DocumentPicker, { types } from 'react-native-document-picker';
 import ReactNativeBlobUtil from 'react-native-blob-util';
 import { Card } from '@/components/Card';
@@ -27,7 +41,7 @@ import { api } from '@/api/client';
 import { useAppStore } from '@/store/auth';
 import { formatDate, MAX_FILE_SIZE_BYTES, MAX_FILE_SIZE_MB } from '@/lib/utils';
 import type { CassettoFile, FileItem } from '@/types/api';
-import { spacing, typography, useColors, type ThemeColors } from '@/theme';
+import { shadow, spacing, typography, useColors, type ThemeColors } from '@/theme';
 
 const TIPI_FILE = [
   { value: 'QR Code P.IVA', color: '#059669' },
@@ -36,6 +50,12 @@ const TIPI_FILE = [
   { value: 'Doc. Identita', color: '#dc2626' },
   { value: 'IBAN', color: '#d97706' },
 ] as const;
+
+// Colori firma del brand (validi in entrambi i temi, come nell'app v4)
+const NAVY_NOTTE = '#0A1128';
+const NAVY_PRIMARIO = '#003566';
+const ORO = '#D4AF37';
+const ORO_CHIARO = '#F7E7B4';
 
 export default function CassettoScreen() {
   const colors = useColors();
@@ -144,112 +164,122 @@ export default function CassettoScreen() {
     }
   }
 
-  function getAccentColor(nome: string): string {
-    const tipo = TIPI_FILE.find((t) => nome.includes(t.value));
-    return tipo?.color ?? colors.textTertiary;
+  function apriAnteprima(file: CassettoFile) {
+    setPreviewFile({
+      nome: file.nome,
+      key: file.key,
+      size: file.size,
+      sizeStr: file.sizeStr,
+      lastModified: file.lastModified,
+      stato: 'visto',
+      isPreferito: false,
+    } as FileItem);
   }
 
   return (
     <SafeAreaView style={styles.safe} edges={['top']}>
-      <View style={styles.hero}>
-        <View style={styles.heroContent}>
-          <View style={styles.heroLeft}>
-            <Text style={styles.heroIcon}>💼</Text>
-            <View>
-              <Text style={styles.heroTitle}>Cassetto Personale</Text>
-              <Text style={styles.heroSubtitle}>
-                {files.length} document{files.length === 1 ? 'o' : 'i'} salvat{files.length === 1 ? 'o' : 'i'}
-              </Text>
+      <View style={styles.listContentWrap}>
+        {/* Hero "Caveau Documentale" (come la Vault Hero Card dell'app v4) */}
+        <View style={styles.vaultHero}>
+          <Svg style={StyleSheet.absoluteFill}>
+            <Defs>
+              <LinearGradient id="cassettoVault" x1="0" y1="0" x2="1" y2="0">
+                <Stop offset="0" stopColor={NAVY_NOTTE} />
+                <Stop offset="0.5" stopColor={NAVY_PRIMARIO} />
+                <Stop offset="1" stopColor={NAVY_NOTTE} />
+              </LinearGradient>
+            </Defs>
+            <Rect width="100%" height="100%" fill="url(#cassettoVault)" />
+          </Svg>
+          <View style={styles.vaultInner}>
+            <View style={styles.vaultLeft}>
+              <View style={styles.vaultLockBox}>
+                <Ionicons name="lock-closed" size={24} color={ORO} />
+              </View>
+              <View style={styles.flex}>
+                <Text style={styles.vaultOverline}>CASSETTO RISERVATO</Text>
+                <Text style={styles.vaultTitle}>Caveau Documentale</Text>
+                <Text style={styles.vaultSubtitle}>
+                  {files.length} document{files.length === 1 ? 'o' : 'i'} archiviat{files.length === 1 ? 'o' : 'i'} con cifratura
+                </Text>
+              </View>
             </View>
+            <Pressable
+              onPress={() => setUploadOpen(true)}
+              style={({ pressed }) => [styles.vaultAdd, pressed && { opacity: 0.85 }]}
+              accessibilityLabel="Carica documento"
+            >
+              <Ionicons name="add" size={17} color={NAVY_NOTTE} />
+              <Text style={styles.vaultAddText}>Aggiungi</Text>
+            </Pressable>
           </View>
-          <Pressable
-            onPress={() => setUploadOpen(true)}
-            style={({ pressed }) => [styles.heroAdd, pressed && { opacity: 0.8 }]}
-            accessibilityLabel="Carica documento"
-          >
-            <Text style={styles.heroAddText}>+</Text>
-          </Pressable>
         </View>
       </View>
 
-      <Pressable
-        onPress={() => load(true)}
-        style={({ pressed }) => [styles.refreshBtn, pressed && styles.btnPressed]}
-      >
-        <Text style={[styles.refreshIcon, refreshing && { opacity: 0.5 }]}>↻</Text>
-        <Text style={styles.refreshText}>Aggiorna</Text>
-      </Pressable>
-
       {loading && !refreshing ? (
-        <SkeletonList count={4} height={72} />
+        <SkeletonList count={4} height={88} />
       ) : (
         <FlatList
           style={styles.list}
           contentContainerStyle={styles.listContent}
           data={files}
           keyExtractor={(item) => item.key}
-          refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => load(true)} />}
-          renderItem={({ item: file }) => {
-            const accent = getAccentColor(file.nome);
-            return (
-              <View style={styles.fileCardWrap}>
-                <View style={[styles.accentBar, { backgroundColor: accent }]} />
-                <Card style={styles.fileCard} padded={false}>
-                  <View style={styles.fileCardContent}>
-                    <FileIcon filename={file.nome} />
+          refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => load(true)} tintColor={colors.accent} colors={[colors.accent]} progressBackgroundColor={colors.surface} />}
+          renderItem={({ item: file }) => (
+            <Card style={styles.fileCard} padded={false}>
+              <Pressable onPress={() => apriAnteprima(file)} accessibilityLabel="Apri anteprima">
+                {({ pressed }) => (
+                  <View style={[styles.fileTop, pressed && { opacity: 0.8 }]}>
+                    <FileIcon filename={file.nome} size={44} />
                     <View style={styles.fileInfo}>
                       <Text style={styles.fileName} numberOfLines={1}>{file.nome}</Text>
                       <Text style={styles.fileMeta} numberOfLines={1}>
-                        {file.sizeStr}{file.lastModified ? ` · ${formatDate(file.lastModified)}` : ''}
+                        {file.sizeStr}{file.lastModified ? `  ·  ${formatDate(file.lastModified)}` : ''}
                       </Text>
                     </View>
-                    <View style={styles.fileActions}>
-                      {canPreviewFile(file.nome) && (
-                        <Pressable
-                          onPress={() =>
-                            setPreviewFile({
-                              nome: file.nome,
-                              key: file.key,
-                              size: file.size,
-                              sizeStr: file.sizeStr,
-                              lastModified: file.lastModified,
-                              stato: 'visto',
-                              isPreferito: false,
-                            } as FileItem)
-                          }
-                          style={styles.actionBtn}
-                          accessibilityLabel="Anteprima"
-                        >
-                          <Text style={styles.actionIcon}>👁</Text>
-                        </Pressable>
-                      )}
-                      <Pressable onPress={() => handleDownload(file)} style={styles.actionBtn} accessibilityLabel="Scarica">
-                        <Text style={styles.actionIcon}>⬇</Text>
-                      </Pressable>
-                      <Pressable
-                        onPress={() => {
-                          setRenaming(file);
-                          setRenameValue(file.nome);
-                        }}
-                        style={styles.actionBtn}
-                        accessibilityLabel="Rinomina"
-                      >
-                        <Text style={styles.actionIcon}>✎</Text>
-                      </Pressable>
-                      <Pressable onPress={() => handleDelete(file)} style={styles.actionBtn} accessibilityLabel="Elimina">
-                        <Text style={[styles.actionIcon, { color: colors.danger }]}>🗑</Text>
-                      </Pressable>
-                    </View>
                   </View>
-                </Card>
+                )}
+              </Pressable>
+              <View style={styles.divider} />
+              <View style={styles.fileActionsRow}>
+                {canPreviewFile(file.nome) ? (
+                  <Pressable
+                    onPress={() => apriAnteprima(file)}
+                    style={({ pressed }) => [styles.previewPill, pressed && { opacity: 0.8 }]}
+                    accessibilityLabel="Anteprima"
+                  >
+                    <Ionicons name="eye-outline" size={15} color={colors.primary} />
+                    <Text style={styles.previewPillText}>Anteprima</Text>
+                  </Pressable>
+                ) : (
+                  <View style={styles.previewPillSpacer} />
+                )}
+                <View style={styles.iconActions}>
+                  <Pressable onPress={() => handleDownload(file)} style={styles.iconAction} accessibilityLabel="Scarica">
+                    <Ionicons name="download-outline" size={18} color={colors.textSecondary} />
+                  </Pressable>
+                  <Pressable
+                    onPress={() => {
+                      setRenaming(file);
+                      setRenameValue(file.nome);
+                    }}
+                    style={styles.iconAction}
+                    accessibilityLabel="Rinomina"
+                  >
+                    <Ionicons name="pencil-outline" size={18} color={colors.textSecondary} />
+                  </Pressable>
+                  <Pressable onPress={() => handleDelete(file)} style={styles.iconAction} accessibilityLabel="Elimina">
+                    <Ionicons name="trash-outline" size={18} color={colors.danger} />
+                  </Pressable>
+                </View>
               </View>
-            );
-          }}
+            </Card>
+          )}
           ListEmptyComponent={
             <EmptyState
-              icon={<Text style={styles.emptyIcon}>💼</Text>}
-              title="Cassetto vuoto"
-              subtitle="Tocca + per caricare un documento"
+              icon={<Ionicons name="folder-open-outline" size={36} color={colors.primary} />}
+              title="Nessun documento trovato"
+              subtitle="Tocca «Aggiungi» per caricare i tuoi documenti personali"
             />
           }
         />
@@ -266,9 +296,11 @@ export default function CassettoScreen() {
                 onPress={() => setSelectedTipo(tipo.value)}
                 style={[styles.tipoRow, selectedTipo === tipo.value && styles.tipoRowActive]}
               >
-                <View style={[styles.tipoColorBar, { backgroundColor: tipo.color }]} />
+                {/* Radio come nell'app v4 (AddCassettoDialog) */}
+                <View style={[styles.radio, selectedTipo === tipo.value && styles.radioSelected]}>
+                  {selectedTipo === tipo.value && <View style={styles.radioDot} />}
+                </View>
                 <Text style={[styles.tipoLabel, selectedTipo === tipo.value && styles.tipoLabelActive]}>{tipo.value}</Text>
-                {selectedTipo === tipo.value && <Text style={styles.tipoCheck}>✓</Text>}
               </Pressable>
             ))}
           </View>
@@ -308,41 +340,44 @@ export default function CassettoScreen() {
 const makeStyles = (colors: ThemeColors) =>
   StyleSheet.create({
     safe: { flex: 1, backgroundColor: colors.background },
-    hero: { margin: spacing.lg, borderRadius: 16, overflow: 'hidden', backgroundColor: colors.accent },
-    heroContent: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', padding: spacing.lg },
-    heroLeft: { flexDirection: 'row', alignItems: 'center', gap: spacing.md, flex: 1 },
-    heroIcon: { fontSize: 24 },
-    heroTitle: { ...typography.h4, color: colors.textInverse, fontWeight: '700' },
-    heroSubtitle: { ...typography.caption, color: 'rgba(255,255,255,0.8)' },
-    heroAdd: { width: 44, height: 44, borderRadius: 12, backgroundColor: 'rgba(255,255,255,0.2)', alignItems: 'center', justifyContent: 'center' },
-    heroAddText: { fontSize: 28, color: colors.textInverse, fontWeight: '300' },
-    refreshBtn: { flexDirection: 'row', alignItems: 'center', gap: spacing.xs, paddingHorizontal: spacing.lg, marginBottom: spacing.sm, height: 32 },
-    refreshIcon: { fontSize: 14, color: colors.textSecondary },
-    refreshText: { ...typography.caption, color: colors.textSecondary, fontWeight: '500' },
-    btnPressed: { opacity: 0.5 },
+    flex: { flex: 1 },
+    listContentWrap: { paddingHorizontal: spacing.lg, paddingTop: spacing.lg },
+    // Hero Caveau (v4.11)
+    vaultHero: { borderRadius: 22, overflow: 'hidden', borderWidth: 1, borderColor: 'rgba(212, 175, 55, 0.4)', backgroundColor: NAVY_NOTTE, ...shadow.md },
+    vaultInner: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: spacing.md, padding: 18 },
+    vaultLeft: { flexDirection: 'row', alignItems: 'center', gap: 14, flex: 1 },
+    vaultLockBox: { width: 48, height: 48, borderRadius: 14, backgroundColor: 'rgba(212, 175, 55, 0.15)', borderWidth: 1, borderColor: 'rgba(212, 175, 55, 0.5)', alignItems: 'center', justifyContent: 'center' },
+    vaultOverline: { color: ORO_CHIARO, fontWeight: '900', fontSize: 10, letterSpacing: 0.8 },
+    vaultTitle: { color: '#FFFFFF', fontWeight: '700', fontSize: 16, marginTop: 2 },
+    vaultSubtitle: { color: 'rgba(255,255,255,0.75)', fontSize: 11, marginTop: 1 },
+    vaultAdd: { flexDirection: 'row', alignItems: 'center', gap: 4, backgroundColor: ORO, borderRadius: 999, paddingHorizontal: 14, paddingVertical: 9 },
+    vaultAddText: { color: NAVY_NOTTE, fontWeight: '700', fontSize: 13 },
     list: { flex: 1 },
-    listContent: { paddingHorizontal: spacing.lg, paddingBottom: spacing.lg, gap: spacing.sm },
-    fileCardWrap: { flexDirection: 'row', borderRadius: 12, overflow: 'hidden', backgroundColor: colors.surface },
-    accentBar: { width: 6 },
-    fileCard: { flex: 1, borderRadius: 0, borderWidth: 0, shadowOpacity: 0.03 },
-    fileCardContent: { flexDirection: 'row', alignItems: 'center', gap: spacing.md, padding: spacing.md },
+    listContent: { paddingHorizontal: spacing.lg, paddingTop: spacing.md, paddingBottom: spacing.lg, gap: 14 },
+    // Card documento (v4.11)
+    fileCard: { borderRadius: 18 },
+    fileTop: { flexDirection: 'row', alignItems: 'center', gap: 12, padding: 16 },
     fileInfo: { flex: 1, gap: 2 },
-    fileName: { ...typography.body, color: colors.textPrimary, fontWeight: '500' },
+    fileName: { ...typography.body, color: colors.textPrimary, fontWeight: '600' },
     fileMeta: { ...typography.caption, color: colors.textSecondary },
-    fileActions: { flexDirection: 'row', alignItems: 'center' },
-    actionBtn: { width: 36, height: 36, borderRadius: 8, alignItems: 'center', justifyContent: 'center' },
-    actionIcon: { fontSize: 16 },
-    emptyIcon: { fontSize: 48 },
+    divider: { height: StyleSheet.hairlineWidth, backgroundColor: colors.border, marginHorizontal: 16 },
+    fileActionsRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 10, paddingVertical: 8 },
+    previewPill: { flexDirection: 'row', alignItems: 'center', gap: 5, backgroundColor: colors.surfaceAlt, borderRadius: 999, paddingHorizontal: 12, paddingVertical: 7 },
+    previewPillSpacer: { width: 8 },
+    previewPillText: { color: colors.primary, fontWeight: '700', fontSize: 12 },
+    iconActions: { flexDirection: 'row', alignItems: 'center' },
+    iconAction: { width: 36, height: 36, borderRadius: 10, alignItems: 'center', justifyContent: 'center' },
     modalContent: { padding: spacing.xl, gap: spacing.md },
     modalTitle: { ...typography.h4, color: colors.textPrimary, fontWeight: '700' },
     modalSubtitle: { ...typography.bodySmall, color: colors.textSecondary },
-    tipiList: { gap: spacing.sm },
-    tipoRow: { flexDirection: 'row', alignItems: 'center', paddingVertical: spacing.md, paddingHorizontal: spacing.lg, borderRadius: 12, borderWidth: 1.5, borderColor: colors.border, gap: spacing.md },
-    tipoRowActive: { borderColor: colors.accent, backgroundColor: colors.accentSoft },
-    tipoColorBar: { width: 4, height: 32, borderRadius: 2 },
+    tipiList: { gap: spacing.xs },
+    tipoRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.md, paddingVertical: spacing.md, paddingHorizontal: spacing.md, borderRadius: 10 },
+    tipoRowActive: { backgroundColor: colors.accentSoft },
+    radio: { width: 20, height: 20, borderRadius: 10, borderWidth: 2, borderColor: colors.borderStrong, alignItems: 'center', justifyContent: 'center' },
+    radioSelected: { borderColor: colors.primary },
+    radioDot: { width: 10, height: 10, borderRadius: 5, backgroundColor: colors.primary },
     tipoLabel: { ...typography.body, color: colors.textPrimary, flex: 1 },
     tipoLabelActive: { color: colors.accentDark, fontWeight: '600' },
-    tipoCheck: { color: colors.accent, fontSize: 18, fontWeight: '700' },
     uploadCtaBtn: { marginTop: spacing.sm },
     renameInput: { borderWidth: 1.5, borderColor: colors.border, borderRadius: 12, paddingHorizontal: spacing.lg, paddingVertical: spacing.md, ...typography.body, color: colors.textPrimary, backgroundColor: colors.surfaceAlt },
     renameActions: { flexDirection: 'row', justifyContent: 'flex-end', alignItems: 'center', gap: spacing.md },

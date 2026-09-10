@@ -1,6 +1,21 @@
 /**
- * Schermata Archivio — design v2.
- * Gerarchia: Anni → Cartelle → File.
+ * Schermata Archivio — grafica replicata dall'app Android v4 (v4.11).
+ *
+ * Novità v4.11 (solo GRAFICA, le funzioni di sempre non cambiano):
+ * - Hero blu notte con gradiente + chip oro "ESERCIZIO {anno}" e pillola
+ *   oro "Documenti Nuovi (n)" che apre direttamente la cartella con le
+ *   novità (come la Smart Year Overview Banner dell'app v4).
+ * - Selettore ANNI a chip scorrevoli (pillola navy quando attiva, punto
+ *   oro) invece della griglia: come i FilterChip dell'app v4.
+ * - Cartelle e file come le CartellaCard/DocumentFileRow dell'app v4:
+ *   box icona con gradiente azzurro→oro, badge di stato (● NUOVO verde,
+ *   ✓ SCARICATO oro, ★ PREFERITO oro), frecce in cerchio e azioni rapide
+ *   (stellina preferiti + scarica) direttamente sulla riga.
+ * - Breadcrumb con freccia indietro in cerchio (come l'app v4).
+ * - Barra selezione multipla navy con pulsante oro "Scarica".
+ *
+ * Gerarchia e logica invariate: Anni → Cartelle → File, ricerca con
+ * debounce, dettaglio file, selezione multipla, deep-link v4.6.
  *
  * Novità v2:
  * - Card di benvenuto NEUTRA (nessun saluto con il nome: l'app è usata anche da
@@ -178,6 +193,7 @@ import {
   FlatList,
   Pressable,
   RefreshControl,
+  ScrollView,
   StyleSheet,
   Text,
   TextInput,
@@ -186,6 +202,8 @@ import {
   type ViewStyle,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { Ionicons } from '@expo/vector-icons';
+import Svg, { Defs, Rect, LinearGradient, Stop } from 'react-native-svg';
 import { Card } from '@/components/Card';
 import { EmptyState } from '@/components/EmptyState';
 import { FileIcon, canPreviewFile } from '@/components/FileIcon';
@@ -204,6 +222,13 @@ import type { Cartella, FileItem, SearchResult } from '@/types/api';
 import { radius, shadow, spacing, typography, useColors, type ThemeColors } from '@/theme';
 
 type Step = 'anno' | 'cartella' | 'file';
+
+// Colori firma del brand (validi in entrambi i temi, come nell'app v4)
+const NAVY_NOTTE = '#0A1128';
+const NAVY_PRIMARIO = '#003566';
+const NAVY_QUOTA = '#034078';
+const ORO = '#D4AF37';
+const ORO_CHIARO = '#F7E7B4';
 
 const GIORNI = ['domenica', 'lunedì', 'martedì', 'mercoledì', 'giovedì', 'venerdì', 'sabato'];
 const MESI = [
@@ -328,12 +353,13 @@ function ScalablePress({
 
 const STATO_BADGE: Record<
   string,
-  { label: string; variant: 'danger' | 'neutral' | 'success' | 'warning' }
+  { label: string; variant: 'danger' | 'neutral' | 'success' | 'warning' | 'accent' }
 > = {
-  nuovo: { label: 'Nuovo', variant: 'danger' },
-  visto: { label: 'Visto', variant: 'neutral' },
-  scaricato: { label: 'Scaricato', variant: 'success' },
-  preferito: { label: 'Preferito', variant: 'warning' },
+  // Etichette e colori degli StatusBadge dell'app Android v4
+  nuovo: { label: '● NUOVO', variant: 'success' },
+  visto: { label: 'VISTO', variant: 'neutral' },
+  scaricato: { label: '✓ SCARICATO', variant: 'accent' },
+  preferito: { label: '★ PREFERITO', variant: 'accent' },
 };
 
 /** Riga della lista archivio: anno, cartella (con conteggio), sottocartella o file. */
@@ -593,7 +619,6 @@ export default function ArchivioScreen() {
   const searchSeq = useRef(0);
 
   const step: Step = cartella ? 'file' : anno ? 'cartella' : 'anno';
-  const numColumns = step === 'anno' ? 2 : 1;
 
   // Percorso leggibile per breadcrumb e dettaglio: "2025 › Altro › Sotto"
   const percorsoBello = anno
@@ -1028,18 +1053,17 @@ export default function ArchivioScreen() {
         <View style={styles.searchHeader}>
           <Pressable
             onPress={chiudiRicerca}
-            style={({ pressed }) => [styles.backBtn, pressed && styles.backBtnPressed]}
+            style={({ pressed }) => [styles.searchBackCircle, pressed && styles.btnPressedOpacity]}
             accessibilityLabel="Chiudi ricerca e torna all'archivio"
           >
-            <Text style={styles.backBtnArrow}>←</Text>
-            <Text style={styles.backBtnLabel}>Indietro</Text>
+            <Ionicons name="arrow-back" size={19} color={colors.primary} />
           </Pressable>
-          <View style={styles.searchInputWrap}>
-            <Text style={styles.searchIcon}>🔍</Text>
+          <View style={styles.searchField}>
+            <Ionicons name="search" size={18} color={colors.accentDark} />
             <TextInput
               value={searchQuery}
               onChangeText={setSearchQuery}
-              placeholder="Cerca documenti..."
+              placeholder="Cerca per nome, data o tipo..."
               placeholderTextColor={colors.textTertiary}
               style={styles.searchInput}
               autoFocus
@@ -1053,7 +1077,7 @@ export default function ArchivioScreen() {
                 style={styles.clearBtn}
                 accessibilityLabel="Cancella testo"
               >
-                <Text style={styles.clearBtnText}>✕</Text>
+                <Ionicons name="close" size={14} color={colors.textSecondary} />
               </Pressable>
             )}
           </View>
@@ -1065,9 +1089,13 @@ export default function ArchivioScreen() {
           </View>
         ) : searchResults.length === 0 ? (
           <EmptyState
-            icon={<Text style={styles.emptyIcon}>🔍</Text>}
-            title={q.length >= 2 ? `Nessun risultato per "${q}"` : 'Cerca documenti'}
-            subtitle={q.length >= 2 ? 'Prova con un altro nome o annata' : 'Scrivi almeno 2 lettere del nome del file'}
+            icon={<Ionicons name="search-outline" size={36} color={colors.primary} />}
+            title={q.length >= 2 ? `Nessun documento trovato` : 'Cerca documenti'}
+            subtitle={
+              q.length >= 2
+                ? `Nessun risultato corrisponde a "${q}". Prova con un altro nome.`
+                : 'Scrivi almeno 2 lettere del nome del file'
+            }
           />
         ) : (
           <>
@@ -1083,18 +1111,20 @@ export default function ArchivioScreen() {
               renderItem={({ item }) => (
                 <Pressable onPress={() => apriRisultato(item)}>
                   {({ pressed }) => (
-                    <Card style={[styles.row, pressed && styles.rowPressed]}>
-                      <FileIcon filename={item.nome} />
+                    <Card style={[styles.fileRow, pressed && styles.rowPressed]}>
+                      <FileIcon filename={item.nome} size={44} />
                       <View style={styles.rowText}>
-                        <Text style={styles.rowTitle} numberOfLines={1}>
+                        <Text style={styles.fileName} numberOfLines={1}>
                           {evidenzia(item.nome, q, styles.matchText)}
                         </Text>
                         <Text style={styles.rowSubtitle} numberOfLines={1}>
                           {item.anno} › {item.cartella}
-                          {item.sizeStr ? ` · ${item.sizeStr}` : ''}
+                          {item.sizeStr ? `  ·  ${item.sizeStr}` : ''}
                         </Text>
                       </View>
-                      <Text style={styles.chevron}>›</Text>
+                      <View style={styles.chevronCircle}>
+                        <Ionicons name="chevron-forward" size={17} color={colors.textSecondary} />
+                      </View>
                     </Card>
                   )}
                 </Pressable>
@@ -1128,16 +1158,22 @@ export default function ArchivioScreen() {
 
   return (
     <SafeAreaView style={styles.safe} edges={['top']}>
+      {/* Breadcrumb con freccia indietro in cerchio (come l'app v4) */}
       {step !== 'anno' && (
-        <View style={styles.toolbar}>
+        <View style={styles.breadSurface}>
           <Pressable
             onPress={tornaSu}
-            style={({ pressed }) => [styles.backBtn, pressed && styles.backBtnPressed]}
+            style={({ pressed }) => [styles.breadBack, pressed && styles.btnPressedOpacity]}
             accessibilityLabel="Torna indietro"
           >
-            <Text style={styles.backBtnArrow}>←</Text>
-            <Text style={styles.backBtnLabel}>Indietro</Text>
+            <Ionicons name="arrow-back" size={18} color={colors.primary} />
           </Pressable>
+          <View style={styles.breadText}>
+            <Text style={styles.breadOver}>Archivio {anno}</Text>
+            <Text style={styles.breadTitle} numberOfLines={1}>
+              {step === 'file' && cartella ? cartella.split('/').pop() : 'Tutte le cartelle'}
+            </Text>
+          </View>
           <View style={{ flex: 1 }} />
           {step === 'file' && !selectMode && nFileDiretti > 0 && (
             <Pressable
@@ -1145,10 +1181,10 @@ export default function ArchivioScreen() {
                 haptics.tap();
                 setSelectMode(true);
               }}
-              style={({ pressed }) => [styles.selectPill, pressed && styles.selectPillPressed]}
+              style={({ pressed }) => [styles.breadAction, pressed && styles.btnPressedOpacity]}
               accessibilityLabel="Seleziona"
             >
-              <Text style={styles.selectPillText}>Seleziona</Text>
+              <Text style={styles.breadActionText}>Seleziona</Text>
             </Pressable>
           )}
           {selectMode && (
@@ -1158,29 +1194,23 @@ export default function ArchivioScreen() {
                   haptics.tap();
                   selectAll();
                 }}
-                style={({ pressed }) => [styles.selectPill, pressed && styles.selectPillPressed]}
+                style={({ pressed }) => [styles.breadAction, pressed && styles.btnPressedOpacity]}
                 accessibilityLabel="Seleziona tutti"
               >
-                <Text style={styles.selectPillText}>Tutti</Text>
+                <Text style={styles.breadActionText}>Tutti</Text>
               </Pressable>
               <Pressable
                 onPress={() => {
                   haptics.tap();
                   clearSelection();
                 }}
-                style={({ pressed }) => [styles.selectPill, pressed && styles.selectPillPressed]}
+                style={({ pressed }) => [styles.breadAction, pressed && styles.btnPressedOpacity]}
                 accessibilityLabel="Annulla selezione"
               >
-                <Text style={styles.selectPillText}>Annulla</Text>
+                <Text style={styles.breadActionTextMuto}>Annulla</Text>
               </Pressable>
             </>
           )}
-        </View>
-      )}
-
-      {step !== 'anno' && (
-        <View style={styles.breadcrumb}>
-          <Text style={styles.crumbText}>{percorsoBello} · v4.7</Text>
         </View>
       )}
 
@@ -1189,54 +1219,139 @@ export default function ArchivioScreen() {
           style={styles.list}
           ListHeaderComponent={
             <View style={styles.testataLista}>
+              {/* Hero blu notte: scelta anno o riepilogo esercizio (come l'app v4) */}
               {step === 'anno' && (
                 <Entrata>
-                  <Card style={styles.heroCard} padded={false}>
-                    <View style={styles.heroAurora1} pointerEvents="none" />
-                    <View style={styles.heroAurora2} pointerEvents="none" />
-                    <View style={styles.heroInner}>
-                      <Text style={styles.heroOverline}>{`Archivio v4.7 · ${dataDiOggi()}`}</Text>
-                      <Text style={styles.heroTitle}>
-                        Benvenuto <Text style={styles.heroWave}>👋</Text>
-                      </Text>
-                      <Text style={styles.heroSubtitle}>
-                        {nomeBello
-                          ? `Qui trovi l'archivio di ${nomeBello}`
-                          : 'Qui trovi tutti i documenti del portale'}
-                      </Text>
-                      <View style={styles.heroChips}>
-                        <View style={styles.heroChip}>
-                          <Text style={styles.heroChipText}>
-                            📁 {anni.length} {anni.length === 1 ? 'anno' : 'anni'} di archivio
-                          </Text>
+                  <View style={styles.heroNavy}>
+                    <Svg style={StyleSheet.absoluteFill}>
+                      <Defs>
+                        <LinearGradient id="archHeroAnni" x1="0" y1="0" x2="1" y2="1">
+                          <Stop offset="0" stopColor={NAVY_NOTTE} />
+                          <Stop offset="0.55" stopColor={NAVY_PRIMARIO} />
+                          <Stop offset="1" stopColor={NAVY_QUOTA} />
+                        </LinearGradient>
+                      </Defs>
+                      <Rect width="100%" height="100%" fill="url(#archHeroAnni)" />
+                    </Svg>
+                    <View style={styles.heroNavyInner}>
+                      <View style={styles.heroNavyTopRow}>
+                        <View style={styles.heroGoldChip}>
+                          <View style={styles.heroGoldDot} />
+                          <Text style={styles.heroGoldChipText}>PORTALE PFC · v4.11</Text>
                         </View>
-                        {lastLoad && (
-                          <View style={styles.heroChip}>
-                            <Text style={styles.heroChipText}>✓ Aggiornato alle {oraDi(lastLoad)}</Text>
-                          </View>
-                        )}
+                        <Text style={styles.heroCount}>
+                          {anni.length} {anni.length === 1 ? 'esercizio' : 'esercizi'}
+                        </Text>
                       </View>
-                      <Text style={styles.heroHint}>Trascina in basso per aggiornare l'archivio</Text>
+                      <View>
+                        <Text style={styles.heroNavyTitle}>Archivio</Text>
+                        <Text style={styles.heroNavySub}>
+                          {nomeBello
+                            ? `Tutti i documenti di ${nomeBello}`
+                            : 'Tutti i documenti del portale'}
+                        </Text>
+                        <Text style={styles.heroNavyDesc}>
+                          Consulta e scarica i documenti organizzati per anno e cartella.
+                        </Text>
+                      </View>
+                      <Text style={styles.heroHintLight}>{`${dataDiOggi()} · Trascina in basso per aggiornare`}</Text>
                     </View>
-                  </Card>
+                  </View>
+                </Entrata>
+              )}
+              {step === 'cartella' && (
+                <Entrata>
+                  <View style={styles.heroNavy}>
+                    <Svg style={StyleSheet.absoluteFill}>
+                      <Defs>
+                        <LinearGradient id="archHeroAnno" x1="0" y1="0" x2="1" y2="1">
+                          <Stop offset="0" stopColor={NAVY_NOTTE} />
+                          <Stop offset="0.55" stopColor={NAVY_PRIMARIO} />
+                          <Stop offset="1" stopColor={NAVY_QUOTA} />
+                        </LinearGradient>
+                      </Defs>
+                      <Rect width="100%" height="100%" fill="url(#archHeroAnno)" />
+                    </Svg>
+                    <View style={styles.heroNavyInner}>
+                      <View style={styles.heroNavyTopRow}>
+                        <View style={styles.heroGoldChip}>
+                          <View style={styles.heroGoldDot} />
+                          <Text style={styles.heroGoldChipText}>ESERCIZIO {anno}</Text>
+                        </View>
+                        <Text style={styles.heroCount}>{cartelle.length} sezioni</Text>
+                      </View>
+                      <View>
+                        <Text style={styles.heroNavyTitle}>Archivio {anno}</Text>
+                        <Text style={styles.heroNavySub}>Tutti i documenti archiviati per l'anno</Text>
+                        <Text style={styles.heroNavyDesc}>
+                          Consulta e scarica i documenti fiscali e societari organizzati per cartella.
+                        </Text>
+                      </View>
+                      {(() => {
+                        // Pillola oro "Documenti Nuovi" (come nell'app v4):
+                        // apre la prima cartella che ha documenti nuovi.
+                        const totalNuovi = cartelle.reduce(
+                          (somma, c) => somma + (campoNumero(c, 'nuovi', 'nNuovi') ?? 0),
+                          0,
+                        );
+                        const targetCartella =
+                          cartelle.find((c) => (campoNumero(c, 'nuovi', 'nNuovi') ?? 0) > 0) ?? cartelle[0];
+                        if (totalNuovi <= 0 || !targetCartella) return null;
+                        return (
+                          <Pressable
+                            onPress={() => {
+                              haptics.tap();
+                              setCartella(targetCartella.nome);
+                            }}
+                            style={({ pressed }) => [styles.heroNuoviPill, pressed && styles.btnPressedOpacity]}
+                            accessibilityLabel="Apri cartella con documenti nuovi"
+                          >
+                            <Ionicons name="sparkles" size={15} color={NAVY_NOTTE} />
+                            <Text style={styles.heroNuoviText}>Documenti Nuovi ({totalNuovi})</Text>
+                            <Ionicons name="arrow-forward" size={13} color={NAVY_NOTTE} />
+                          </Pressable>
+                        );
+                      })()}
+                      <Text style={styles.heroHintLight}>
+                        {lastLoad ? `Aggiornato alle ${oraDi(lastLoad)} · trascina per aggiornare` : 'Trascina in basso per aggiornare'}
+                      </Text>
+                    </View>
+                  </View>
                 </Entrata>
               )}
               <Entrata delay={90}>
                 <ScalablePress onPress={apriRicerca} style={styles.searchBar} accessibilityLabel="Apri ricerca">
-                  <View style={styles.searchIconBox}>
-                    <Text style={styles.searchIconBoxText}>🔍</Text>
-                  </View>
-                  <Text style={styles.searchBarText}>Cerca nel portale...</Text>
+                  <Ionicons name="search" size={19} color={colors.accentDark} />
+                  <Text style={styles.searchBarText}>Cerca per nome, data o tipo...</Text>
                 </ScalablePress>
               </Entrata>
-              {step === 'anno' && !loading && anni.length > 0 && (
-                <Text style={styles.sectionLabel}>Sfoglia per anno</Text>
+              {/* Selettore anni a chip scorrevoli (come i FilterChip dell'app v4) */}
+              {!loading && anni.length > 0 && (
+                <ScrollView
+                  horizontal
+                  showsHorizontalScrollIndicator={false}
+                  contentContainerStyle={styles.chipsRow}
+                >
+                  {anni.map((a) => (
+                    <Pressable
+                      key={a}
+                      onPress={() => {
+                        haptics.tap();
+                        if (step !== 'anno') setCartella(null);
+                        setAnno(a);
+                      }}
+                      style={[styles.chip, a === anno && styles.chipSelected]}
+                      accessibilityLabel={`Anno ${a}`}
+                    >
+                      {a === anno && <View style={styles.chipDot} />}
+                      <Text style={[styles.chipText, a === anno && styles.chipTextSelected]}>{a}</Text>
+                    </Pressable>
+                  ))}
+                </ScrollView>
               )}
             </View>
           }
           contentContainerStyle={styles.listContent}
-          numColumns={numColumns}
-          columnWrapperStyle={numColumns > 1 ? styles.gridRow : undefined}
           data={loading && !refreshing ? [] : items}
           keyExtractor={(item): string =>
             item.kind === 'file' ? item.file.key : `${item.kind}:${item.nome}`
@@ -1252,31 +1367,36 @@ export default function ArchivioScreen() {
           }
           renderItem={({ item, index }) => {
             if (item.kind === 'anno') {
+              // Riga anno in stile CartellaCard (l'app v4 sceglie l'anno dai chip)
               return (
-                <Entrata delay={Math.min(160 + index * 60, 700)} style={styles.yearCell}>
+                <Entrata delay={Math.min(120 + index * 60, 500)}>
                   <ScalablePress
                     onPress={() => {
                       haptics.tap();
                       setAnno(item.nome);
                     }}
                   >
-                    <Card style={styles.yearCard} padded={false}>
-                      <View style={styles.yearCardInner}>
-                        <View style={styles.yearIconBox}>
-                          <Text style={styles.yearIconBoxText}>📁</Text>
+                    <Card style={styles.folderCard} padded={false}>
+                      <View style={styles.folderRowInner}>
+                        <View style={styles.folderIconBox}>
+                          <Ionicons name="folder" size={24} color={colors.primary} />
                         </View>
-                        <Text style={styles.yearCardTitle}>{item.nome}</Text>
-                        {(nuoviAnno[item.nome] ?? 0) > 0 && (
-                          <View style={styles.nuoviChip}>
-                            <View style={styles.nuoviPallino} />
-                            <Text style={styles.nuoviChipText}>
-                              {nuoviAnno[item.nome]} {nuoviAnno[item.nome] === 1 ? 'nuovo' : 'nuovi'}
-                            </Text>
+                        <View style={styles.rowText}>
+                          <Text style={styles.folderName} numberOfLines={1}>
+                            {item.nome}
+                          </Text>
+                          <View style={styles.folderMetaRow}>
+                            <Text style={styles.rowSubtitle}>Apri l'archivio</Text>
+                            {(nuoviAnno[item.nome] ?? 0) > 0 && (
+                              <Badge
+                                label={`${nuoviAnno[item.nome]} ${nuoviAnno[item.nome] === 1 ? 'nuovo' : 'nuovi'}`}
+                                variant="success"
+                              />
+                            )}
                           </View>
-                        )}
-                        <View style={styles.yearCardFoot}>
-                          <Text style={styles.yearCardSub}>Apri</Text>
-                          <Text style={styles.yearCardArrow}>›</Text>
+                        </View>
+                        <View style={styles.chevronCircle}>
+                          <Ionicons name="chevron-forward" size={17} color={colors.textSecondary} />
                         </View>
                       </View>
                     </Card>
@@ -1285,40 +1405,49 @@ export default function ArchivioScreen() {
               );
             }
             if (item.kind === 'cartella' || item.kind === 'sottocartella') {
-              const subparts = [
-                item.count != null ? `${item.count} file` : null,
-                item.nuovi ? `${item.nuovi} ${item.nuovi === 1 ? 'nuovo' : 'nuovi'}` : null,
-              ].filter(Boolean);
+              // CartellaCard dell'app v4: box gradiente, conteggio, badge nuovo, freccia in cerchio
               return (
-                <Pressable
-                  onPress={() => {
-                    haptics.tap();
-                    if (item.kind === 'cartella') setCartella(item.nome);
-                    else setCartella(`${cartella}/${item.nome}`);
-                  }}
-                >
-                  {({ pressed }) => (
-                    <Card style={[styles.row, pressed && styles.rowPressed]}>
-                      <View style={[styles.folderIcon, { backgroundColor: colors.accentSoft }]}>
-                        <Text style={styles.folderIconText}>📁</Text>
+                <Entrata delay={Math.min(120 + index * 40, 400)}>
+                  <ScalablePress
+                    onPress={() => {
+                      haptics.tap();
+                      if (item.kind === 'cartella') setCartella(item.nome);
+                      else setCartella(`${cartella}/${item.nome}`);
+                    }}
+                  >
+                    <Card style={styles.folderCard} padded={false}>
+                      <View style={styles.folderRowInner}>
+                        <View style={styles.folderIconBox}>
+                          <Ionicons name="folder" size={24} color={colors.primary} />
+                        </View>
+                        <View style={styles.rowText}>
+                          <Text style={styles.folderName} numberOfLines={1}>
+                            {item.nome}
+                          </Text>
+                          <View style={styles.folderMetaRow}>
+                            <Text style={styles.rowSubtitle}>
+                              {item.count != null ? `${item.count} documenti` : 'Cartella'}
+                            </Text>
+                            {item.nuovi ? (
+                              <Badge
+                                label={`${item.nuovi} ${item.nuovi === 1 ? 'nuovo' : 'nuovi'}`}
+                                variant="success"
+                              />
+                            ) : null}
+                          </View>
+                        </View>
+                        <View style={styles.chevronCircle}>
+                          <Ionicons name="chevron-forward" size={17} color={colors.textSecondary} />
+                        </View>
                       </View>
-                      <View style={styles.rowText}>
-                        <Text style={styles.rowTitle} numberOfLines={2}>
-                          {item.nome}
-                        </Text>
-                        {subparts.length > 0 && <Text style={styles.rowSubtitle}>{subparts.join(' · ')}</Text>}
-                      </View>
-                      {item.nuovi ? (
-                        <Badge label={`${item.nuovi} ${item.nuovi === 1 ? 'nuovo' : 'nuovi'}`} variant="danger" />
-                      ) : null}
-                      <Text style={styles.chevron}>›</Text>
                     </Card>
-                  )}
-                </Pressable>
+                  </ScalablePress>
+                </Entrata>
               );
             }
             const f = item.file;
             const isSelected = selected.has(f.key);
+            const stato = f.stato ? STATO_BADGE[f.stato] : null;
             return (
               <Pressable
                 onPress={() => {
@@ -1339,7 +1468,7 @@ export default function ArchivioScreen() {
               >
                 {({ pressed }) => (
                   <Card
-                    style={[styles.row, pressed && styles.rowPressed, selectMode && isSelected && styles.rowSelected]}
+                    style={[styles.fileRow, pressed && styles.rowPressed, selectMode && isSelected && styles.rowSelected]}
                   >
                     {selectMode ? (
                       <View style={styles.checkboxWrap}>
@@ -1348,28 +1477,51 @@ export default function ArchivioScreen() {
                         </View>
                       </View>
                     ) : (
-                      <View style={styles.fileIconWrap}>
-                        <FileIcon filename={f.nome} size={40} />
-                        {f.stato === 'nuovo' && (
-                          <View style={[styles.fileIconMini, { backgroundColor: colors.danger }]} />
-                        )}
-                        {(f.stato === 'scaricato' || f.stato === 'preferito') && (
-                          <View style={[styles.fileIconMini, styles.fileIconMiniOk]}>
-                            <Text style={styles.fileIconMiniText}>✓</Text>
-                          </View>
-                        )}
-                      </View>
+                      <FileIcon filename={f.nome} size={44} />
                     )}
                     <View style={styles.rowText}>
-                      <Text style={styles.rowTitle} numberOfLines={1}>
+                      <Text style={styles.fileName} numberOfLines={1}>
                         {f.nome}
                       </Text>
                       <Text style={styles.rowSubtitle} numberOfLines={1}>
                         {f.sizeStr}
-                        {f.lastModified ? ` · ${formatDate(f.lastModified)}` : ''}
+                        {f.lastModified ? `  ·  ${formatDate(f.lastModified)}` : ''}
                       </Text>
+                      {!selectMode && (
+                        <View style={styles.fileBadgeRow}>
+                          {stato && f.stato !== 'preferito' && (
+                            <Badge label={stato.label} variant={stato.variant} />
+                          )}
+                          {f.isPreferito && <Badge label="★ PREFERITO" variant="accent" />}
+                        </View>
+                      )}
                     </View>
-                    {!selectMode && <Text style={styles.chevron}>›</Text>}
+                    {!selectMode ? (
+                      <View style={styles.quickActions} pointerEvents="box-none">
+                        <Pressable
+                          onPress={() => handleTogglePreferito(f)}
+                          style={styles.quickBtn}
+                          accessibilityLabel="Preferito"
+                        >
+                          <Ionicons
+                            name={f.isPreferito ? 'star' : 'star-outline'}
+                            size={19}
+                            color={f.isPreferito ? colors.accentDark : colors.textSecondary}
+                          />
+                        </Pressable>
+                        <Pressable
+                          onPress={() => handleDownload(f)}
+                          style={styles.quickBtn}
+                          accessibilityLabel="Scarica"
+                        >
+                          <Ionicons name="download-outline" size={19} color={colors.textSecondary} />
+                        </Pressable>
+                      </View>
+                    ) : (
+                      <View style={styles.chevronCircle}>
+                        <Ionicons name="chevron-forward" size={17} color={colors.textSecondary} />
+                      </View>
+                    )}
                   </Card>
                 )}
               </Pressable>
@@ -1378,11 +1530,11 @@ export default function ArchivioScreen() {
           ListEmptyComponent={
             loading && !refreshing ? (
               <View style={styles.skeletonInList}>
-                <SkeletonList count={5} height={64} />
+                <SkeletonList count={5} height={76} />
               </View>
             ) : (
               <EmptyState
-                icon={<Text style={styles.emptyIcon}>📂</Text>}
+                icon={<Ionicons name="folder-open-outline" size={36} color={colors.primary} />}
                 title="Nessun documento trovato"
                 subtitle={
                   step === 'anno'
@@ -1409,15 +1561,17 @@ export default function ArchivioScreen() {
           <View style={styles.bulkActions}>
             <Pressable
               onPress={handleBulkPreferiti}
-              style={({ pressed }) => [styles.bulkBtn, pressed && { opacity: 0.7 }]}
+              style={({ pressed }) => [styles.bulkBtnGhost, pressed && { opacity: 0.7 }]}
             >
-              <Text style={styles.bulkBtnText}>★ Preferiti</Text>
+              <Ionicons name="star" size={14} color="#FFFFFF" />
+              <Text style={styles.bulkBtnGhostText}>Preferiti</Text>
             </Pressable>
             <Pressable
               onPress={handleBulkDownload}
-              style={({ pressed }) => [styles.bulkBtn, styles.bulkBtnPrimary, pressed && { opacity: 0.85 }]}
+              style={({ pressed }) => [styles.bulkBtnGold, pressed && { opacity: 0.85 }]}
             >
-              <Text style={styles.bulkBtnPrimaryText}>⬇ Scarica {selected.size} file</Text>
+              <Ionicons name="download" size={15} color={NAVY_NOTTE} />
+              <Text style={styles.bulkBtnGoldText}>Scarica {selected.size}</Text>
             </Pressable>
           </View>
         </View>
@@ -1498,9 +1652,9 @@ const makeStyles = (colors: ThemeColors) =>
       flexDirection: 'row',
       alignItems: 'center',
       gap: spacing.md,
-      paddingHorizontal: spacing.md,
-      height: 56,
-      borderRadius: radius.full,
+      paddingHorizontal: 16,
+      height: 52,
+      borderRadius: 16,
       backgroundColor: colors.surface,
       borderWidth: 1,
       borderColor: colors.border,
@@ -1508,7 +1662,58 @@ const makeStyles = (colors: ThemeColors) =>
     },
     searchIconBox: { width: 38, height: 38, borderRadius: radius.md, alignItems: 'center', justifyContent: 'center', backgroundColor: colors.accentSoft },
     searchIconBoxText: { fontSize: 16 },
-    searchBarText: { ...typography.body, color: colors.textTertiary },
+    searchBarText: { ...typography.body, fontSize: 13, color: colors.textSecondary },
+
+    // v4.11 — Hero blu notte (Smart Year Overview Banner dell'app v4)
+    heroNavy: { borderRadius: 20, overflow: 'hidden', borderWidth: 1, borderColor: 'rgba(212, 175, 55, 0.35)', backgroundColor: NAVY_NOTTE, ...shadow.md },
+    heroNavyInner: { padding: spacing.xl, gap: 12 },
+    heroNavyTopRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+    heroGoldChip: { flexDirection: 'row', alignItems: 'center', gap: 5, backgroundColor: 'rgba(212, 175, 55, 0.25)', borderRadius: 8, borderWidth: 1, borderColor: 'rgba(212, 175, 55, 0.6)', paddingHorizontal: 8, paddingVertical: 4 },
+    heroGoldDot: { width: 6, height: 6, borderRadius: 3, backgroundColor: ORO },
+    heroGoldChipText: { color: ORO_CHIARO, fontSize: 10, fontWeight: '900', letterSpacing: 0.8 },
+    heroCount: { color: 'rgba(255,255,255,0.75)', fontSize: 11, fontWeight: '500' },
+    heroNavyTitle: { color: '#FFFFFF', fontSize: 22, fontWeight: '800', letterSpacing: -0.3 },
+    heroNavySub: { color: '#FFFFFF', fontSize: 14, fontWeight: '600', marginTop: 2 },
+    heroNavyDesc: { color: 'rgba(255,255,255,0.85)', fontSize: 12, marginTop: 3, lineHeight: 17 },
+    heroHintLight: { color: 'rgba(255,255,255,0.7)', fontSize: 11, marginTop: 2 },
+    heroNuoviPill: { flexDirection: 'row', alignItems: 'center', gap: 6, alignSelf: 'flex-start', backgroundColor: ORO, borderRadius: 999, paddingHorizontal: 14, paddingVertical: 7, marginTop: 2 },
+    heroNuoviText: { color: NAVY_NOTTE, fontSize: 12, fontWeight: '700' },
+
+    // v4.11 — Chip anni (FilterChip dell'app v4)
+    chipsRow: { flexDirection: 'row', alignItems: 'center', gap: 8, paddingVertical: 2, paddingHorizontal: 2 },
+    chip: { flexDirection: 'row', alignItems: 'center', gap: 5, backgroundColor: colors.surfaceAlt, borderRadius: 999, paddingHorizontal: 14, height: 34, borderWidth: 1, borderColor: 'transparent' },
+    chipSelected: { backgroundColor: colors.primary, borderColor: 'rgba(212, 175, 55, 0.6)' },
+    chipDot: { width: 6, height: 6, borderRadius: 3, backgroundColor: ORO },
+    chipText: { fontSize: 13, fontWeight: '500', color: colors.textSecondary },
+    chipTextSelected: { color: '#FFFFFF', fontWeight: '700' },
+
+    // v4.11 — Breadcrumb con freccia in cerchio
+    breadSurface: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingHorizontal: spacing.lg, paddingVertical: 10, backgroundColor: colors.surface, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: colors.border },
+    breadBack: { width: 34, height: 34, borderRadius: 17, backgroundColor: colors.surfaceAlt, alignItems: 'center', justifyContent: 'center' },
+    breadText: { flexShrink: 1 },
+    breadOver: { fontSize: 11, fontWeight: '500', color: colors.textSecondary },
+    breadTitle: { fontSize: 15, fontWeight: '700', color: colors.textPrimary },
+    breadAction: { paddingHorizontal: 10, height: 34, alignItems: 'center', justifyContent: 'center' },
+    breadActionText: { fontSize: 13, fontWeight: '700', color: colors.primary },
+    breadActionTextMuto: { fontSize: 13, fontWeight: '500', color: colors.textSecondary },
+
+    // v4.11 — Vista ricerca dedicata (campo come OutlinedTextField v4)
+    searchBackCircle: { width: 36, height: 36, borderRadius: 18, backgroundColor: colors.surfaceAlt, alignItems: 'center', justifyContent: 'center' },
+    searchField: { flex: 1, flexDirection: 'row', alignItems: 'center', backgroundColor: colors.surfaceAlt, borderRadius: 16, borderWidth: 1, borderColor: colors.border, paddingHorizontal: 12, height: 46, gap: 8 },
+
+    // v4.11 — Cartelle e file in stile CartellaCard/DocumentFileRow
+    folderCard: { borderRadius: 18 },
+    folderRowInner: { flexDirection: 'row', alignItems: 'center', gap: 14, padding: 16 },
+    folderIconBox: { width: 48, height: 48, borderRadius: 14, backgroundColor: colors.accentSoft, borderWidth: 1, borderColor: 'rgba(212, 175, 55, 0.3)', alignItems: 'center', justifyContent: 'center' },
+    folderName: { fontSize: 15, fontWeight: '700', color: colors.textPrimary },
+    folderMetaRow: { flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 4 },
+    chevronCircle: { width: 32, height: 32, borderRadius: 16, backgroundColor: colors.surfaceAlt, alignItems: 'center', justifyContent: 'center' },
+    fileRow: { flexDirection: 'row', alignItems: 'center', gap: 12, minHeight: 72, borderRadius: 18, paddingHorizontal: 14, paddingVertical: 12 },
+    fileName: { fontSize: 14.5, fontWeight: '600', color: colors.textPrimary },
+    fileBadgeRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginTop: 5 },
+    quickActions: { flexDirection: 'row', alignItems: 'center', gap: 2 },
+    quickBtn: { width: 36, height: 36, borderRadius: 10, alignItems: 'center', justifyContent: 'center' },
+    btnPressedOpacity: { opacity: 0.75 },
 
     // Intestazione sezione anni
     sectionLabel: { ...typography.labelSmall, color: colors.textTertiary, letterSpacing: 1.2 },
@@ -1542,13 +1747,13 @@ const makeStyles = (colors: ThemeColors) =>
     checkbox: { width: 22, height: 22, borderRadius: 6, borderWidth: 2, borderColor: colors.borderStrong, alignItems: 'center', justifyContent: 'center' },
     checkboxChecked: { backgroundColor: colors.accent, borderColor: colors.accent },
     checkboxText: { color: colors.textInverse, fontSize: 14, fontWeight: '700' },
-    bulkBar: { position: 'absolute', bottom: 0, left: 0, right: 0, backgroundColor: colors.surface, borderTopWidth: 1, borderTopColor: colors.border, padding: spacing.lg, paddingBottom: spacing.xl, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: spacing.md, shadowColor: colors.primary, shadowOffset: { width: 0, height: -2 }, shadowOpacity: 0.05, shadowRadius: 8, elevation: 4 },
-    bulkCount: { ...typography.body, color: colors.textPrimary, fontWeight: '700' },
+    bulkBar: { position: 'absolute', bottom: 0, left: 0, right: 0, backgroundColor: colors.primary, padding: spacing.lg, paddingBottom: spacing.xl, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: spacing.md, ...shadow.lg },
+    bulkCount: { ...typography.body, color: '#FFFFFF', fontWeight: '700' },
     bulkActions: { flexDirection: 'row', gap: spacing.sm },
-    bulkBtn: { paddingHorizontal: spacing.md, paddingVertical: spacing.md, borderRadius: radius.md, backgroundColor: colors.surfaceAlt },
-    bulkBtnText: { ...typography.bodySmall, color: colors.textPrimary, fontWeight: '600' },
-    bulkBtnPrimary: { backgroundColor: colors.accent },
-    bulkBtnPrimaryText: { ...typography.bodySmall, color: colors.textInverse, fontWeight: '700' },
+    bulkBtnGhost: { flexDirection: 'row', alignItems: 'center', gap: 5, borderRadius: 999, borderWidth: 1, borderColor: 'rgba(255,255,255,0.5)', paddingHorizontal: 14, paddingVertical: 10 },
+    bulkBtnGhostText: { color: '#FFFFFF', fontSize: 13, fontWeight: '700' },
+    bulkBtnGold: { flexDirection: 'row', alignItems: 'center', gap: 5, borderRadius: 999, backgroundColor: ORO, paddingHorizontal: 14, paddingVertical: 10 },
+    bulkBtnGoldText: { color: NAVY_NOTTE, fontSize: 13, fontWeight: '700' },
 
     // Dettaglio file (v3)
     detailWrap: { paddingHorizontal: spacing.xl, paddingTop: spacing.sm, gap: spacing.lg },

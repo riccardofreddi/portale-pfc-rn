@@ -1,5 +1,5 @@
 ﻿/**
- * EmptyState — placeholder per liste vuote.
+ * EmptyState — placeholder per liste vuote (stile EmptyStateView dell'app v4).
  */
 import React from 'react';
 import { StyleSheet, Text, View } from 'react-native';
@@ -34,16 +34,26 @@ const makeStyles = (colors: ThemeColors) =>
       gap: spacing.sm,
     },
     iconWrap: {
+      width: 76,
+      height: 76,
+      borderRadius: 22,
+      backgroundColor: colors.accentSoft,
+      borderWidth: 1,
+      borderColor: 'rgba(212, 175, 55, 0.3)',
+      alignItems: 'center',
+      justifyContent: 'center',
       marginBottom: spacing.sm,
-      opacity: 0.4,
     },
     title: {
       ...typography.body,
-      color: colors.textTertiary,
-      fontWeight: '500',
+      color: colors.textPrimary,
+      fontWeight: '700',
+      textAlign: 'center',
     },
     subtitle: {
       ...typography.caption,
-      color: colors.textTertiary,
+      color: colors.textSecondary,
+      textAlign: 'center',
+      lineHeight: 19,
     },
   });

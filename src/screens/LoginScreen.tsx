@@ -1,5 +1,9 @@
-﻿/**
+/**
  * Schermata di Login.
+ *
+ * Grafica replicata dall'app Android v4: bagliore blu notte in cima,
+ * monogramma "PF" con anello oro, titolo PORTALE, card bianca arrotondata,
+ * campi con icone e badge "connessione crittografata".
  */
 import React, { useState } from 'react';
 import {
@@ -11,6 +15,8 @@ import {
   View,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { Ionicons } from '@expo/vector-icons';
+import Svg, { Defs, Rect, LinearGradient, Stop } from 'react-native-svg';
 import { Button } from '@/components/Button';
 import { Input } from '@/components/Input';
 import { toast } from '@/components/Toaster';
@@ -19,6 +25,12 @@ import { api } from '@/api/client';
 import { useAppStore } from '@/store/auth';
 import { registerPushForCurrentUser } from '@/lib/push';
 import { shadow, spacing, typography, useColors, type ThemeColors } from '@/theme';
+
+// Colori firma del brand (validi in entrambi i temi, come nell'app v4)
+const NAVY_NOTTE = '#0A1128';
+const NAVY_PRIMARIO = '#003566';
+const ORO = '#D4AF37';
+const ORO_CHIARO = '#F7E7B4';
 
 export default function LoginScreen() {
   const colors = useColors();
@@ -67,6 +79,20 @@ export default function LoginScreen() {
 
   return (
     <SafeAreaView style={styles.safe} edges={['top', 'bottom']}>
+      {/* Bagliore blu notte in cima (gradiente come nell'app v4) */}
+      <View pointerEvents="none" style={styles.glow}>
+        <Svg style={StyleSheet.absoluteFill}>
+          <Defs>
+            <LinearGradient id="glow" x1="0" y1="0" x2="0" y2="1">
+              <Stop offset="0" stopColor={NAVY_NOTTE} stopOpacity="1" />
+              <Stop offset="0.55" stopColor={NAVY_PRIMARIO} stopOpacity="0.8" />
+              <Stop offset="1" stopColor={NAVY_PRIMARIO} stopOpacity="0" />
+            </LinearGradient>
+          </Defs>
+          <Rect width="100%" height="100%" fill="url(#glow)" />
+        </Svg>
+      </View>
+
       <KeyboardAvoidingView
         style={styles.flex}
         behavior={Platform.OS === 'ios' ? 'padding' : undefined}
@@ -76,14 +102,21 @@ export default function LoginScreen() {
           keyboardShouldPersistTaps="handled"
         >
           <View style={styles.hero}>
-            <View style={styles.logoWrap}>
-              <Text style={styles.logoText}>PF</Text>
+            {/* Monogramma PF: anello oro + cerchio blu notte */}
+            <View style={styles.logoRing}>
+              <View style={styles.logoInner}>
+                <Text style={styles.logoText}>PF</Text>
+              </View>
             </View>
-            <Text style={styles.title}>Portale Documenti</Text>
-            <Text style={styles.subtitle}>Accesso riservato ai clienti</Text>
+            <Text style={styles.title}>PORTALE</Text>
+            <Text style={styles.subtitle}>Accesso Archivio</Text>
           </View>
 
           <View style={styles.formCard}>
+            <Text style={styles.cardTitle}>Accesso Archivio</Text>
+            <Text style={styles.cardDescription}>
+              Inserisci le tue credenziali per consultare l&apos;archivio.
+            </Text>
             <Input
               label="Username"
               value={username}
@@ -91,6 +124,9 @@ export default function LoginScreen() {
               placeholder="Il tuo username"
               autoCapitalize="none"
               autoCorrect={false}
+              leftIcon={
+                <Ionicons name="person-outline" size={20} color={NAVY_PRIMARIO} />
+              }
             />
             <Input
               label="Password"
@@ -98,18 +134,33 @@ export default function LoginScreen() {
               onChangeText={setPassword}
               placeholder="La tua password"
               secureTextEntry
+              leftIcon={
+                <Ionicons name="lock-closed-outline" size={20} color={NAVY_PRIMARIO} />
+              }
             />
             <Button
-              label="Accedi"
+              label="Accedi all'Archivio"
               onPress={handleLogin}
               loading={loading}
               disabled={!username || !password}
+              icon={<Ionicons name="arrow-forward" size={18} color={ORO_CHIARO} />}
             />
           </View>
 
-          <Text style={styles.footer}>
-            Portale sicuro e riservato · Tutti i diritti riservati
-          </Text>
+          {/* Badge fiducia: connessione crittografata */}
+          <View style={styles.trustBadge}>
+            <View style={styles.trustIconWrap}>
+              <Ionicons name="shield-outline" size={18} color={colors.success} />
+            </View>
+            <View style={styles.flex}>
+              <Text style={styles.trustTitle}>
+                Connessione Crittografata TLS 1.3 / AES-256
+              </Text>
+              <Text style={styles.trustSubtitle}>Archivio riservato e protetto</Text>
+            </View>
+          </View>
+
+          <Text style={styles.footer}>Archivio riservato e protetto</Text>
         </ScrollView>
       </KeyboardAvoidingView>
     </SafeAreaView>
@@ -120,10 +171,15 @@ const makeStyles = (colors: ThemeColors) =>
   StyleSheet.create({
     safe: {
       flex: 1,
-      backgroundColor: colors.primary,
+      backgroundColor: colors.background,
     },
     flex: {
       flex: 1,
+    },
+    glow: {
+      ...StyleSheet.absoluteFillObject,
+      height: 300,
+      backgroundColor: 'transparent',
     },
     scroll: {
       flexGrow: 1,
@@ -133,37 +189,92 @@ const makeStyles = (colors: ThemeColors) =>
     },
     hero: {
       alignItems: 'center',
-      marginBottom: spacing.xxxl,
+      marginBottom: spacing.xxl,
     },
-    logoWrap: {
-      width: 72,
-      height: 72,
-      borderRadius: 20,
-      backgroundColor: colors.accent,
+    logoRing: {
+      width: 96,
+      height: 96,
+      borderRadius: 48,
+      backgroundColor: ORO,
+      padding: 3,
       alignItems: 'center',
       justifyContent: 'center',
       marginBottom: spacing.lg,
     },
+    logoInner: {
+      flex: 1,
+      alignSelf: 'stretch',
+      borderRadius: 45,
+      backgroundColor: NAVY_NOTTE,
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
     logoText: {
       ...typography.h1,
-      color: colors.textInverse,
+      color: ORO_CHIARO,
       fontWeight: '800',
+      letterSpacing: 2,
     },
     title: {
       ...typography.h2,
-      color: colors.textInverse,
+      color: colors.textPrimary,
+      fontWeight: '800',
+      letterSpacing: 2.5,
       marginBottom: spacing.xs,
     },
     subtitle: {
-      ...typography.bodySmall,
-      color: colors.textTertiary,
+      ...typography.body,
+      color: ORO,
+      fontWeight: '600',
     },
     formCard: {
       backgroundColor: colors.surface,
-      borderRadius: 20,
+      borderRadius: 24,
       padding: spacing.xl,
       gap: spacing.lg,
+      borderWidth: StyleSheet.hairlineWidth,
+      borderColor: colors.border,
       ...shadow.lg,
+    },
+    cardTitle: {
+      ...typography.h4,
+      color: colors.textPrimary,
+      fontWeight: '700',
+    },
+    cardDescription: {
+      ...typography.bodySmall,
+      color: colors.textSecondary,
+      marginTop: -spacing.md,
+    },
+    trustBadge: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 10,
+      marginTop: spacing.lg,
+      backgroundColor: colors.surfaceAlt,
+      borderRadius: 14,
+      borderWidth: StyleSheet.hairlineWidth,
+      borderColor: colors.border,
+      paddingVertical: 10,
+      paddingHorizontal: 14,
+    },
+    trustIconWrap: {
+      width: 32,
+      height: 32,
+      borderRadius: 16,
+      backgroundColor: colors.successSoft,
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
+    trustTitle: {
+      ...typography.caption,
+      color: colors.textPrimary,
+      fontWeight: '700',
+    },
+    trustSubtitle: {
+      ...typography.caption,
+      color: colors.textSecondary,
+      fontSize: 11,
     },
     footer: {
       ...typography.caption,

@@ -1,12 +1,34 @@
-﻿/**
- * TopBar — header fisso con logo + badge notifiche + menu utente.
+/**
+ * TopBar — header fisso, replica ESATTA del PfcTopBar dell'app Android v4
+ * (commit eb34840, branding "Portale PF").
+ *
+ * - Monogramma "PF": quadrato 44 con bordo sfumato Midnight → GeoPrimary →
+ *   Sapphire e interno blu notte, testo ORO.
+ * - Titolo "Portale" (ExtraBold) + sottotitolo "Cliente: {nome}".
+ * - Campanella circolare: icona ORO quando ci sono notifiche (altrimenti
+ *   grigia), badge rosso con conteggio ("9+" oltre nove).
+ * - Avatar: anello ORO SFUMATO (oro → oro chiaro → bronzo) con interno blu
+ *   notte e iniziali BIANCHE.
+ * - Barra con ombra sottile, come la Surface con elevation dell'app v4.
+ *
+ * v4.11: la logica store (notifiche, pannello impostazioni) è IDENTICA.
  */
 import React from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { Ionicons } from '@expo/vector-icons';
+import Svg, { Defs, Rect, LinearGradient, Stop } from 'react-native-svg';
 import { useAppStore } from '@/store/auth';
 import { getInitials } from '@/lib/utils';
-import { spacing, typography, useColors, type ThemeColors } from '@/theme';
+import { useColors, type ThemeColors } from '@/theme';
+
+// Colori firma del brand (validi in entrambi i temi, come nell'app v4)
+const NAVY_NOTTE = '#0A1128';
+const NAVY_PRIMARIO = '#003566';
+const ZAFFIRO = '#1282A2';
+const ORO = '#D4AF37';
+const ORO_CHIARO = '#F7E7B4';
+const ORO_SCURO = '#996515';
 
 export function TopBar() {
   const colors = useColors();
@@ -17,30 +39,57 @@ export function TopBar() {
   const setShowNotifPanel = useAppStore((s) => s.setShowNotifPanel);
   const setSettingsOpen = useAppStore((s) => s.setSettingsOpen);
 
+  // Sottotitolo "Cliente: {nome}" come nell'app Android v4
+  const nomeCliente =
+    user?.name?.trim() || user?.username?.trim() || 'Cliente';
+  const iniziali = (user ? getInitials(user.name) : '?')
+    .slice(0, 2)
+    .toUpperCase();
+
   return (
     <SafeAreaView style={styles.safe} edges={['top']}>
       <View style={styles.container}>
+        {/* Gruppo brand: monogramma PF + titolo/sottotitolo */}
         <View style={styles.brand}>
-          <View style={styles.logo}>
-            <Text style={styles.logoText}>PF</Text>
+          <View style={styles.logoOuter}>
+            <Svg style={StyleSheet.absoluteFill}>
+              <Defs>
+                <LinearGradient id="pfMonoRing" x1="0" y1="0" x2="1" y2="1">
+                  <Stop offset="0" stopColor={NAVY_NOTTE} />
+                  <Stop offset="0.5" stopColor={NAVY_PRIMARIO} />
+                  <Stop offset="1" stopColor={ZAFFIRO} />
+                </LinearGradient>
+              </Defs>
+              <Rect width="100%" height="100%" fill="url(#pfMonoRing)" />
+            </Svg>
+            <View style={styles.logoInner}>
+              <Text style={styles.logoText}>PF</Text>
+            </View>
           </View>
-          <Text style={styles.brandName}>Portale PFC</Text>
+          <View style={styles.brandText}>
+            <Text style={styles.brandName}>Portale</Text>
+            <Text style={styles.brandSubtitle} numberOfLines={1}>
+              Cliente: {nomeCliente}
+            </Text>
+          </View>
         </View>
 
+        {/* Gruppo azioni: campanella + avatar */}
         <View style={styles.actions}>
           <Pressable
             onPress={() => setShowNotifPanel(true)}
-            style={({ pressed }) => [
-              styles.iconBtn,
-              pressed && styles.iconBtnPressed,
-            ]}
+            style={({ pressed }) => [styles.iconBtn, pressed && styles.pressed]}
             accessibilityLabel="Notifiche"
           >
-            <Text style={styles.bellIcon}>🔔</Text>
+            <Ionicons
+              name={nNotifiche > 0 ? 'notifications' : 'notifications-outline'}
+              size={22}
+              color={nNotifiche > 0 ? ORO : colors.textSecondary}
+            />
             {nNotifiche > 0 && (
               <View style={styles.badge}>
                 <Text style={styles.badgeText}>
-                  {nNotifiche > 99 ? '99+' : nNotifiche}
+                  {nNotifiche > 9 ? '9+' : nNotifiche}
                 </Text>
               </View>
             )}
@@ -48,15 +97,22 @@ export function TopBar() {
 
           <Pressable
             onPress={() => setSettingsOpen(true)}
-            style={({ pressed }) => [
-              styles.avatarBtn,
-              pressed && styles.iconBtnPressed,
-            ]}
+            style={({ pressed }) => [styles.avatarRing, pressed && styles.pressed]}
             accessibilityLabel="Menu utente"
           >
-            <Text style={styles.avatarText}>
-              {user ? getInitials(user.name) : '?'}
-            </Text>
+            <Svg style={StyleSheet.absoluteFill}>
+              <Defs>
+                <LinearGradient id="pfAvatarRing" x1="0" y1="0" x2="1" y2="1">
+                  <Stop offset="0" stopColor={ORO} />
+                  <Stop offset="0.5" stopColor={ORO_CHIARO} />
+                  <Stop offset="1" stopColor={ORO_SCURO} />
+                </LinearGradient>
+              </Defs>
+              <Rect width="100%" height="100%" fill="url(#pfAvatarRing)" />
+            </Svg>
+            <View style={styles.avatarInner}>
+              <Text style={styles.avatarText}>{iniziali}</Text>
+            </View>
           </Pressable>
         </View>
       </View>
@@ -67,61 +123,85 @@ export function TopBar() {
 const makeStyles = (colors: ThemeColors) =>
   StyleSheet.create({
     safe: {
-      backgroundColor: colors.primary,
+      backgroundColor: colors.surface,
     },
     container: {
       flexDirection: 'row',
       alignItems: 'center',
       justifyContent: 'space-between',
-      paddingHorizontal: spacing.lg,
-      paddingVertical: spacing.md,
-      minHeight: 56,
+      paddingHorizontal: 18,
+      paddingVertical: 12,
+      minHeight: 66,
+      backgroundColor: colors.surface,
+      borderBottomWidth: StyleSheet.hairlineWidth,
+      borderBottomColor: colors.border,
+      shadowColor: '#0A1128',
+      shadowOffset: { width: 0, height: 2 },
+      shadowOpacity: 0.06,
+      shadowRadius: 4,
+      elevation: 3,
     },
     brand: {
       flexDirection: 'row',
       alignItems: 'center',
-      gap: spacing.md,
+      gap: 14,
+      flexShrink: 1,
     },
-    logo: {
-      width: 32,
-      height: 32,
-      borderRadius: 8,
-      backgroundColor: 'rgba(255,255,255,0.15)',
+    logoOuter: {
+      width: 44,
+      height: 44,
+      borderRadius: 14,
+      overflow: 'hidden',
+    },
+    logoInner: {
+      flex: 1,
+      margin: 1.5,
+      borderRadius: 12.5,
+      backgroundColor: NAVY_NOTTE,
       alignItems: 'center',
       justifyContent: 'center',
     },
     logoText: {
-      ...typography.h4,
-      color: colors.textInverse,
-      fontWeight: '800',
+      color: ORO,
+      fontWeight: '900',
+      fontSize: 15,
+      letterSpacing: 1,
+    },
+    brandText: {
+      flexShrink: 1,
     },
     brandName: {
-      ...typography.h4,
-      color: colors.textInverse,
-      fontWeight: '700',
+      color: colors.textPrimary,
+      fontWeight: '800',
+      fontSize: 18,
+      letterSpacing: -0.3,
+    },
+    brandSubtitle: {
+      color: colors.textSecondary,
+      fontSize: 12,
+      fontWeight: '500',
+      marginTop: 1,
     },
     actions: {
       flexDirection: 'row',
       alignItems: 'center',
-      gap: spacing.xs,
+      gap: 10,
     },
     iconBtn: {
-      width: 44,
-      height: 44,
-      borderRadius: 12,
+      width: 42,
+      height: 42,
+      borderRadius: 21,
+      backgroundColor: colors.surfaceAlt,
       alignItems: 'center',
       justifyContent: 'center',
     },
-    iconBtnPressed: {
-      backgroundColor: 'rgba(255,255,255,0.15)',
-    },
-    bellIcon: {
-      fontSize: 18,
+    pressed: {
+      opacity: 0.7,
     },
     badge: {
       position: 'absolute',
-      top: 6,
-      right: 6,
+      top: 1,
+      right: -2,
       minWidth: 18,
       height: 18,
       borderRadius: 9,
@@ -131,20 +211,26 @@ const makeStyles = (colors: ThemeColors) =>
       paddingHorizontal: 4,
     },
     badgeText: {
-      color: colors.textInverse,
+      color: '#FFFFFF',
       fontSize: 10,
       fontWeight: '700',
     },
-    avatarBtn: {
-      width: 36,
-      height: 36,
-      borderRadius: 18,
-      backgroundColor: 'rgba(255,255,255,0.2)',
+    avatarRing: {
+      width: 42,
+      height: 42,
+      borderRadius: 21,
+      overflow: 'hidden',
+    },
+    avatarInner: {
+      flex: 1,
+      margin: 2,
+      borderRadius: 19,
+      backgroundColor: NAVY_NOTTE,
       alignItems: 'center',
       justifyContent: 'center',
     },
     avatarText: {
-      color: colors.textInverse,
+      color: '#FFFFFF',
       fontWeight: '700',
       fontSize: 13,
     },

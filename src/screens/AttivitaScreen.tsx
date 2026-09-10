@@ -1,5 +1,14 @@
 ﻿/**
- * Schermata Attività (audit log).
+ * Schermata Attività (registro audit).
+ *
+ * v4.11 — grafica replicata dall'app Android v4 (AttivitaScreen.kt):
+ * - Testata su superficie chiara: overline oro "REGISTRO ATTIVITÀ & AUDIT",
+ *   titolo "Tracciamento Operazioni" e descrizione.
+ * - Ogni attività è una card con CERCHIO icona colorato per tipo azione,
+ *   pillola etichetta colorata e timestamp allineato a destra.
+ * - Tolto il pulsante "Aggiorna": si usa il trascina-per-aggiornare.
+ * - Logica INTATTA: caricamento paginato (30 per pagina), "Carica altre
+ *   attività", trascina per aggiornare, gestione errori silenziosa.
  */
 import React, { useCallback, useEffect, useState } from 'react';
 import {
@@ -11,6 +20,7 @@ import {
   View,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { Ionicons } from '@expo/vector-icons';
 import { Card } from '@/components/Card';
 import { EmptyState } from '@/components/EmptyState';
 import { SkeletonList } from '@/components/Skeleton';
@@ -22,25 +32,26 @@ import { spacing, typography, useColors, type ThemeColors } from '@/theme';
 
 const PAGE_SIZE = 30;
 
+/** Icona + tinta per tipo di azione (mappa dell'AuditLogRow dell'app v4). */
 function getActionConfig(
   colors: ThemeColors,
-): Record<string, { label: string; icon: string; color: string }> {
+): Record<string, { label: string; icon: keyof typeof Ionicons.glyphMap; bg: string; fg: string }> {
   return {
-    DOWNLOAD_DOC: { label: 'Download documento', icon: '⬇', color: colors.success },
-    UPLOAD_CASSETTO: { label: 'Upload cassetto', icon: '⬆', color: colors.info },
-    LOGIN_SUCCESS: { label: 'Accesso effettuato', icon: '→', color: colors.success },
-    LOGIN_FAIL: { label: 'Tentativo di accesso', icon: '⚠', color: colors.danger },
-    LOGOUT: { label: 'Disconnessione', icon: '←', color: colors.textSecondary },
-    PREVIEW_DOC: { label: 'Anteprima documento', icon: '👁', color: colors.info },
-    TOGGLE_PREFERITO: { label: 'Preferito aggiornato', icon: '★', color: colors.warning },
-    UPLOAD_RISPOSTA: { label: 'Risposta inviata', icon: '💬', color: colors.info },
-    ARCHIVIA_MESSAGGIO: { label: 'Messaggio archiviato', icon: '📦', color: colors.textSecondary },
-    DEARCHIVIA_MESSAGGIO: { label: 'Messaggio ripristinato', icon: '↩', color: colors.textSecondary },
-    SEGNA_LETTI: { label: 'Messaggi letti', icon: '✓', color: colors.success },
-    DELETE_CASSETTO: { label: 'Eliminazione cassetto', icon: '🗑', color: colors.danger },
-    RENAME_CASSETTO: { label: 'Rinominato cassetto', icon: '✎', color: colors.warning },
-    RICERCA: { label: 'Ricerca effettuata', icon: '🔍', color: colors.textSecondary },
-    NOTIFICA_LETTA: { label: 'Notifica letta', icon: '🔔', color: colors.success },
+    LOGIN_SUCCESS: { label: 'Accesso effettuato', icon: 'log-in-outline', bg: colors.successSoft, fg: colors.success },
+    LOGIN_FAIL: { label: 'Tentativo di accesso', icon: 'alert-circle-outline', bg: colors.dangerSoft, fg: colors.danger },
+    LOGOUT: { label: 'Disconnessione', icon: 'log-out-outline', bg: colors.surfaceAlt, fg: colors.textSecondary },
+    DOWNLOAD_DOC: { label: 'Download documento', icon: 'download-outline', bg: colors.surfaceAlt, fg: colors.primary },
+    PREVIEW_DOC: { label: 'Anteprima documento', icon: 'eye-outline', bg: colors.accentSoft, fg: colors.accentDark },
+    TOGGLE_PREFERITO: { label: 'Preferito aggiornato', icon: 'star', bg: colors.accentSoft, fg: colors.accentDark },
+    UPLOAD_CASSETTO: { label: 'Upload cassetto', icon: 'cloud-upload-outline', bg: colors.surfaceAlt, fg: colors.primary },
+    UPLOAD_RISPOSTA: { label: 'Risposta inviata', icon: 'paper-plane-outline', bg: colors.infoSoft, fg: colors.info },
+    ARCHIVIA_MESSAGGIO: { label: 'Messaggio archiviato', icon: 'archive-outline', bg: colors.surfaceAlt, fg: colors.textSecondary },
+    DEARCHIVIA_MESSAGGIO: { label: 'Messaggio ripristinato', icon: 'arrow-undo-outline', bg: colors.surfaceAlt, fg: colors.textSecondary },
+    SEGNA_LETTI: { label: 'Messaggi letti', icon: 'checkmark-done-outline', bg: colors.successSoft, fg: colors.success },
+    DELETE_CASSETTO: { label: 'Eliminazione cassetto', icon: 'trash-outline', bg: colors.dangerSoft, fg: colors.danger },
+    RENAME_CASSETTO: { label: 'Rinominato cassetto', icon: 'pencil-outline', bg: colors.surfaceAlt, fg: colors.primary },
+    RICERCA: { label: 'Ricerca effettuata', icon: 'search-outline', bg: colors.surfaceAlt, fg: colors.textSecondary },
+    NOTIFICA_LETTA: { label: 'Notifica letta', icon: 'notifications-outline', bg: colors.successSoft, fg: colors.success },
   };
 }
 
@@ -51,8 +62,13 @@ export default function AttivitaScreen() {
 
   const getConfig = useCallback(
     (action: string) =>
-      actionConfig[action] ?? { label: action, icon: '•', color: colors.textSecondary },
-    [actionConfig, colors.textSecondary],
+      actionConfig[action] ?? {
+        label: action,
+        icon: 'information-circle-outline' as keyof typeof Ionicons.glyphMap,
+        bg: colors.surfaceAlt,
+        fg: colors.textSecondary,
+      },
+    [actionConfig, colors.surfaceAlt, colors.textSecondary],
   );
 
   const [logs, setLogs] = useState<AuditEntry[]>([]);
@@ -87,46 +103,55 @@ export default function AttivitaScreen() {
 
   return (
     <SafeAreaView style={styles.safe} edges={['top']}>
-      <View style={styles.toolbar}>
-        <Text style={styles.toolbarTitle}>📋 Registro Attività</Text>
-        <Pressable
-          onPress={() => load(true)}
-          style={({ pressed }) => [styles.iconBtn, pressed && styles.iconBtnPressed]}
-          accessibilityLabel="Aggiorna"
-        >
-          <Text style={[styles.iconBtnText, refreshing && { opacity: 0.5 }]}>↻</Text>
-        </Pressable>
+      {/* Testata "Registro attività & audit" (come l'app v4) */}
+      <View style={styles.header}>
+        <Text style={styles.headerOverline}>REGISTRO ATTIVITÀ &amp; AUDIT</Text>
+        <Text style={styles.headerTitle}>Tracciamento Operazioni</Text>
+        <Text style={styles.headerSubtitle}>
+          Tutte le consultazioni, download e accessi registrati con timestamp protetto.
+        </Text>
       </View>
 
       {loading && !refreshing ? (
-        <SkeletonList count={6} height={68} />
+        <SkeletonList count={6} height={76} />
       ) : (
         <FlatList
           style={styles.list}
           contentContainerStyle={styles.listContent}
           data={logs}
           keyExtractor={(item) => item.id}
-          refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => load(true)} />}
+          refreshControl={
+            <RefreshControl
+              refreshing={refreshing}
+              onRefresh={() => load(true)}
+              tintColor={colors.accent}
+              colors={[colors.accent]}
+              progressBackgroundColor={colors.surface}
+            />
+          }
           renderItem={({ item }) => {
             const cfg = getConfig(item.action);
             return (
-              <View style={styles.entryWrap}>
-                <View style={[styles.accentBar, { backgroundColor: cfg.color }]} />
-                <Card style={styles.entryCard} padded={false}>
-                  <View style={styles.entryContent}>
-                    <View style={[styles.entryIcon, { backgroundColor: `${cfg.color}20` }]}>
-                      <Text style={[styles.entryIconText, { color: cfg.color }]}>{cfg.icon}</Text>
-                    </View>
-                    <View style={styles.entryText}>
-                      <Text style={styles.entryLabel}>{cfg.label}</Text>
-                      {item.detail ? (
-                        <Text style={styles.entryDetail} numberOfLines={2}>{item.detail}</Text>
-                      ) : null}
+              <Card style={styles.entryCard} padded={false}>
+                <View style={styles.entryContent}>
+                  <View style={[styles.entryIcon, { backgroundColor: cfg.bg }]}>
+                    <Ionicons name={cfg.icon} size={21} color={cfg.fg} />
+                  </View>
+                  <View style={styles.entryText}>
+                    <View style={styles.entryTopRow}>
+                      <View style={[styles.entryPill, { backgroundColor: cfg.bg, borderColor: `${cfg.fg}4D` }]}>
+                        <Text style={[styles.entryPillText, { color: cfg.fg }]}>{cfg.label}</Text>
+                      </View>
                       <Text style={styles.entryDate}>{formatDateAudit(item.ts)}</Text>
                     </View>
+                    {item.detail ? (
+                      <Text style={styles.entryDetail} numberOfLines={2}>
+                        {item.detail}
+                      </Text>
+                    ) : null}
                   </View>
-                </Card>
-              </View>
+                </View>
+              </Card>
             );
           }}
           ListFooterComponent={
@@ -144,8 +169,9 @@ export default function AttivitaScreen() {
           }
           ListEmptyComponent={
             <EmptyState
-              icon={<Text style={styles.emptyIcon}>📋</Text>}
+              icon={<Ionicons name="time-outline" size={36} color={colors.primary} />}
               title="Nessuna attività registrata"
+              subtitle="Le azioni eseguite sul portale verranno elencate in questa cronologia"
             />
           }
         />
@@ -157,24 +183,27 @@ export default function AttivitaScreen() {
 const makeStyles = (colors: ThemeColors) =>
   StyleSheet.create({
     safe: { flex: 1, backgroundColor: colors.background },
-    toolbar: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: spacing.lg, paddingVertical: spacing.md },
-    toolbarTitle: { ...typography.h4, color: colors.textPrimary, fontWeight: '700' },
-    iconBtn: { width: 44, height: 44, borderRadius: 12, alignItems: 'center', justifyContent: 'center' },
-    iconBtnPressed: { backgroundColor: colors.surfaceAlt },
-    iconBtnText: { fontSize: 20, color: colors.textSecondary },
+    header: {
+      backgroundColor: colors.surface,
+      paddingHorizontal: spacing.lg,
+      paddingVertical: spacing.lg,
+      borderBottomWidth: StyleSheet.hairlineWidth,
+      borderBottomColor: colors.border,
+    },
+    headerOverline: { color: colors.accentDark, fontWeight: '900', fontSize: 10, letterSpacing: 0.8 },
+    headerTitle: { ...typography.h4, color: colors.textPrimary, fontWeight: '800', marginTop: 2 },
+    headerSubtitle: { ...typography.caption, color: colors.textSecondary, marginTop: 2 },
     list: { flex: 1 },
-    listContent: { paddingHorizontal: spacing.lg, paddingBottom: spacing.lg, gap: spacing.sm },
-    entryWrap: { flexDirection: 'row', borderRadius: 12, overflow: 'hidden', backgroundColor: colors.surface },
-    accentBar: { width: 4 },
-    entryCard: { flex: 1, borderRadius: 0, borderWidth: 0, shadowOpacity: 0.03 },
-    entryContent: { flexDirection: 'row', alignItems: 'flex-start', gap: spacing.md, padding: spacing.md },
-    entryIcon: { width: 36, height: 36, borderRadius: 10, alignItems: 'center', justifyContent: 'center' },
-    entryIconText: { fontSize: 16, fontWeight: '700' },
-    entryText: { flex: 1, gap: 2 },
-    entryLabel: { ...typography.body, color: colors.textPrimary, fontWeight: '600' },
-    entryDetail: { ...typography.caption, color: colors.textSecondary },
-    entryDate: { ...typography.caption, color: colors.textTertiary, marginTop: 2 },
+    listContent: { paddingHorizontal: spacing.lg, paddingTop: spacing.md, paddingBottom: spacing.lg, gap: 12 },
+    entryCard: { borderRadius: 18 },
+    entryContent: { flexDirection: 'row', alignItems: 'flex-start', gap: 14, padding: spacing.lg },
+    entryIcon: { width: 44, height: 44, borderRadius: 22, alignItems: 'center', justifyContent: 'center' },
+    entryText: { flex: 1, gap: 5 },
+    entryTopRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: spacing.sm },
+    entryPill: { borderRadius: 999, borderWidth: 0.5, paddingHorizontal: 8, paddingVertical: 2, alignSelf: 'flex-start' },
+    entryPillText: { fontSize: 11, fontWeight: '700' },
+    entryDate: { ...typography.caption, color: colors.textTertiary, fontSize: 11 },
+    entryDetail: { ...typography.body, color: colors.textPrimary, fontWeight: '500' },
     loadMoreBtn: { paddingVertical: spacing.lg, alignItems: 'center' },
-    loadMoreText: { ...typography.bodySmall, color: colors.accent, fontWeight: '600' },
-    emptyIcon: { fontSize: 48 },
+    loadMoreText: { ...typography.bodySmall, color: colors.accentDark, fontWeight: '700' },
   });

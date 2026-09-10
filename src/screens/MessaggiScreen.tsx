@@ -1,18 +1,17 @@
 /**
- * Schermata Messaggi (v4.0 - restyling completo, "stupiscimi").
+ * Schermata Messaggi.
  *
- * Novità v4.0 (grafica nuova ma stesse funzioni di sempre):
- * - Testata elegante come l'Archivio: card con bagliori, il numero di
- *   messaggi da leggere scritto CHIARO e il pulsante "Tutti letti"
- *   direttamente in testa (prima nascosto in una barra sospetta).
- * - Il trascina-per-aggiornare funziona da QUALUNQUE punto: la testata
- *   sta dentro la lista (stesso fix dell'Archivio).
- * - Date gentili: "Oggi alle 14:32", "Ieri alle 09:10" invece di date
- *   incomprensibili.
- * - Card messaggi: icona con pallino rosso se nuovo, anteprima del
- *   testo, badge chiari ("Nuovo", "Richiede un file", "Risposto"),
- *   corpo in un pannello con la linea colorata quando aperto.
- * - Schede Attivi/Archiviati a pillola, con contatore rosso sui nuovi.
+ * v4.11 — grafica replicata dall'app Android v4 (MessaggiScreen.kt):
+ * - Schede "Messaggi Attivi / Archiviati" in stile TabRow: indicatore
+ *   navy da 3px sotto la scheda attiva e bollino rosso dei non letti.
+ * - Banner informativo "Comunicazioni ufficiali dello Studio PFC" con
+ *   pulsante bordato "Segna letti" (stessa funzione di sempre).
+ * - Card messaggio: barra laterale navy se non letto, icona quadrata
+ *   colorata per stato (risposto/richiesta file/nuovo/letto), etichetta
+ *   "STUDIO PFC • data", pillole di stato e corpo SEMPRE visibile con
+ *   "Leggi tutto" (come nell'app v4) + pulsante invio file navy.
+ * - Logica INTATTA: caricamento, segna-letti automatici, archiviazione,
+ *   upload risposta, polling push, trascina per aggiornare.
  */
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
@@ -29,30 +28,23 @@ import {
   type ViewStyle,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { Ionicons } from '@expo/vector-icons';
 import DocumentPicker, { types } from 'react-native-document-picker';
-import { Card } from '@/components/Card';
 import { EmptyState } from '@/components/EmptyState';
-import { Badge } from '@/components/Badge';
 import { SkeletonList } from '@/components/Skeleton';
 import { toast } from '@/components/Toaster';
 import { haptics } from '@/lib/haptics';
 import { api } from '@/api/client';
 import { useAppStore } from '@/store/auth';
 import type { Messaggio } from '@/types/api';
-import { radius, shadow, spacing, typography, useColors, type ThemeColors } from '@/theme';
+import { shadow, spacing, typography, useColors, type ThemeColors } from '@/theme';
 
 type Tab = 'attivi' | 'archiviati';
 
-const GIORNI = ['domenica', 'lunedì', 'martedì', 'mercoledì', 'giovedì', 'venerdì', 'sabato'];
 const MESI = [
   'gennaio', 'febbraio', 'marzo', 'aprile', 'maggio', 'giugno',
   'luglio', 'agosto', 'settembre', 'ottobre', 'novembre', 'dicembre',
 ];
-
-function oggiBello(): string {
-  const d = new Date();
-  return `${GIORNI[d.getDay()]} ${d.getDate()} ${MESI[d.getMonth()]} ${d.getFullYear()}`;
-}
 
 /** Data gentile: "Oggi alle 14:32", "Ieri alle 09:10", poi data completa. */
 function dataGentile(iso: string): string {
@@ -65,17 +57,6 @@ function dataGentile(iso: string): string {
   ieri.setDate(adesso.getDate() - 1);
   if (d.toDateString() === ieri.toDateString()) return `Ieri alle ${ora}`;
   return `${d.getDate()} ${MESI[d.getMonth()]} ${d.getFullYear()} alle ${ora}`;
-}
-
-/** Anteprima: la seconda riga del messaggio (la prima e' gia' il titolo). */
-function anteprima(corpo: string): string {
-  const righe = corpo
-    .split('\n')
-    .map((r) => r.trim())
-    .filter((r) => r.length > 0);
-  const resto = righe.slice(1).join(' ');
-  if (!resto) return '';
-  return resto.length > 110 ? `${resto.slice(0, 110).trimEnd()}…` : resto;
 }
 
 /** Entrata: fade + piccola scivolata dal basso (stessa dell'Archivio). */
@@ -272,8 +253,70 @@ export default function MessaggiScreen() {
     }
   }
 
+  function iconaStato(msg: Messaggio): { icon: keyof typeof Ionicons.glyphMap; color: string; bg: string } {
+    if (msg.haRisposta) return { icon: 'checkmark-circle', color: colors.success, bg: `${colors.success}26` };
+    if (msg.richiedeUpload) return { icon: 'cloud-upload', color: colors.warning, bg: `${colors.warning}26` };
+    if (!msg.letto) return { icon: 'mail', color: '#FFFFFF', bg: colors.primary };
+    return { icon: 'mail-outline', color: colors.textSecondary, bg: colors.surfaceAlt };
+  }
+
   return (
     <SafeAreaView style={styles.safe} edges={['top']}>
+      {/* Schede Attivi / Archiviati con indicatore (TabRow dell'app v4) */}
+      <View style={styles.tabsSurface}>
+        <View style={styles.tabsRow}>
+          <Pressable
+            onPress={() => {
+              haptics.tap();
+              setTab('attivi');
+            }}
+            style={styles.tabBtn}
+            accessibilityRole="button"
+            accessibilityState={{ selected: tab === 'attivi' }}
+          >
+            <Text style={[styles.tabLabel, tab === 'attivi' && styles.tabLabelActive]}>Messaggi Attivi</Text>
+            {unreadCount > 0 && (
+              <View style={styles.tabCount}>
+                <Text style={styles.tabCountText}>{unreadCount > 9 ? '9+' : unreadCount}</Text>
+              </View>
+            )}
+          </Pressable>
+          <Pressable
+            onPress={() => {
+              haptics.tap();
+              setTab('archiviati');
+            }}
+            style={styles.tabBtn}
+            accessibilityRole="button"
+            accessibilityState={{ selected: tab === 'archiviati' }}
+          >
+            <Text style={[styles.tabLabel, tab === 'archiviati' && styles.tabLabelActive]}>
+              Archiviati ({archiviati.length})
+            </Text>
+          </Pressable>
+        </View>
+        <View style={[styles.tabIndicator, tab === 'attivi' ? styles.tabIndicatorLeft : styles.tabIndicatorRight]} />
+      </View>
+
+      {/* Banner informativo + "Segna letti" (come l'app v4) */}
+      <View style={styles.infoBanner}>
+        <Ionicons name="mail" size={19} color={colors.primary} />
+        <Text style={styles.infoText}>
+          Comunicazioni ufficiali dello Studio PFC. Puoi leggere i dettagli e inviare gli allegati richiesti.
+        </Text>
+        {tab === 'attivi' && unreadCount > 0 && (
+          <Pressable
+            onPress={handleSegnaLetti}
+            style={({ pressed }) => [styles.segnaLettiBtn, pressed && { opacity: 0.8 }]}
+            accessibilityRole="button"
+            accessibilityLabel="Segna tutti come letti"
+          >
+            <Ionicons name="checkmark-done" size={14} color={colors.primary} />
+            <Text style={styles.segnaLettiText}>Segna letti</Text>
+          </Pressable>
+        )}
+      </View>
+
       <FlatList
         style={styles.list}
         contentContainerStyle={styles.listContent}
@@ -288,164 +331,135 @@ export default function MessaggiScreen() {
             progressBackgroundColor={colors.surface}
           />
         }
-        ListHeaderComponent={
-          <View style={styles.testataLista}>
-            <Entrata>
-              <Card style={styles.heroCard} padded={false}>
-                <View style={styles.heroAurora1} pointerEvents="none" />
-                <View style={styles.heroAurora2} pointerEvents="none" />
-                <View style={styles.heroInner}>
-                  <Text style={styles.heroOverline}>{`Messaggi v4.0 · ${oggiBello()}`}</Text>
-                  <Text style={styles.heroTitle}>I tuoi messaggi</Text>
-                  <Text style={styles.heroSubtitle}>
-                    {unreadCount > 0
-                      ? `Hai ${unreadCount} ${unreadCount === 1 ? 'messaggio da leggere' : 'messaggi da leggere'}`
-                      : 'Tutto letto: qui sei a posto'}
-                  </Text>
-                  <View style={styles.heroChips}>
-                    <View style={styles.heroChip}>
-                      <Text style={styles.heroChipText}>
-                        ✉ {attivi.length} attiv{attivi.length === 1 ? 'o' : 'i'}
-                      </Text>
-                    </View>
-                    <View style={styles.heroChip}>
-                      <Text style={styles.heroChipText}>
-                        📦 {archiviati.length} archiviat{archiviati.length === 1 ? 'o' : 'i'}
-                      </Text>
-                    </View>
-                    {unreadCount > 0 && tab === 'attivi' && (
-                      <Pressable
-                        onPress={handleSegnaLetti}
-                        style={({ pressed }) => [styles.heroChipOk, pressed && { opacity: 0.8 }]}
-                        accessibilityRole="button"
-                        accessibilityLabel="Segna tutti come letti"
-                      >
-                        <Text style={styles.heroChipOkText}>✓ Tutti letti</Text>
-                      </Pressable>
-                    )}
-                  </View>
-                  <Text style={styles.heroHint}>Trascina in basso per aggiornare</Text>
-                </View>
-              </Card>
-            </Entrata>
-
-            <View style={styles.tabsWrap}>
-              <Pressable
-                onPress={() => {
-                  haptics.tap();
-                  setTab('attivi');
-                }}
-                style={[styles.tab, tab === 'attivi' && styles.tabActive]}
-                accessibilityRole="button"
-                accessibilityState={{ selected: tab === 'attivi' }}
-              >
-                <Text style={[styles.tabText, tab === 'attivi' && styles.tabTextActive]}>
-                  Attivi
-                </Text>
-                {unreadCount > 0 && (
-                  <View style={styles.tabBadge}>
-                    <Text style={styles.tabBadgeText}>{unreadCount > 9 ? '9+' : unreadCount}</Text>
-                  </View>
-                )}
-              </Pressable>
-              <Pressable
-                onPress={() => {
-                  haptics.tap();
-                  setTab('archiviati');
-                }}
-                style={[styles.tab, tab === 'archiviati' && styles.tabActive]}
-                accessibilityRole="button"
-                accessibilityState={{ selected: tab === 'archiviati' }}
-              >
-                <Text style={[styles.tabText, tab === 'archiviati' && styles.tabTextActive]}>
-                  Archiviati
-                </Text>
-                {archiviati.length > 0 && tab === 'archiviati' && (
-                  <View style={styles.tabBadgeMuto}>
-                    <Text style={styles.tabBadgeMutoText}>{archiviati.length}</Text>
-                  </View>
-                )}
-              </Pressable>
-            </View>
-          </View>
-        }
         renderItem={({ item: msg, index }) => {
           const expanded = expandedId === msg.id;
-          const anteprimaTesto = anteprima(msg.corpo);
+          const ic = iconaStato(msg);
+          const nonLetto = !msg.letto && !msg.archiviato;
           return (
-            <Entrata delay={Math.min(120 + index * 50, 500)}>
-              <Card
-                style={[
-                  styles.msgCard,
-                  !msg.letto && styles.msgCardUnread,
-                  expanded && styles.msgCardExpanded,
-                ]}
-                padded={false}
-              >
-                <Pressable
-                  onPress={() => {
-                    haptics.tap();
-                    setExpandedId(expanded ? null : msg.id);
-                  }}
-                  style={styles.msgHeader}
-                >
-                  <View style={[styles.msgIcon, !msg.letto ? styles.msgIconUnread : styles.msgIconRead]}>
-                    <Text style={styles.msgIconText}>{msg.archiviato ? '📦' : msg.letto ? '📨' : '✉️'}</Text>
-                    {!msg.letto && <View style={styles.msgIconDot} />}
-                  </View>
-                  <View style={styles.msgHeaderText}>
-                    <Text style={[styles.msgTitle, !msg.letto && styles.msgTitleUnread]} numberOfLines={2}>
-                      {msg.titolo}
-                    </Text>
-                    {!expanded && anteprimaTesto !== '' && (
-                      <Text style={styles.msgPreview} numberOfLines={2}>
-                        {anteprimaTesto}
+            <Entrata delay={Math.min(60 + index * 50, 400)}>
+              <View style={[styles.msgCard, nonLetto && styles.msgCardUnread]}>
+                {nonLetto && <View style={styles.unreadBar} />}
+                <View style={styles.msgInner}>
+                  {/* Testata: icona stato + STUDIO PFC • data + titolo + archivia */}
+                  <Pressable
+                    onPress={() => {
+                      haptics.tap();
+                      setExpandedId(expanded ? null : msg.id);
+                    }}
+                    style={styles.msgHeader}
+                    accessibilityLabel="Mostra dettaglio messaggio"
+                  >
+                    <View style={[styles.msgIcon, { backgroundColor: ic.bg }]}>
+                      <Ionicons name={ic.icon} size={21} color={ic.color} />
+                    </View>
+                    <View style={styles.msgHeaderText}>
+                      <View style={styles.msgOverRow}>
+                        <Text style={styles.msgStudio}>STUDIO PFC</Text>
+                        <Text style={styles.msgOverDot}>•</Text>
+                        <Text style={styles.msgDate}>{dataGentile(msg.dataInvio)}</Text>
+                      </View>
+                      <Text style={[styles.msgTitle, nonLetto && styles.msgTitleUnread]} numberOfLines={2}>
+                        {msg.titolo}
                       </Text>
-                    )}
-                    <View style={styles.msgMetaRow}>
-                      <Text style={styles.msgDate}>🕒 {dataGentile(msg.dataInvio)}</Text>
-                      {!msg.letto && <Badge label="Nuovo" variant="danger" />}
-                      {msg.richiedeUpload && !msg.haRisposta && <Badge label="Richiede un file" variant="warning" />}
-                      {msg.haRisposta && <Badge label="✓ Risposto" variant="success" />}
                     </View>
-                  </View>
-                  <Text style={styles.chevron}>{expanded ? '▲' : '▼'}</Text>
-                </Pressable>
+                    <Pressable
+                      onPress={() => (msg.archiviato ? handleDearchivia(msg.id) : handleArchivia(msg.id))}
+                      style={({ pressed }) => [styles.iconAction, pressed && { opacity: 0.6 }]}
+                      accessibilityLabel={msg.archiviato ? 'Ripristina messaggio' : 'Archivia messaggio'}
+                    >
+                      <Ionicons
+                        name={msg.archiviato ? 'arrow-undo-outline' : 'archive-outline'}
+                        size={18}
+                        color={colors.textSecondary}
+                      />
+                    </Pressable>
+                  </Pressable>
 
-                {expanded && (
-                  <View style={styles.msgBody}>
-                    <View style={styles.msgCorpoWrap}>
-                      <Text style={styles.msgCorpo}>{msg.corpo}</Text>
-                    </View>
+                  {/* Pillole di stato (come i badge dell'app v4) */}
+                  <View style={styles.badgeRow}>
+                    {nonLetto && (
+                      <View style={[styles.pill, { backgroundColor: `${colors.primary}26` }]}>
+                        <Text style={[styles.pillText, { color: colors.primary }]}>Nuovo</Text>
+                      </View>
+                    )}
                     {msg.richiedeUpload && !msg.haRisposta && (
+                      <View style={[styles.pill, { backgroundColor: `${colors.warning}26` }]}>
+                        <Ionicons name="cloud-upload" size={11} color={colors.warning} />
+                        <Text style={[styles.pillText, { color: colors.warning }]}>Richiesta Documento</Text>
+                      </View>
+                    )}
+                    {msg.haRisposta && (
+                      <View style={[styles.pill, { backgroundColor: `${colors.success}26` }]}>
+                        <Ionicons name="checkmark" size={12} color={colors.success} />
+                        <Text style={[styles.pillText, { color: colors.success }]}>Documento Inviato</Text>
+                      </View>
+                    )}
+                  </View>
+
+                  {/* Corpo SEMPRE visibile, con clamp e "Leggi tutto" (come l'app v4) */}
+                  <View style={styles.corpoBox}>
+                    <Text style={styles.corpo} numberOfLines={expanded ? undefined : 4}>
+                      {msg.corpo}
+                    </Text>
+                    {msg.corpo.length > 140 && (
                       <Pressable
-                        onPress={() => handleUpload(msg)}
-                        disabled={uploadingId === msg.id}
-                        style={({ pressed }) => [
-                          styles.uploadBtn,
-                          pressed && styles.uploadBtnPressed,
-                          uploadingId === msg.id && styles.uploadBtnDisabled,
-                        ]}
+                        onPress={() => setExpandedId(expanded ? null : msg.id)}
+                        hitSlop={6}
+                        accessibilityLabel={expanded ? 'Mostra meno' : 'Leggi tutto'}
                       >
-                        <Text style={styles.uploadBtnText}>
-                          {uploadingId === msg.id ? '⏳ Invio in corso…' : '⬆  Carica la risposta'}
-                        </Text>
+                        <Text style={styles.leggiTutto}>{expanded ? 'Mostra meno ▲' : 'Leggi tutto ▼'}</Text>
                       </Pressable>
                     )}
-                    <View style={styles.msgActions}>
-                      {tab === 'attivi' ? (
-                        <Pressable onPress={() => handleArchivia(msg.id)} style={({ pressed }) => [styles.msgActionBtn, pressed && { opacity: 0.7 }]}>
-                          <Text style={styles.msgActionText}>📦 Archivia</Text>
-                        </Pressable>
-                      ) : (
-                        <Pressable onPress={() => handleDearchivia(msg.id)} style={({ pressed }) => [styles.msgActionBtn, pressed && { opacity: 0.7 }]}>
-                          <Text style={styles.msgActionText}>↩ Ripristina</Text>
+                  </View>
+
+                  {/* Allegato dello studio, se presente */}
+                  {msg.allegatoNome ? (
+                    <View style={styles.allegatoBox}>
+                      <Ionicons name="attach" size={15} color={colors.primary} />
+                      <Text style={styles.allegatoText} numberOfLines={1}>
+                        Allegato dallo Studio: {msg.allegatoNome}
+                      </Text>
+                    </View>
+                  ) : null}
+
+                  {/* Dettagli aperti: invio file + archivia/ripristina */}
+                  {expanded && (
+                    <View style={styles.actionsWrap}>
+                      {msg.richiedeUpload && !msg.haRisposta && (
+                        <Pressable
+                          onPress={() => handleUpload(msg)}
+                          disabled={uploadingId === msg.id}
+                          style={({ pressed }) => [
+                            styles.uploadBtn,
+                            pressed && styles.btnPressed,
+                            uploadingId === msg.id && styles.btnDisabled,
+                          ]}
+                          accessibilityLabel="Carica la risposta"
+                        >
+                          <Ionicons name="cloud-upload-outline" size={18} color={colors.textInverse} />
+                          <Text style={styles.uploadBtnText}>
+                            {uploadingId === msg.id ? 'Invio in corso…' : 'Carica la risposta'}
+                          </Text>
                         </Pressable>
                       )}
+                      <Pressable
+                        onPress={() => (tab === 'attivi' ? handleArchivia(msg.id) : handleDearchivia(msg.id))}
+                        style={({ pressed }) => [styles.outlineBtn, pressed && styles.btnPressed]}
+                        accessibilityLabel={tab === 'attivi' ? 'Archivia messaggio' : 'Ripristina messaggio'}
+                      >
+                        <Ionicons
+                          name={tab === 'attivi' ? 'archive-outline' : 'arrow-undo-outline'}
+                          size={15}
+                          color={colors.textSecondary}
+                        />
+                        <Text style={styles.outlineBtnText}>
+                          {tab === 'attivi' ? 'Archivia' : 'Ripristina'}
+                        </Text>
+                      </Pressable>
                     </View>
-                  </View>
-                )}
-              </Card>
+                  )}
+                </View>
+              </View>
             </Entrata>
           );
         }}
@@ -456,8 +470,14 @@ export default function MessaggiScreen() {
             </View>
           ) : (
             <EmptyState
-              icon={<Text style={styles.emptyIcon}>{tab === 'attivi' ? '💬' : '📦'}</Text>}
-              title={tab === 'attivi' ? 'Nessun messaggio' : 'Nessun messaggio archiviato'}
+              icon={
+                <Ionicons
+                  name={tab === 'attivi' ? 'chatbubble-outline' : 'archive-outline'}
+                  size={36}
+                  color={colors.primary}
+                />
+              }
+              title={tab === 'attivi' ? 'Nessun messaggio attivo' : 'Nessun messaggio archiviato'}
               subtitle={
                 tab === 'attivi'
                   ? 'Quando lo studio ti scrive, il messaggio arriva qui'
@@ -474,64 +494,57 @@ export default function MessaggiScreen() {
 const makeStyles = (colors: ThemeColors) =>
   StyleSheet.create({
     safe: { flex: 1, backgroundColor: colors.background },
+
+    // Schede in stile TabRow (v4.11)
+    tabsSurface: { backgroundColor: colors.surface, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: colors.border, ...shadow.sm },
+    tabsRow: { flexDirection: 'row' },
+    tabBtn: { flex: 1, height: 48, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 7 },
+    tabLabel: { ...typography.bodySmall, fontSize: 14, color: colors.textSecondary, fontWeight: '500' },
+    tabLabelActive: { color: colors.primary, fontWeight: '800' },
+    tabCount: { minWidth: 20, height: 20, borderRadius: 10, backgroundColor: colors.danger, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 5 },
+    tabCountText: { color: '#FFFFFF', fontSize: 10, fontWeight: '700' },
+    tabIndicator: { position: 'absolute', bottom: 0, height: 3, width: '50%', backgroundColor: colors.primary, borderTopLeftRadius: 3, borderTopRightRadius: 3 },
+    tabIndicatorLeft: { left: 0 },
+    tabIndicatorRight: { left: '50%' },
+
+    // Banner informativo (v4.11)
+    infoBanner: { flexDirection: 'row', alignItems: 'center', gap: 10, paddingHorizontal: spacing.lg, paddingVertical: 10, backgroundColor: `${colors.primary}14` },
+    infoText: { ...typography.caption, color: colors.textPrimary, flex: 1, lineHeight: 16 },
+    segnaLettiBtn: { flexDirection: 'row', alignItems: 'center', gap: 4, borderRadius: 8, borderWidth: 1, borderColor: `${colors.primary}99`, paddingHorizontal: 10, paddingVertical: 5 },
+    segnaLettiText: { color: colors.primary, fontSize: 11, fontWeight: '700' },
+
     list: { flex: 1 },
-    listContent: { padding: spacing.lg, gap: spacing.md, paddingBottom: spacing.xxl },
-    testataLista: { gap: spacing.md, paddingBottom: spacing.xs },
-
-    // Testata elegante (stessa famiglia della card di benvenuto dell'Archivio)
-    heroCard: { backgroundColor: colors.surface, borderColor: colors.border, overflow: 'hidden', ...shadow.md },
-    heroAurora1: { position: 'absolute', top: -70, right: -50, width: 210, height: 210, borderRadius: 105, backgroundColor: colors.accent, opacity: 0.12 },
-    heroAurora2: { position: 'absolute', bottom: -80, left: -40, width: 190, height: 190, borderRadius: 95, backgroundColor: colors.accent, opacity: 0.07 },
-    heroInner: { padding: spacing.xl, gap: spacing.sm },
-    heroOverline: { ...typography.labelSmall, color: colors.textTertiary, letterSpacing: 1.2 },
-    heroTitle: { ...typography.h1, color: colors.textPrimary, marginTop: 2 },
-    heroSubtitle: { ...typography.body, color: colors.textSecondary },
-    heroChips: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm, marginTop: spacing.xs },
-    heroChip: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: spacing.md, paddingVertical: 6, borderRadius: radius.full, backgroundColor: colors.surfaceAlt, borderWidth: 1, borderColor: colors.border },
-    heroChipText: { ...typography.caption, color: colors.textPrimary, fontWeight: '600' },
-    heroChipOk: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: spacing.md, paddingVertical: 6, borderRadius: radius.full, backgroundColor: colors.successSoft, borderWidth: 1, borderColor: colors.success },
-    heroChipOkText: { ...typography.caption, color: colors.success, fontWeight: '800' },
-    heroHint: { ...typography.caption, color: colors.textTertiary, marginTop: spacing.xs },
-
-    // Schede Attivi / Archiviati a pillola
-    tabsWrap: { flexDirection: 'row', padding: 4, borderRadius: radius.full, backgroundColor: colors.surfaceAlt, borderWidth: 1, borderColor: colors.border, gap: 4 },
-    tab: { flex: 1, height: 44, borderRadius: radius.full, alignItems: 'center', justifyContent: 'center', flexDirection: 'row', gap: 6 },
-    tabActive: { backgroundColor: colors.surface, ...shadow.sm },
-    tabText: { ...typography.bodySmall, color: colors.textSecondary, fontWeight: '600' },
-    tabTextActive: { color: colors.textPrimary, fontWeight: '800' },
-    tabBadge: { minWidth: 20, height: 20, borderRadius: 10, backgroundColor: colors.danger, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 5 },
-    tabBadgeText: { color: colors.textInverse, fontSize: 11, fontWeight: '800' },
-    tabBadgeMuto: { minWidth: 20, height: 20, borderRadius: 10, backgroundColor: colors.border, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 5 },
-    tabBadgeMutoText: { color: colors.textSecondary, fontSize: 11, fontWeight: '800' },
-
-    // Card messaggi
-    msgCard: { overflow: 'hidden' },
-    msgCardUnread: { borderColor: colors.accent, borderWidth: 1.5, backgroundColor: colors.accentSoft },
-    msgCardExpanded: { borderColor: colors.accent },
-    msgHeader: { flexDirection: 'row', alignItems: 'flex-start', padding: spacing.lg, gap: spacing.md },
-    msgIcon: { width: 44, height: 44, borderRadius: 12, alignItems: 'center', justifyContent: 'center' },
-    msgIconUnread: { backgroundColor: colors.surface, borderWidth: 1.5, borderColor: colors.accent },
-    msgIconRead: { backgroundColor: colors.surfaceAlt },
-    msgIconText: { fontSize: 19 },
-    msgIconDot: { position: 'absolute', top: -3, right: -3, width: 13, height: 13, borderRadius: 7, backgroundColor: colors.danger, borderWidth: 2, borderColor: colors.surface },
-    msgHeaderText: { flex: 1, gap: 4 },
-    msgTitle: { ...typography.body, color: colors.textSecondary, fontWeight: '500' },
-    msgTitleUnread: { color: colors.textPrimary, fontWeight: '800' },
-    msgPreview: { ...typography.caption, color: colors.textTertiary, lineHeight: 16 },
-    msgMetaRow: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', gap: spacing.sm, marginTop: 2 },
-    msgDate: { ...typography.caption, color: colors.textTertiary },
-    chevron: { fontSize: 12, color: colors.textTertiary },
-    msgBody: { paddingHorizontal: spacing.lg, paddingBottom: spacing.lg, gap: spacing.md },
-    msgCorpoWrap: { borderLeftWidth: 3, borderLeftColor: colors.accent, paddingLeft: spacing.md, backgroundColor: colors.surfaceAlt, borderRadius: radius.sm, paddingVertical: spacing.md, paddingRight: spacing.md },
-    msgCorpo: { ...typography.bodySmall, color: colors.textPrimary, lineHeight: 22 },
-    uploadBtn: { minHeight: 52, borderRadius: radius.lg, backgroundColor: colors.accent, alignItems: 'center', justifyContent: 'center', ...shadow.sm },
-    uploadBtnPressed: { opacity: 0.85 },
-    uploadBtnDisabled: { opacity: 0.5 },
-    uploadBtnText: { ...typography.button, color: colors.textInverse },
-    msgActions: { flexDirection: 'row', gap: spacing.sm },
-    msgActionBtn: { minHeight: 40, paddingHorizontal: spacing.lg, borderRadius: radius.full, backgroundColor: colors.surfaceAlt, borderWidth: 1, borderColor: colors.border, alignItems: 'center', justifyContent: 'center' },
-    msgActionText: { ...typography.caption, color: colors.textSecondary, fontWeight: '700' },
-
+    listContent: { padding: spacing.lg, gap: 14, paddingBottom: spacing.xxl },
     skeletonInList: { paddingVertical: spacing.sm },
-    emptyIcon: { fontSize: 48 },
+
+    // Card messaggio (v4.11, stile MessaggioCard dell'app v4)
+    msgCard: { flexDirection: 'row', borderRadius: 20, backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.border, overflow: 'hidden', ...shadow.sm },
+    msgCardUnread: { backgroundColor: `${colors.primary}14`, borderColor: `${colors.primary}99`, borderWidth: 1.5 },
+    unreadBar: { width: 4, backgroundColor: colors.primary },
+    msgInner: { flex: 1, padding: 18, gap: 10 },
+    msgHeader: { flexDirection: 'row', alignItems: 'flex-start', gap: 12 },
+    msgIcon: { width: 42, height: 42, borderRadius: 12, alignItems: 'center', justifyContent: 'center' },
+    msgHeaderText: { flex: 1, gap: 2 },
+    msgOverRow: { flexDirection: 'row', alignItems: 'center', gap: 5 },
+    msgStudio: { color: colors.primary, fontSize: 10.5, fontWeight: '800', letterSpacing: 0.6 },
+    msgOverDot: { color: colors.textTertiary, fontSize: 11 },
+    msgDate: { ...typography.caption, color: colors.textSecondary },
+    msgTitle: { ...typography.body, color: colors.textPrimary, fontWeight: '500', fontSize: 15.5 },
+    msgTitleUnread: { fontWeight: '800' },
+    iconAction: { width: 32, height: 32, borderRadius: 10, alignItems: 'center', justifyContent: 'center' },
+    badgeRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
+    pill: { flexDirection: 'row', alignItems: 'center', gap: 4, borderRadius: 999, paddingHorizontal: 8, paddingVertical: 3 },
+    pillText: { fontSize: 11, fontWeight: '700' },
+    corpoBox: { backgroundColor: colors.surfaceAlt, borderRadius: 12, borderWidth: 1, borderColor: colors.border, padding: 14 },
+    corpo: { ...typography.bodySmall, color: colors.textPrimary, lineHeight: 21 },
+    leggiTutto: { color: colors.primary, fontSize: 12, fontWeight: '700', marginTop: 6 },
+    allegatoBox: { flexDirection: 'row', alignItems: 'center', gap: 8, backgroundColor: colors.surfaceAlt, borderRadius: 10, borderWidth: 1, borderColor: colors.border, paddingHorizontal: 12, paddingVertical: 9 },
+    allegatoText: { ...typography.caption, color: colors.textPrimary, fontWeight: '600', flex: 1 },
+    actionsWrap: { gap: 10 },
+    uploadBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, minHeight: 50, borderRadius: 14, backgroundColor: colors.primary, ...shadow.sm },
+    outlineBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, minHeight: 42, borderRadius: 999, backgroundColor: colors.surfaceAlt, borderWidth: 1, borderColor: colors.border },
+    outlineBtnText: { ...typography.caption, color: colors.textSecondary, fontWeight: '700' },
+    uploadBtnText: { ...typography.button, color: colors.textInverse },
+    btnPressed: { opacity: 0.85 },
+    btnDisabled: { opacity: 0.5 },
   });

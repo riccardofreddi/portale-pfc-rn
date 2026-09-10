@@ -1,5 +1,8 @@
 ﻿/**
  * FileIcon — badge con estensione del file e colore.
+ *
+ * v4.11: come il FileFormatIcon dell'app Android v4 — box arrotondato con
+ * tinta soft per estensione e bordo sottile della stessa tinta.
  */
 import React from 'react';
 import { StyleSheet, Text, View } from 'react-native';
@@ -19,21 +22,23 @@ interface IconConfig {
 function getIconConfig(filename: string, colors: ThemeColors): IconConfig {
   const ext = filename.split('.').pop()?.toLowerCase() ?? '';
   const map: Record<string, IconConfig> = {
-    pdf: { icon: 'PDF', bg: '#FEE2E2', fg: '#DC2626' },
-    doc: { icon: 'DOC', bg: '#DBEAFE', fg: '#2563EB' },
-    docx: { icon: 'DOC', bg: '#DBEAFE', fg: '#2563EB' },
-    xls: { icon: 'XLS', bg: '#D1FAE5', fg: '#059669' },
-    xlsx: { icon: 'XLS', bg: '#D1FAE5', fg: '#059669' },
-    ppt: { icon: 'PPT', bg: '#FFEDD5', fg: '#EA580C' },
-    pptx: { icon: 'PPT', bg: '#FFEDD5', fg: '#EA580C' },
-    jpg: { icon: 'IMG', bg: '#F3E8FF', fg: '#7C3AED' },
-    jpeg: { icon: 'IMG', bg: '#F3E8FF', fg: '#7C3AED' },
-    png: { icon: 'IMG', bg: '#F3E8FF', fg: '#7C3AED' },
-    gif: { icon: 'IMG', bg: '#F3E8FF', fg: '#7C3AED' },
-    zip: { icon: 'ZIP', bg: '#F1F5F9', fg: '#475569' },
-    rar: { icon: 'RAR', bg: '#F1F5F9', fg: '#475569' },
-    txt: { icon: 'TXT', bg: '#F1F5F9', fg: '#475569' },
-    csv: { icon: 'CSV', bg: '#D1FAE5', fg: '#059669' },
+    pdf: { icon: 'PDF', bg: '#FEF2F2', fg: '#DC2626' },
+    xml: { icon: 'XML', bg: '#EEF2FF', fg: '#4F46E5' },
+    p7m: { icon: 'XML', bg: '#EEF2FF', fg: '#4F46E5' },
+    doc: { icon: 'DOC', bg: '#F0F9FF', fg: '#0284C7' },
+    docx: { icon: 'DOC', bg: '#F0F9FF', fg: '#0284C7' },
+    xls: { icon: 'XLS', bg: '#F0F9FF', fg: '#0284C7' },
+    xlsx: { icon: 'XLS', bg: '#F0F9FF', fg: '#0284C7' },
+    ppt: { icon: 'PPT', bg: '#FFFBEB', fg: '#D97706' },
+    pptx: { icon: 'PPT', bg: '#FFFBEB', fg: '#D97706' },
+    jpg: { icon: 'IMG', bg: '#ECFDF5', fg: '#059669' },
+    jpeg: { icon: 'IMG', bg: '#ECFDF5', fg: '#059669' },
+    png: { icon: 'IMG', bg: '#ECFDF5', fg: '#059669' },
+    gif: { icon: 'IMG', bg: '#ECFDF5', fg: '#059669' },
+    zip: { icon: 'ZIP', bg: '#FFFBEB', fg: '#D97706' },
+    rar: { icon: 'RAR', bg: '#FFFBEB', fg: '#D97706' },
+    txt: { icon: 'TXT', bg: '#F8FAFC', fg: '#64748B' },
+    csv: { icon: 'CSV', bg: '#F8FAFC', fg: '#64748B' },
   };
   return (
     map[ext] ?? {
@@ -56,10 +61,17 @@ export function FileIcon({ filename, size = 40 }: FileIconProps) {
     <View
       style={[
         styles.badge,
-        { backgroundColor: cfg.bg, width: size, height: size, borderRadius: size * 0.25 },
+        {
+          backgroundColor: cfg.bg,
+          width: size,
+          height: size,
+          borderRadius: size * 0.28,
+          borderWidth: 1,
+          borderColor: `${cfg.fg}33`,
+        },
       ]}
     >
-      <Text style={[styles.text, { color: cfg.fg, fontSize: size * 0.25 }]}>
+      <Text style={[styles.text, { color: cfg.fg, fontSize: size * 0.24 }]}>
         {cfg.icon}
       </Text>
     </View>
