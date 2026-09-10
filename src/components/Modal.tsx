@@ -1,5 +1,16 @@
-﻿/**
+/**
  * Modal — bottom sheet style modal.
+ *
+ * v4.13 — SCORREVOLEZZA (il pannello "incollava" mentre si scorreva):
+ * il foglio era un Pressable che AVVOLGEVA i contenuti. Su Android un
+ * toccabile attorno a una lista gareggia per il tocco con lo scroll
+ * interno: la lista parte a scatti e si blocca (il sintanno esatto
+ * riportato dal cliente). Ora la struttura e' invertita:
+ * - il tocco FUORI dal foglio e' un Pressable INVISIBILE posto DIETRO il
+ *   foglio (tocco fuori = chiude, esattamente come prima);
+ * - il foglio e' una View semplice, che non gareggia con lo scroll:
+ *   le liste dentro i pannelli (Impostazioni, Notifiche, Cassetto,
+ *   dettaglio file dell'Archivio) scorrono fluide.
  */
 import React from 'react';
 import {
@@ -29,12 +40,22 @@ export function Modal({ visible, onClose, children, style }: ModalProps) {
       onRequestClose={onClose}
       statusBarTranslucent
     >
-      <Pressable style={styles.backdrop} onPress={onClose}>
-        <Pressable style={[styles.sheet, style]} onPress={(e) => e.stopPropagation()}>
+      <View style={styles.backdrop}>
+        {/* Tocco "fuori dal foglio": livello invisibile DIETRO il foglio
+         * (e' il primo figlio: il foglio, disegnato dopo, sta sopra). */}
+        <Pressable
+          style={StyleSheet.absoluteFill}
+          onPress={onClose}
+          accessibilityLabel="Chiudi pannello"
+          accessibilityRole="button"
+        />
+        {/* Foglio: View semplice, senza gestione del tocco: lo scroll
+         * interno funziona nativo, senza liti di responder. */}
+        <View style={[styles.sheet, style]}>
           <View style={styles.handle} />
           {children}
-        </Pressable>
-      </Pressable>
+        </View>
+      </View>
     </RNModal>
   );
 }

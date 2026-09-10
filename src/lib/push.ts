@@ -13,6 +13,14 @@
  *    vedeva niente con l'app aperta)
  * 4. onNotificationOpenedApp (background tap) → navigazione alla schermata
  * 5. tocco sugli avvisi locali → stessa navigazione (deep-link)
+ *
+ * v4.13 — L'INTERRUTTORE "Notifiche" delle Impostazioni comanda TUTTO:
+ * se è SPENTO, il telefono NON si (ri)registra al server né ora, né al
+ * prossimo avvio, né quando FCM rinnova il token. Così lo spegnimento
+ * resta tale finché il cliente non riaccende (prima la registrazione
+ * al login avrebbe riagganciato il telefono alle notifiche ignorando
+ * la scelta). L'accensione avviene dall'Impostazioni, che chiama di
+ * nuovo registerPushForCurrentUser().
  */
 
 import messaging from '@react-native-firebase/messaging';
@@ -20,6 +28,7 @@ import { DeviceEventEmitter, Platform } from 'react-native';
 import { api } from '@/api/client';
 import { parseDeepLink, type DeepLinkTarget } from '@/lib/deeplink';
 import { mostraAvvisoLocale, sulToccoNotifica } from '@/lib/notifiche';
+import { promemoriaAttivi } from '@/lib/scadenze-locali';
 import { toast } from '@/components/Toaster';
 
 /**
@@ -50,6 +59,13 @@ export const pushState = {
  */
 export async function registerPushForCurrentUser(): Promise<void> {
   try {
+    // v4.13: interruttore "Notifiche" SPENTO => nessuna registrazione.
+    // (Rende la scelta del cliente stabile anche ai successivi login.)
+    if (!(await promemoriaAttivi())) {
+      console.log('[PUSH] notifiche SPENTE da Impostazioni: registrazione saltata');
+      return;
+    }
+
     const authStatus = await messaging().requestPermission();
     const enabled =
       authStatus === messaging.AuthorizationStatus.AUTHORIZED ||
@@ -71,6 +87,11 @@ export async function registerPushForCurrentUser(): Promise<void> {
     console.log('[PUSH] token registrato:', token.slice(0, 20) + '...');
 
     messaging().onTokenRefresh(async (newToken) => {
+      // v4.13: anche il rinnovo del token rispetta l'interruttore
+      if (!(await promemoriaAttivi())) {
+        console.log('[PUSH] token rinnovato ma notifiche SPENTE: non inviato');
+        return;
+      }
       pushState.token = newToken;
       try {
         await api.push.fcmRegister(newToken, device);

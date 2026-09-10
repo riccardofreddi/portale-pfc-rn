@@ -1,50 +1,67 @@
-﻿/**
- * Schermata Impostazioni (bottom sheet modal).
- * Sezioni: Aspetto (tema), Stato notifiche (diagnostica FCM), test push, logout.
+/**
+ * Schermata Impostazioni (bottom sheet modal) — v4.13.
  *
- * Novità v4.2 (pannello CORTO: si arriva a "Esci" senza fatica):
- * - TOLTA la sezione "APPLICAZIONE" (nome app, versione, utente, controllo
- *   aggiornamenti): era solo roba da tecnici, allungava la lista per nulla.
- *   Il pannello ora parte da "Aspetto" e finisce presto.
- * - Il pannello è anche più ALTO (fino al 75% dello schermo, sempre dentro
- *   il limite dell'85% del pannello: maniglia e padding calcolati) e mentre
- *   scorri si vede la barretta di scorrimento (prima nascosta).
- * -nestedScrollEnabled: aiuta Android a capire che il gesto serve alla lista
- *   anche se parte su un pulsante interno.
+ * Novita' v4.13 (dopo la prova della v4.12):
+ * - Card PROFILO: tolto lo @username ("non deve apparire a nessun
+ *   cliente"). Restano le iniziali, il nome e la pillola "Cliente
+ *   Attivo" / "Amministratore".
+ * - Tolta la riga "Versione app" (roba tecnica che confonde).
+ * - Card NOTIFICHE: UN solo interruttore che comanda TUTTO.
+ *     * ACCESO: il telefono e' agganciato al registro del server (token
+ *       FCM) e gli allarmi locali del giorno di scadenza sono schedulati
+ *       => arrivano TUTTI gli avvisi come da logica: nuovi documenti e
+ *       messaggi in tempo reale, scadenze con l'anticipo scelto nello
+ *       studio (pannello admin) e la rete di sicurezza del giorno stesso.
+ *     * SPENTO: il telefono viene TOGLTO dal registro del server
+ *       (DELETE /api/push/fcm: endpoint gia' esistente, nessuna modifica
+ *       al backend) e gli allarmi locali sono cancellati SUBITO => non
+ *       arriva piu' niente, nemmeno a app chiusa.
+ *   La pillola "Attivo" / "Non attivo" SPECCHIA l'interruttore: prima
+ *   guardava una diagnostica interna che si azzera a ogni riavvio (per
+ *   questo risultava "Non attivo" anche se tutto funzionava).
+ * - Tolto il testo "08:30" dal pannello: l'orario resta dentro l'app
+ *   (rete di sicurezza del giorno di scadenza) ma non confonde piu'.
+ * - Scorrevolezza: il colpevole vero era il componente Modal (toccalile
+ *   attorno alla lista = scroll che incolla su Android): corretto li',
+ *   a beneficio di tutti i pannelli. Qui restano le cautele v4.12 (un
+ *   solo ScrollView, altezza calcolata, niente zone morte).
  *
- * Novità v4.1:
- * - FIX SCROLL: prima il limite di altezza del pannello era sul contenitore
- *   esterno, quindi la lista interna non capiva di dover scorrere e su molti
- *   telefoni "Esci dall'account" e "Invia notifica di test" restavano fuori
- *   schermo. Ora il limite è DIRETTO sulla lista (stesso trucco già usato
- *   dalla schermata notifiche): lo scorrimento funziona davvero.
- * - RIMOSSO il pulsante "Profilo e impostazioni": mandava a una schermata
- *   "Profile" che non esiste ed era la causa dell'errore "NAVIGATE ... Profile"
- *   nei log. In meno nella lista = meno strada da scorrere.
+ * Tocco di stile come la v4 Android (SettingsBottomSheet): pannello
+ * corto, card pulite, zero pulsanti tecnici.
  */
 import React, { useEffect, useState } from 'react';
 import {
   Pressable,
   ScrollView,
   StyleSheet,
+  Switch,
   Text,
   View,
   useWindowDimensions,
 } from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
 import { Modal } from '@/components/Modal';
-import { Button } from '@/components/Button';
+import { confirmDialog } from '@/components/ConfirmDialog';
 import { toast } from '@/components/Toaster';
 import { haptics } from '@/lib/haptics';
 import { api } from '@/api/client';
 import { useAppStore } from '@/store/auth';
-import { pushState, registerPushForCurrentUser, resetStatoPushLocale } from '@/lib/push';
-import type { FcmStatusResponse } from '@/types/api';
-import { spacing, typography, useColors, useTheme, type ThemeColors, type ThemeMode, radius } from '@/theme';
+import {
+  pushState,
+  registerPushForCurrentUser,
+  resetStatoPushLocale,
+} from '@/lib/push';
+import {
+  aggiornaPromemoriaScadenze,
+  promemoriaAttivi,
+  setPromemoriaAttivi,
+} from '@/lib/scadenze-locali';
+import { spacing, typography, useColors, useTheme, type ThemeColors, type ThemeMode } from '@/theme';
 
-const THEME_OPTIONS: Array<{ value: ThemeMode; label: string; icon: string }> = [
-  { value: 'system', label: 'Sistema', icon: '📱' },
-  { value: 'light', label: 'Chiaro', icon: '☀️' },
-  { value: 'dark', label: 'Scuro', icon: '🌙' },
+const THEME_OPTIONS: Array<{ value: ThemeMode; label: string; icon: 'phone-portrait-outline' | 'sunny-outline' | 'moon-outline' }> = [
+  { value: 'system', label: 'Sistema', icon: 'phone-portrait-outline' },
+  { value: 'light', label: 'Chiaro', icon: 'sunny-outline' },
+  { value: 'dark', label: 'Scuro', icon: 'moon-outline' },
 ];
 
 export function SettingsModal() {
@@ -65,26 +82,15 @@ export function SettingsModal() {
   const setVisible = useAppStore((s) => s.setSettingsOpen);
   const setUser = useAppStore((s) => s.setUser);
 
-  const [server, setServer] = useState<FcmStatusResponse | null>(null);
-  const [diag, setDiag] = useState({
-    registered: pushState.registered,
-    token: pushState.token,
-    error: pushState.error,
-  });
-  const [testing, setTesting] = useState(false);
-  const [reregistering, setReregistering] = useState(false);
+  const user = useAppStore((s) => s.user);
+
+  // v4.13: UNA sola verita' — l'interruttore. La pillola lo specchia.
+  // Default ATTIVO (il comportamento di sempre per chi non tocca nulla).
+  const [notificheOn, setNotificheOn] = useState(true);
 
   useEffect(() => {
     if (!visible) return;
-    setDiag({
-      registered: pushState.registered,
-      token: pushState.token,
-      error: pushState.error,
-    });
-    api.push
-      .fcmStatus()
-      .then(setServer)
-      .catch(() => setServer(null));
+    promemoriaAttivi().then(setNotificheOn);
   }, [visible]);
 
   function handleThemeSelect(m: ThemeMode) {
@@ -92,47 +98,41 @@ export function SettingsModal() {
     setThemeMode(m);
   }
 
-  async function sendTestPush() {
-    if (!pushState.registered) {
-      toast.warning('Token non registrato', 'Riprova tra qualche secondo o tocca "Registra di nuovo".');
-      return;
-    }
-    setTesting(true);
-    haptics.impact();
-    try {
-      const res = await api.push.fcmTest();
-      if (res.ok) {
-        toast.success('Test inviato', `(${res.sent ?? 1}/${res.tokenCount ?? 1}) Controlla il telefono.`);
-      } else {
-        toast.error('Test fallito', res.msg ?? 'Nessun token registrato o FCM non attivo.');
-      }
-    } catch (err) {
-      toast.error('Errore test push', err instanceof Error ? err.message : 'Errore');
-    } finally {
-      setTesting(false);
-    }
-  }
-
-  async function reregister() {
-    setReregistering(true);
+  // v4.13: l'interruttore comanda TUTTE le notifiche, con effetto SUBITO.
+  async function handleNotificheToggle(valore: boolean) {
     haptics.tap();
-    try {
+    setNotificheOn(valore);
+    await setPromemoriaAttivi(valore);
+
+    // Allarmi locali del giorno di scadenza: creati o cancellati SUBITO
+    // (la libreria legge l'interruttore appena salvato).
+    await aggiornaPromemoriaScadenze();
+
+    if (valore) {
+      // Riaggancia il telefono al registro del server (token FCM): da
+      // questo momento arrivano TUTTI gli avvisi come da logica. Se la
+      // rete manca, l'app si riaggiungira' da sola al prossimo avvio.
       await registerPushForCurrentUser();
-      await new Promise<void>((resolve) => setTimeout(resolve, 1500));
-      setDiag({
-        registered: pushState.registered,
-        token: pushState.token,
-        error: pushState.error,
-      });
-      if (pushState.registered) {
-        toast.success('Token FCM registrato correttamente.');
-      } else {
-        toast.error('Registrazione FCM non completata', pushState.error);
+      toast.success(
+        'Notifiche attive',
+        'Arriveranno documenti, messaggi e scadenze dello studio.',
+      );
+    } else {
+      // Toglie il telefono dal registro del server (endpoint esistente,
+      // nessuna modifica al backend): da adesso non arriva piu' niente,
+      // nemmeno a app chiusa. Gli allarmi locali sono gia' stati tolti.
+      try {
+        if (pushState.token) {
+          await api.push.fcmUnregister(pushState.token);
+        }
+      } catch {
+        // offline: non importa, la registrazione resta comunque saltata
       }
-    } catch (err) {
-      toast.error('Errore registrazione', err instanceof Error ? err.message : 'Errore');
-    } finally {
-      setReregistering(false);
+      pushState.registered = false;
+      toast.info(
+        'Notifiche spente',
+        'Non arriveranno più avvisi su questo telefono.',
+      );
     }
   }
 
@@ -153,25 +153,119 @@ export function SettingsModal() {
     setUser(null);
   }
 
+  // v4.12: conferma prima di uscire (come l'AlertDialog della app v4)
+  function chiediConfermaLogout() {
+    haptics.tap();
+    confirmDialog({
+      title: 'Conferma disconnessione',
+      message: 'Sei sicuro di voler uscire dal Portale PFC?',
+      confirmText: 'Esci',
+      cancelText: 'Annulla',
+      destructive: true,
+      onConfirm: handleLogout,
+    });
+  }
+
+  const nomeBello = (user?.name?.trim() || user?.username || 'Cliente PFC').trim();
+  const iniziali = (user?.name?.trim() || user?.username || 'PF')
+    .replace(/^pf/i, '')
+    .trim()
+    .slice(0, 2)
+    .toUpperCase() || 'PF';
+
   return (
-    <Modal visible={visible} onClose={() => setVisible(false)}>
-      {/* v4.1: maxHeight DIRETTO sulla lista => lo scroll funziona davvero.
-       * v4.2: nestedScrollEnabled (gesto sicuro anche su pulsanti interni)
-       * e barretta di scorrimento VISIBILE (prima nascosta: non si capiva
-       * che si poteva scorrere). */}
+    <Modal visible={visible} onClose={() => setVisible(false)} style={{ paddingBottom: 0 }}>
+      {/* Un solo ScrollView, altezza calcolata (v4.2), niente zone morte
+       * (v4.12). v4.13: lo scroll scorre davvero, perche' il componente
+       * Modal non avvolge piu' la lista in un toccabile. */}
       <ScrollView
         style={{ maxHeight: maxLista }}
         contentContainerStyle={styles.content}
         nestedScrollEnabled
         showsVerticalScrollIndicator
+        overScrollMode="never"
       >
-        <Text style={styles.title}>⚙ Impostazioni</Text>
+        <Text style={styles.title}>Impostazioni</Text>
 
-        {/* v4.2: tolta la sezione "APPLICAZIONE" (nome app, versione, utente,
-         * controllo aggiornamenti): solo roba da tecnici, allungava la strada
-         * verso "Esci dall'account" senza dare nulla al cliente. */}
+        {/* --- Card PROFILO (v4.13: via lo @username) --- */}
+        <View style={styles.card}>
+          <View style={styles.profileRow}>
+            <View style={styles.avatar}>
+              <Text style={styles.avatarText}>{iniziali}</Text>
+            </View>
+            <View style={styles.profileText}>
+              <Text style={styles.profileName} numberOfLines={1}>
+                {nomeBello}
+              </Text>
+              <View
+                style={[
+                  styles.ruoloPill,
+                  user?.role === 'admin' ? styles.ruoloPillAdmin : styles.ruoloPillCliente,
+                ]}
+              >
+                <Text
+                  style={[
+                    styles.ruoloText,
+                    user?.role === 'admin' ? styles.ruoloTextAdmin : styles.ruoloTextCliente,
+                  ]}
+                >
+                  {user?.role === 'admin' ? 'Amministratore' : 'Cliente Attivo'}
+                </Text>
+              </View>
+            </View>
+          </View>
+        </View>
 
-        <View style={styles.section}>
+        {/* --- Card NOTIFICHE: l'interruttore comanda TUTTO (v4.13) --- */}
+        <View style={styles.card}>
+          <View style={styles.sectionHeader}>
+            <Text style={styles.sectionLabel}>NOTIFICHE</Text>
+            <View
+              style={[
+                styles.statusPill,
+                notificheOn ? styles.statusPillOk : styles.statusPillWarn,
+              ]}
+            >
+              <View style={[styles.statusDot, notificheOn ? styles.statusDotOk : styles.statusDotWarn]} />
+              <Text
+                style={[
+                  styles.statusPillText,
+                  notificheOn ? styles.statusPillTextOk : styles.statusPillTextWarn,
+                ]}
+              >
+                {notificheOn ? 'Attivo' : 'Non attivo'}
+              </Text>
+            </View>
+          </View>
+
+          <Text style={styles.helpText}>
+            {notificheOn
+              ? 'Il telefono è agganciato all\'account: gli avvisi arrivano anche a app chiusa.'
+              : 'Nessun avviso arriverà su questo telefono finché non riaccendi l\'interruttore.'}
+          </Text>
+
+          <View style={styles.divider} />
+          <View style={styles.switchRow}>
+            <View style={styles.switchIconBox}>
+              <Ionicons name="notifications-outline" size={18} color={colors.primary} />
+            </View>
+            <View style={styles.switchText}>
+              <Text style={styles.switchTitle}>Ricevi gli avvisi dello studio</Text>
+              <Text style={styles.switchSub}>Documenti, messaggi e scadenze</Text>
+            </View>
+            <Switch
+              value={notificheOn}
+              onValueChange={handleNotificheToggle}
+              trackColor={{ false: colors.border, true: colors.primary }}
+              thumbColor="#FFFFFF"
+              ios_backgroundColor={colors.border}
+              accessibilityLabel="Notifiche attive o spente"
+            />
+          </View>
+        </View>
+
+        {/* --- Card ASPETTO (v4.13: tolta la riga versione) --- */}
+        <View style={styles.card}>
           <Text style={styles.sectionLabel}>ASPETTO</Text>
           <View style={styles.themeRow}>
             {THEME_OPTIONS.map((o) => {
@@ -185,7 +279,11 @@ export function SettingsModal() {
                   accessibilityState={{ selected: active }}
                   accessibilityLabel={`Tema ${o.label}`}
                 >
-                  <Text style={styles.themeIcon}>{o.icon}</Text>
+                  <Ionicons
+                    name={o.icon}
+                    size={18}
+                    color={active ? colors.accentDark : colors.textSecondary}
+                  />
                   <Text style={[styles.themeLabel, active && styles.themeLabelActive]}>
                     {o.label}
                   </Text>
@@ -198,84 +296,14 @@ export function SettingsModal() {
           </Text>
         </View>
 
-        <View style={styles.section}>
-          <View style={styles.sectionHeader}>
-            <Text style={styles.sectionLabel}>STATO NOTIFICHE</Text>
-            <View
-              style={[
-                styles.statusPill,
-                diag.registered ? styles.statusPillOk : styles.statusPillWarn,
-              ]}
-            >
-              <Text
-                style={[
-                  styles.statusPillText,
-                  diag.registered ? styles.statusPillTextOk : styles.statusPillTextWarn,
-                ]}
-              >
-                {diag.registered ? 'Registrato' : 'Non registrato'}
-              </Text>
-            </View>
-          </View>
-
-          {diag.token ? (
-            <Text style={styles.tokenText}>
-              Token: {diag.token.slice(0, 28)}… ({diag.token.length} char)
-            </Text>
-          ) : (
-            <Text style={styles.mutedText}>Nessun token FCM ricevuto dal device.</Text>
-          )}
-
-          {diag.error ? <Text style={styles.errorText}>Errore: {diag.error}</Text> : null}
-
-          {server && (
-            <View style={styles.serverInfo}>
-              <Text style={styles.serverRow}>
-                Server FCM:{' '}
-                <Text style={server.fcmEnabled ? styles.serverOk : styles.serverErr}>
-                  {server.fcmEnabled ? 'attivo' : 'NON CONFIGURATO'}
-                </Text>
-              </Text>
-              <Text style={styles.serverRow}>
-                Token registrati sul server: {server.userTokens}
-              </Text>
-            </View>
-          )}
-
-          {server && !server.fcmEnabled && (
-            <Text style={styles.errorText}>
-              Il server non può inviare push: mancano le credenziali Firebase. Contatta lo studio.
-            </Text>
-          )}
-
-          <Button
-            label={reregistering ? 'Registrazione…' : '↻ Registra di nuovo'}
-            onPress={reregister}
-            variant="secondary"
-            loading={reregistering}
-            size="md"
-            style={styles.reregisterBtn}
-          />
-        </View>
-
-        <Button
-          label={testing ? 'Invio in corso…' : '🔔 Invia notifica di test'}
-          onPress={sendTestPush}
-          loading={testing}
-        />
-        <Text style={styles.helpText}>
-          Ricevi una notifica di prova: se arriva, le notifiche funzionano.
-        </Text>
-
-        {/* v4.1: rimosso il pulsante "Profilo e impostazioni": navigava verso
-         * una schermata "Profile" inesistente (errore NOBRIDGE in console e
-         * nessun effetto visibile). Il pannello impostazioni È il profilo. */}
-
+        {/* --- Esci dall'account (con conferma) --- */}
         <Pressable
-          onPress={handleLogout}
+          onPress={chiediConfermaLogout}
           style={({ pressed }) => [styles.logoutBtn, pressed && styles.logoutBtnPressed]}
+          accessibilityLabel="Esci dall'account"
         >
-          <Text style={styles.logoutText}>🚪 Esci dall'account</Text>
+          <Ionicons name="log-out-outline" size={18} color={colors.danger} />
+          <Text style={styles.logoutText}>Esci dall'account</Text>
         </Pressable>
       </ScrollView>
     </Modal>
@@ -284,43 +312,99 @@ export function SettingsModal() {
 
 const makeStyles = (colors: ThemeColors) =>
   StyleSheet.create({
-    content: { padding: spacing.xl, gap: spacing.lg },
+    content: { padding: spacing.xl, paddingTop: spacing.md, gap: spacing.lg, paddingBottom: spacing.xxxl },
     title: { ...typography.h4, color: colors.textPrimary, fontWeight: '700' },
-    section: { backgroundColor: colors.surfaceAlt, borderRadius: 12, padding: spacing.lg, gap: spacing.sm },
+
+    // v4.12 — card in stile v4: fondo soft, raggio 18, bordo sottile
+    card: {
+      backgroundColor: colors.surfaceAlt,
+      borderRadius: 18,
+      borderWidth: 1,
+      borderColor: colors.border,
+      padding: spacing.lg,
+      gap: spacing.sm,
+    },
     sectionLabel: { ...typography.labelSmall, color: colors.textTertiary, fontWeight: '700' },
     sectionHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+
+    // Profilo
+    profileRow: { flexDirection: 'row', alignItems: 'center', gap: 14 },
+    avatar: {
+      width: 54,
+      height: 54,
+      borderRadius: 27,
+      backgroundColor: colors.primary,
+      borderWidth: 2,
+      borderColor: colors.accent,
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
+    avatarText: { color: '#FFFFFF', fontSize: 18, fontWeight: '900', letterSpacing: 0.5 },
+    profileText: { flex: 1, gap: 2 },
+    profileName: { ...typography.body, color: colors.textPrimary, fontWeight: '700', fontSize: 15 },
+    ruoloPill: {
+      alignSelf: 'flex-start',
+      marginTop: 4,
+      paddingHorizontal: 8,
+      paddingVertical: 3,
+      borderRadius: 999,
+    },
+    ruoloPillCliente: { backgroundColor: colors.infoSoft },
+    ruoloPillAdmin: { backgroundColor: colors.warningSoft },
+    ruoloText: { fontSize: 10, fontWeight: '700' },
+    ruoloTextCliente: { color: colors.primary },
+    ruoloTextAdmin: { color: colors.warning },
+
+    // Stato notifiche
+    statusPill: { flexDirection: 'row', alignItems: 'center', gap: 5, paddingHorizontal: spacing.md, paddingVertical: spacing.xs, borderRadius: 999 },
+    statusPillOk: { backgroundColor: colors.successSoft },
+    statusPillWarn: { backgroundColor: colors.warningSoft },
+    statusDot: { width: 6, height: 6, borderRadius: 3 },
+    statusDotOk: { backgroundColor: colors.success },
+    statusDotWarn: { backgroundColor: colors.warning },
+    statusPillText: { ...typography.labelSmall, fontSize: 10.5, fontWeight: '800' },
+    statusPillTextOk: { color: colors.success },
+    statusPillTextWarn: { color: colors.warning },
+
+    // Interruttore / righe
+    divider: { borderTopWidth: 1, borderTopColor: colors.border, marginTop: spacing.xs },
+    switchRow: { flexDirection: 'row', alignItems: 'center', gap: 12 },
+    switchIconBox: { width: 36, height: 36, borderRadius: 10, backgroundColor: colors.accentSoft, alignItems: 'center', justifyContent: 'center' },
+    switchText: { flex: 1, gap: 1 },
+    switchTitle: { ...typography.body, color: colors.textPrimary, fontWeight: '600', fontSize: 14 },
+    switchSub: { ...typography.caption, color: colors.textTertiary },
+
+    // Tema
     themeRow: { flexDirection: 'row', gap: spacing.sm },
     themeBtn: {
       flex: 1,
       height: 56,
-      borderRadius: 12,
+      borderRadius: 14,
       borderWidth: 1.5,
       borderColor: colors.border,
       backgroundColor: colors.surface,
       alignItems: 'center',
       justifyContent: 'center',
-      gap: 2,
+      gap: 4,
     },
     themeBtnActive: { borderColor: colors.accent, backgroundColor: colors.accentSoft },
-    themeIcon: { fontSize: 16 },
     themeLabel: { ...typography.caption, color: colors.textSecondary, fontWeight: '600' },
     themeLabelActive: { color: colors.accentDark },
-    statusPill: { paddingHorizontal: spacing.md, paddingVertical: spacing.xs, borderRadius: 999 },
-    statusPillOk: { backgroundColor: colors.successSoft },
-    statusPillWarn: { backgroundColor: colors.warningSoft },
-    statusPillText: { ...typography.labelSmall, fontSize: 10, fontWeight: '700' },
-    statusPillTextOk: { color: colors.success },
-    statusPillTextWarn: { color: colors.warning },
-    tokenText: { ...typography.caption, color: colors.textTertiary },
-    mutedText: { ...typography.caption, color: colors.textTertiary },
-    errorText: { ...typography.caption, color: colors.danger },
-    serverInfo: { borderTopWidth: 1, borderTopColor: colors.border, paddingTop: spacing.sm, gap: 2 },
-    serverRow: { ...typography.caption, color: colors.textTertiary },
-    serverOk: { color: colors.success, fontWeight: '700' },
-    serverErr: { color: colors.danger, fontWeight: '700' },
-    reregisterBtn: { marginTop: spacing.xs },
-    helpText: { ...typography.caption, color: colors.textTertiary, marginTop: -spacing.sm },
-    logoutBtn: { marginTop: spacing.xs, minHeight: 54, borderRadius: radius.lg, borderWidth: 1.5, borderColor: colors.danger, backgroundColor: colors.dangerSoft, alignItems: 'center', justifyContent: 'center' },
+
+    helpText: { ...typography.caption, color: colors.textTertiary, lineHeight: 16 },
+
+    // Esci
+    logoutBtn: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'center',
+      gap: 8,
+      minHeight: 54,
+      borderRadius: 999,
+      borderWidth: 1.5,
+      borderColor: colors.danger,
+      backgroundColor: colors.dangerSoft,
+    },
     logoutBtnPressed: { opacity: 0.8, transform: [{ scale: 0.98 }] },
     logoutText: { ...typography.body, color: colors.danger, fontWeight: '800' },
   });

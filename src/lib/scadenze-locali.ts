@@ -43,6 +43,7 @@
  * nessuna chiamata lancia eccezioni non gestite).
  */
 
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { api } from '@/api/client';
 import {
   caricaModuloNotifiche,
@@ -52,6 +53,37 @@ import { partiFilePath } from '@/lib/deeplink';
 
 /** Prefisso dell'identificativo dei promemoria scadenze (per cancellarli). */
 const PREFISSO_ID = 'pfc-scad-';
+
+/**
+ * v4.12 — Interruttore dei promemoria (l'interuttore nelle Impostazioni).
+ * La scelta resta SUL TELEFONO (AsyncStorage, chiave dedicata): nessuna
+ * modifica al server. Default = ATTIVO, cioe' esattamente il comportamento
+ * di sempre per chi non tocca nulla.
+ */
+const CHIAVE_ATTIVO = '@pfc/promemoria-scadenze-attivi';
+let cacheAttivo: boolean | null = null;
+
+/** Legge l'interruttore (default ATTIVO se mai toccato o se lo storage fallisce). */
+export async function promemoriaAttivi(): Promise<boolean> {
+  if (cacheAttivo !== null) return cacheAttivo;
+  try {
+    const valore = await AsyncStorage.getItem(CHIAVE_ATTIVO);
+    cacheAttivo = valore !== '0';
+  } catch {
+    cacheAttivo = true;
+  }
+  return cacheAttivo;
+}
+
+/** Salva l'interruttore e applicalo SUBITO (la prossima sincronizzazione esegue). */
+export async function setPromemoriaAttivi(attivo: boolean): Promise<void> {
+  cacheAttivo = attivo;
+  try {
+    await AsyncStorage.setItem(CHIAVE_ATTIVO, attivo ? '1' : '0');
+  } catch {
+    // storage non disponibile: resta valido finche' l'app e' aperta
+  }
+}
 
 /** Canale degli avvisi del portale (creato da preparaNotifiche, importanza alta). */
 const CANALE = 'pfc-alerts-v2';
@@ -107,6 +139,22 @@ export async function aggiornaPromemoriaScadenze(): Promise<number> {
     const Notifications = await caricaModuloNotifiche();
     if (!Notifications) return 0;
     if (!(await preparaNotifiche())) return 0;
+
+    // v4.12 — Se l'interruttore nelle Impostazioni e' SPENTO: cancella i
+    // promemoria gia' in orologio e non schedularne di nuovi. Cosi' lo
+    // spegnimento ha effetto IMMEDIATO (non aspetta la prossima apertura).
+    if (!(await promemoriaAttivi())) {
+      const presenti = await Notifications.getAllScheduledNotificationsAsync();
+      for (const notifica of presenti) {
+        if (notifica.identifier.startsWith(PREFISSO_ID)) {
+          await Notifications.cancelScheduledNotificationAsync(notifica.identifier).catch(
+            () => {},
+          );
+        }
+      }
+      console.log('[SCADENZE-LOCALI] promemoria SPENTI da Impostazioni: 0 schedulati');
+      return 0;
+    }
 
     // 1) Scarichiamo PRIMA le scadenze imminenti dal server: solo se la
     //    lettura riesce tocchiamo i promemoria gia' schedulati (v4.4).

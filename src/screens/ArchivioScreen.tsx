@@ -1,5 +1,19 @@
 /**
- * Schermata Archivio — grafica replicata dall'app Android v4 (v4.11).
+ * Schermata Archivio — grafica replicata dall'app Android v4 (v4.12).
+ *
+ * Novità v4.12 (logica d'ingresso come l'app v4, meno gesti, più veloce):
+ * - VIA l'elenco degli anni nella lista: gli anni si scelgono SOLO dai chip
+ *   in alto (esattamente come l'app Android v4). Appena arrivano gli anni
+ *   viene selezionato da solo il più recente e sotto compaiono SUBITO le
+ *   cartelle di quell'anno. Niente più doppione "anni e cartelle".
+ * - VIA il trascina-in-basso-per-aggiornare: la lista si aggiorna DA SOLA
+ *   in silenzio quando riapri l'app o arriva una notifica (stessi eventi
+ *   già usati da Messaggi). Zero gesti, zero cerchietti.
+ * - Apertura più veloce: tolte le N chiamate che a ogni apertura chiedevano
+ *   al server "quante novità ha ogni anno" solo per colorare le righe-anno
+ *   ormai rimosse.
+ * - Tutto il resto NON toccato: ricerca, dettaglio, selezione multipla,
+ *   preferiti, download, condivisione, email, deep-link dalle notifiche.
  *
  * Novità v4.11 (solo GRAFICA, le funzioni di sempre non cambiano):
  * - Hero blu notte con gradiente + chip oro "ESERCIZIO {anno}" e pillola
@@ -189,10 +203,10 @@ import {
   ActivityIndicator,
   Animated,
   BackHandler,
+  DeviceEventEmitter,
   Easing,
   FlatList,
   Pressable,
-  RefreshControl,
   ScrollView,
   StyleSheet,
   Text,
@@ -229,17 +243,6 @@ const NAVY_PRIMARIO = '#003566';
 const NAVY_QUOTA = '#034078';
 const ORO = '#D4AF37';
 const ORO_CHIARO = '#F7E7B4';
-
-const GIORNI = ['domenica', 'lunedì', 'martedì', 'mercoledì', 'giovedì', 'venerdì', 'sabato'];
-const MESI = [
-  'gennaio', 'febbraio', 'marzo', 'aprile', 'maggio', 'giugno',
-  'luglio', 'agosto', 'settembre', 'ottobre', 'novembre', 'dicembre',
-];
-
-function dataDiOggi(): string {
-  const d = new Date();
-  return `${GIORNI[d.getDay()]} ${d.getDate()} ${MESI[d.getMonth()]} ${d.getFullYear()}`;
-}
 
 function oraDi(d: Date): string {
   const hh = String(d.getHours()).padStart(2, '0');
@@ -362,9 +365,9 @@ const STATO_BADGE: Record<
   preferito: { label: '★ PREFERITO', variant: 'accent' },
 };
 
-/** Riga della lista archivio: anno, cartella (con conteggio), sottocartella o file. */
+/** Riga della lista archivio: cartella (con conteggio), sottocartella o file.
+ * v4.12: le RIGHE-ANNO non esistono più (gli anni vivono solo nei chip). */
 type ItemArchivio =
-  | { kind: 'anno'; nome: string }
   | { kind: 'cartella'; nome: string; count?: number; nuovi?: number }
   | { kind: 'sottocartella'; nome: string; count: number; nuovi?: number }
   | { kind: 'file'; file: FileItem };
@@ -594,9 +597,6 @@ export default function ArchivioScreen() {
   const [files, setFiles] = useState<FileItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
-  // v4.0: quante cose nuove ci sono in ogni anno (es. { 2026: 2 }):
-  // serve alla pagina iniziale per mostrare "1 nuovo / 2 nuovi".
-  const [nuoviAnno, setNuoviAnno] = useState<Record<string, number>>({});
   const [lastLoad, setLastLoad] = useState<Date | null>(null);
   const [searchOpen, setSearchOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
@@ -634,7 +634,10 @@ export default function ArchivioScreen() {
   //   appiattite nei nomi dei file ("Sotto/file.pdf"): qui le separo e le
   //   rendo navigabili come cartelle vere, con conteggio file e "nuovi".
   const items: ItemArchivio[] = useMemo(() => {
-    if (step === 'anno') return anni.map((a) => ({ kind: 'anno', nome: a }) as ItemArchivio);
+    // v4.12: al primissimo istante (anni non ancora caricati) la lista è
+    // vuota: l'effetto qui sotto sceglie da solo l'anno più recente e si
+    // passa subito alle cartelle, come nell'app v4.
+    if (step === 'anno') return [];
     if (step === 'cartella') {
       return cartelle.map((c) => ({
         kind: 'cartella',
@@ -661,18 +664,20 @@ export default function ArchivioScreen() {
       .sort((a, b) => a[0].localeCompare(b[0]))
       .map(([nome, v]) => ({ kind: 'sottocartella', nome, count: v.count, nuovi: v.nuovi }));
     return [...righeSotto, ...diretti.map((file) => ({ kind: 'file', file }) as ItemArchivio)];
-  }, [step, anni, cartelle, files]);
+  }, [step, cartelle, files]);
 
   const nFileDiretti = items.filter((i) => i.kind === 'file').length;
 
-  const nome = (user?.name?.trim() || user?.username || '').trim();
-  const nomeBello = nome ? nome.charAt(0).toUpperCase() + nome.slice(1) : '';
-
   const load = useCallback(
-    async (showRefresh = false) => {
+    async (showRefresh = false, silenzioso = false) => {
       if (!user) return;
-      if (showRefresh) setRefreshing(true);
-      else setLoading(true);
+      // v4.12: "silenzioso" = aggiorna in background SENZA skeleton né
+      // spinner (arriva una notifica o l'app torna in primo piano): se la
+      // rete è lenta l'utente continua a usare la lista che già vede.
+      if (!silenzioso) {
+        if (showRefresh) setRefreshing(true);
+        else setLoading(true);
+      }
       try {
         const res = await api.documenti.list({
           username: user.username,
@@ -680,30 +685,10 @@ export default function ArchivioScreen() {
           cartella: cartella ?? undefined,
         });
         if (res.anni) {
-          const ordine = [...res.anni].sort((a, b) => b.localeCompare(a));
-          setAnni(ordine);
-          // v4.0: per ogni anno chiedo al server quante cose nuove contiene
-          // (somma dei "nuovi" delle cartelle + i file nuovi diretti): cosi'
-          // la pagina iniziale mostra "1 nuovo / 2 nuovi" su ogni anno e il
-          // cliente capisce subito dove vale la pena entrare.
-          Promise.all(
-            ordine.map(async (a): Promise<[string, number]> => {
-              try {
-                const r = await api.documenti.list({ username: user.username, anno: a });
-                const quanto =
-                  (r.cartelle ?? []).reduce(
-                    (somma, c) => somma + (campoNumero(c, 'nuovi', 'nNuovi') ?? 0),
-                    0,
-                  ) +
-                  (r.files ?? []).filter((f) => f.stato === 'nuovo').length;
-                return [a, quanto];
-              } catch {
-                return [a, 0];
-              }
-            }),
-          )
-            .then((coppie) => setNuoviAnno(Object.fromEntries(coppie)))
-            .catch(() => {});
+          // v4.12: solo la lista anni (ordinata dal più recente). Tolte le
+          // N chiamate "quante novità per ogni anno": servivano solo alle
+          // righe-anno rimosse e rallentavano l'apertura per niente.
+          setAnni([...res.anni].sort((a, b) => b.localeCompare(a)));
         }
         setCartelle(res.cartelle ?? []);
         setFiles(res.files ?? []);
@@ -720,6 +705,29 @@ export default function ArchivioScreen() {
 
   useEffect(() => {
     load();
+  }, [load]);
+
+  // v4.12: l'anno è SEMPRE scelto (come l'app v4): appena arriva la lista
+  // anni, se nessuno è ancora selezionato parte da solo il più recente.
+  // Da questo momento la lista mostra direttamente le cartelle dell'anno:
+  // niente più righe-anno, niente più doppione.
+  useEffect(() => {
+    const primo = anni[0];
+    if (primo && !anno) setAnno(primo);
+  }, [anni, anno, setAnno]);
+
+  // v4.12: aggiornamento silenzioso al posto del trascina-in-basso.
+  // Stessi eventi già usati da Messaggi: quando l'app torna in primo
+  // piano (pfc-app-risentita) o arriva una notifica (pfc-push-ricevuta)
+  // la lista si ricarica da sola, senza skeleton né spinner.
+  useEffect(() => {
+    const ricarica = () => load(false, true);
+    const subRisentita = DeviceEventEmitter.addListener('pfc-app-risentita', ricarica);
+    const subPush = DeviceEventEmitter.addListener('pfc-push-ricevuta', ricarica);
+    return () => {
+      subRisentita.remove();
+      subPush.remove();
+    };
   }, [load]);
 
   // v4.6: deep-link a un documento preciso (notifica di scadenza toccata:
@@ -920,17 +928,15 @@ export default function ArchivioScreen() {
     setSearchResults([]);
   }
 
-  /** Risale di un livello: da sottocartella a cartella, da cartella ad anni. */
+  /** Risale di un livello: da sottocartella a cartella, da cartella alla
+   * radice dell'anno (v4.12: la radice resta SEMPRE dentro l'anno scelto —
+   * gli anni si cambiano solo dai chip, come nell'app v4). */
   function tornaSu() {
     haptics.tap();
-    if (step === 'file') {
-      if (cartella && cartella.includes('/')) {
-        setCartella(cartella.slice(0, cartella.lastIndexOf('/')));
-      } else {
-        setCartella(null);
-      }
+    if (cartella && cartella.includes('/')) {
+      setCartella(cartella.slice(0, cartella.lastIndexOf('/')));
     } else {
-      setAnno(null);
+      setCartella(null);
     }
   }
 
@@ -952,10 +958,12 @@ export default function ArchivioScreen() {
         clearSelection();
         return true;
       }
-      if (step === 'file' || step === 'cartella') {
+      if (step === 'file') {
         tornaSu();
         return true;
       }
+      // v4.12: alla radice (anno aperto, nessuna cartella) il tasto indietro
+      // fisico si comporta in modo standard, come ci si aspetta.
       return false;
     });
     return () => sub.remove();
@@ -1158,8 +1166,10 @@ export default function ArchivioScreen() {
 
   return (
     <SafeAreaView style={styles.safe} edges={['top']}>
-      {/* Breadcrumb con freccia indietro in cerchio (come l'app v4) */}
-      {step !== 'anno' && (
+      {/* Breadcrumb con freccia indietro in cerchio (come l'app v4).
+       * v4.12: solo DENTRO una cartella — alla radice restano hero + chip,
+       * senza barra di troppo, identico all'app Android. */}
+      {!!cartella && (
         <View style={styles.breadSurface}>
           <Pressable
             onPress={tornaSu}
@@ -1219,46 +1229,9 @@ export default function ArchivioScreen() {
           style={styles.list}
           ListHeaderComponent={
             <View style={styles.testataLista}>
-              {/* Hero blu notte: scelta anno o riepilogo esercizio (come l'app v4) */}
-              {step === 'anno' && (
-                <Entrata>
-                  <View style={styles.heroNavy}>
-                    <Svg style={StyleSheet.absoluteFill}>
-                      <Defs>
-                        <LinearGradient id="archHeroAnni" x1="0" y1="0" x2="1" y2="1">
-                          <Stop offset="0" stopColor={NAVY_NOTTE} />
-                          <Stop offset="0.55" stopColor={NAVY_PRIMARIO} />
-                          <Stop offset="1" stopColor={NAVY_QUOTA} />
-                        </LinearGradient>
-                      </Defs>
-                      <Rect width="100%" height="100%" fill="url(#archHeroAnni)" />
-                    </Svg>
-                    <View style={styles.heroNavyInner}>
-                      <View style={styles.heroNavyTopRow}>
-                        <View style={styles.heroGoldChip}>
-                          <View style={styles.heroGoldDot} />
-                          <Text style={styles.heroGoldChipText}>PORTALE PFC · v4.11</Text>
-                        </View>
-                        <Text style={styles.heroCount}>
-                          {anni.length} {anni.length === 1 ? 'esercizio' : 'esercizi'}
-                        </Text>
-                      </View>
-                      <View>
-                        <Text style={styles.heroNavyTitle}>Archivio</Text>
-                        <Text style={styles.heroNavySub}>
-                          {nomeBello
-                            ? `Tutti i documenti di ${nomeBello}`
-                            : 'Tutti i documenti del portale'}
-                        </Text>
-                        <Text style={styles.heroNavyDesc}>
-                          Consulta e scarica i documenti organizzati per anno e cartella.
-                        </Text>
-                      </View>
-                      <Text style={styles.heroHintLight}>{`${dataDiOggi()} · Trascina in basso per aggiornare`}</Text>
-                    </View>
-                  </View>
-                </Entrata>
-              )}
+              {/* v4.12: VIA l'hero "scelta anno" e le righe-anno — gli anni
+               * vivono SOLO nei chip; la radice mostra subito l'hero dell'anno
+               * con le sue cartelle, identico all'app Android v4. */}
               {step === 'cartella' && (
                 <Entrata>
                   <View style={styles.heroNavy}>
@@ -1313,7 +1286,9 @@ export default function ArchivioScreen() {
                         );
                       })()}
                       <Text style={styles.heroHintLight}>
-                        {lastLoad ? `Aggiornato alle ${oraDi(lastLoad)} · trascina per aggiornare` : 'Trascina in basso per aggiornare'}
+                        {lastLoad
+                          ? `Aggiornato alle ${oraDi(lastLoad)} · si aggiorna da solo`
+                          : 'Si aggiorna da solo quando arrivano novità'}
                       </Text>
                     </View>
                   </View>
@@ -1337,7 +1312,9 @@ export default function ArchivioScreen() {
                       key={a}
                       onPress={() => {
                         haptics.tap();
-                        if (step !== 'anno') setCartella(null);
+                        // v4.12: cambiare anno riporta sempre alla radice
+                        // dell'anno scelto (mai dentro una cartella vecchia).
+                        setCartella(null);
                         setAnno(a);
                       }}
                       style={[styles.chip, a === anno && styles.chipSelected]}
@@ -1356,54 +1333,9 @@ export default function ArchivioScreen() {
           keyExtractor={(item): string =>
             item.kind === 'file' ? item.file.key : `${item.kind}:${item.nome}`
           }
-          refreshControl={
-            <RefreshControl
-              refreshing={refreshing}
-              onRefresh={() => load(true)}
-              tintColor={colors.accent}
-              colors={[colors.accent]}
-              progressBackgroundColor={colors.surface}
-            />
-          }
+          // v4.12: VIA il RefreshControl (trascina-in-basso): la lista si
+          // aggiorna da sola con gli eventi silenziosi qui sopra.
           renderItem={({ item, index }) => {
-            if (item.kind === 'anno') {
-              // Riga anno in stile CartellaCard (l'app v4 sceglie l'anno dai chip)
-              return (
-                <Entrata delay={Math.min(120 + index * 60, 500)}>
-                  <ScalablePress
-                    onPress={() => {
-                      haptics.tap();
-                      setAnno(item.nome);
-                    }}
-                  >
-                    <Card style={styles.folderCard} padded={false}>
-                      <View style={styles.folderRowInner}>
-                        <View style={styles.folderIconBox}>
-                          <Ionicons name="folder" size={24} color={colors.primary} />
-                        </View>
-                        <View style={styles.rowText}>
-                          <Text style={styles.folderName} numberOfLines={1}>
-                            {item.nome}
-                          </Text>
-                          <View style={styles.folderMetaRow}>
-                            <Text style={styles.rowSubtitle}>Apri l'archivio</Text>
-                            {(nuoviAnno[item.nome] ?? 0) > 0 && (
-                              <Badge
-                                label={`${nuoviAnno[item.nome]} ${nuoviAnno[item.nome] === 1 ? 'nuovo' : 'nuovi'}`}
-                                variant="success"
-                              />
-                            )}
-                          </View>
-                        </View>
-                        <View style={styles.chevronCircle}>
-                          <Ionicons name="chevron-forward" size={17} color={colors.textSecondary} />
-                        </View>
-                      </View>
-                    </Card>
-                  </ScalablePress>
-                </Entrata>
-              );
-            }
             if (item.kind === 'cartella' || item.kind === 'sottocartella') {
               // CartellaCard dell'app v4: box gradiente, conteggio, badge nuovo, freccia in cerchio
               return (
@@ -1535,11 +1467,19 @@ export default function ArchivioScreen() {
             ) : (
               <EmptyState
                 icon={<Ionicons name="folder-open-outline" size={36} color={colors.primary} />}
-                title="Nessun documento trovato"
+                title={
+                  step === 'file'
+                    ? 'Cartella vuota'
+                    : anni.length === 0
+                      ? 'Nessun documento in archivio'
+                      : `Nessuna cartella per il ${anno}`
+                }
                 subtitle={
-                  step === 'anno'
-                    ? 'Trascina in basso per aggiornare'
-                    : 'Trascina in basso per aggiornare la cartella'
+                  step === 'file'
+                    ? 'La lista si aggiorna da sola quando torni qui'
+                    : anni.length === 0
+                      ? 'Quando lo studio pubblica dei documenti, compariranno qui da soli'
+                      : 'Prova a scegliere un altro anno dai chip in alto'
                 }
               />
             )
