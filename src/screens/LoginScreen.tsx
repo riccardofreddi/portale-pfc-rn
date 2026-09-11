@@ -4,17 +4,23 @@
  * Grafica replicata dall'app Android v4: bagliore blu notte in cima,
  * monogramma "PF" con anello oro, titolo PORTALE, card bianca arrotondata,
  * campi con icone e badge "connessione crittografata".
+ *
+ * v4.14: contenuto centrato con respiro garantito sotto la status bar
+ * (il logo non tocca mai la barra dell'orologio), "Accesso Archivio"
+ * una volta sola, occhio mostra/nascondi sul campo password, tolta la
+ * dicitura di sicurezza duplicata in fondo a schermo.
  */
 import React, { useState } from 'react';
 import {
   KeyboardAvoidingView,
   Platform,
+  Pressable,
   ScrollView,
   StyleSheet,
   Text,
   View,
 } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import Svg, { Defs, Rect, LinearGradient, Stop } from 'react-native-svg';
 import { Button } from '@/components/Button';
@@ -36,9 +42,11 @@ export default function LoginScreen() {
   const colors = useColors();
   const styles = makeStyles(colors);
 
+  const insets = useSafeAreaInsets();
   const setUser = useAppStore((s) => s.setUser);
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
+  const [mostraPassword, setMostraPassword] = useState(false);
   const [loading, setLoading] = useState(false);
 
   async function handleLogin() {
@@ -98,7 +106,10 @@ export default function LoginScreen() {
         behavior={Platform.OS === 'ios' ? 'padding' : undefined}
       >
         <ScrollView
-          contentContainerStyle={styles.scroll}
+          contentContainerStyle={[
+            styles.scroll,
+            { paddingTop: insets.top + spacing.xxxl },
+          ]}
           keyboardShouldPersistTaps="handled"
         >
           <View style={styles.hero}>
@@ -113,7 +124,6 @@ export default function LoginScreen() {
           </View>
 
           <View style={styles.formCard}>
-            <Text style={styles.cardTitle}>Accesso Archivio</Text>
             <Text style={styles.cardDescription}>
               Inserisci le tue credenziali per consultare l&apos;archivio.
             </Text>
@@ -133,9 +143,24 @@ export default function LoginScreen() {
               value={password}
               onChangeText={setPassword}
               placeholder="La tua password"
-              secureTextEntry
+              secureTextEntry={!mostraPassword}
               leftIcon={
                 <Ionicons name="lock-closed-outline" size={20} color={NAVY_PRIMARIO} />
+              }
+              rightIcon={
+                <Pressable
+                  onPress={() => setMostraPassword((v) => !v)}
+                  hitSlop={8}
+                  accessibilityLabel={
+                    mostraPassword ? 'Nascondi password' : 'Mostra password'
+                  }
+                >
+                  <Ionicons
+                    name={mostraPassword ? 'eye-off-outline' : 'eye-outline'}
+                    size={20}
+                    color={NAVY_PRIMARIO}
+                  />
+                </Pressable>
               }
             />
             <Button
@@ -159,8 +184,6 @@ export default function LoginScreen() {
               <Text style={styles.trustSubtitle}>Archivio riservato e protetto</Text>
             </View>
           </View>
-
-          <Text style={styles.footer}>Archivio riservato e protetto</Text>
         </ScrollView>
       </KeyboardAvoidingView>
     </SafeAreaView>
@@ -236,15 +259,9 @@ const makeStyles = (colors: ThemeColors) =>
       borderColor: colors.border,
       ...shadow.lg,
     },
-    cardTitle: {
-      ...typography.h4,
-      color: colors.textPrimary,
-      fontWeight: '700',
-    },
     cardDescription: {
       ...typography.bodySmall,
       color: colors.textSecondary,
-      marginTop: -spacing.md,
     },
     trustBadge: {
       flexDirection: 'row',
@@ -275,11 +292,5 @@ const makeStyles = (colors: ThemeColors) =>
       ...typography.caption,
       color: colors.textSecondary,
       fontSize: 11,
-    },
-    footer: {
-      ...typography.caption,
-      color: colors.textTertiary,
-      textAlign: 'center',
-      marginTop: spacing.xl,
     },
   });

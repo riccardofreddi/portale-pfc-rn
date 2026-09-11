@@ -1,5 +1,33 @@
 /**
- * Schermata Archivio — grafica replicata dall'app Android v4 (v4.12).
+ * Schermata Archivio — grafica replicata dall'app Android v4 (v4.18).
+ *
+ * Novità v4.18 (niente più doppioni: si condivide e basta):
+ * - VIA il vecchio pulsante che mandava la email col file: con
+ *   "Condividi" il file parte con TUTTE le app del telefono, email
+ *   compresa (WhatsApp, Gmail, Drive...): due pulsanti per la stessa
+ *   cosa confondevano solo.
+ * - "Scarica" e "Condividi" restano SEMPRE nei loro posti nel dettaglio,
+ *   e adesso stanno anche nel LETTORE del file (quando apri un documento
+ *   li trovi subito in alto, senza dover tornare al dettaglio).
+ *
+ * Novità v4.15 (archivio più ordinato, stati che seguono quello che fai):
+ * - "3 cartelle" al posto di "3 sezioni" nell'hero (numero reale, che si
+ *   aggiorna da solo con le cartelle dell'anno).
+ * - VIA la dicitura "Aggiornato alle HH:MM · si aggiorna da solo" e via
+ *   le date oscure: al suo posto il pulsante oro "I miei preferiti (n)"
+ *   che apre il pannello con TUTTI i preferiti di tutti gli anni (tocco
+ *   = apri il file, stellina = rimuovi dai preferiti). Nascosto se 0.
+ * - Le righe dei file mostrano il GIORNO ESATTO d'ingresso: "Oggi",
+ *   "Ieri", per i più vecchi la data.
+ * - PREFERITI SEMPRE IN CIMA alla lista dei file (prima le sottocartelle
+ *   potevano stare sopra di loro).
+ * - STATO VERO sulla riga: appena APRI un file diventa VISTO (prima
+ *   restava "nuovo" fino al ricaricamento), se lo SCARICHI diventa
+ *   SCARICATO, se non tocchi nulla resta NUOVO. Regole del server
+ *   rispettate: preferito vince su tutto, scaricato non torna indietro.
+ * - Pannello dettaglio file rifatto in stile v4: icone Ionicons al
+ *   posto delle emoji, Apri oro con testo scuro, Scarica navy con barra
+ *   di avanzamento, stesse azioni e stesse regole di sempre.
  *
  * Novità v4.12 (logica d'ingresso come l'app v4, meno gesti, più veloce):
  * - VIA l'elenco degli anni nella lista: gli anni si scelgono SOLO dai chip
@@ -13,7 +41,7 @@
  *   al server "quante novità ha ogni anno" solo per colorare le righe-anno
  *   ormai rimosse.
  * - Tutto il resto NON toccato: ricerca, dettaglio, selezione multipla,
- *   preferiti, download, condivisione, email, deep-link dalle notifiche.
+ *   preferiti, download, condivisione, deep-link dalle notifiche.
  *
  * Novità v4.11 (solo GRAFICA, le funzioni di sempre non cambiano):
  * - Hero blu notte con gradiente + chip oro "ESERCIZIO {anno}" e pillola
@@ -48,7 +76,9 @@
  * - Le righe dei file NON hanno più pulsanti (niente stellina, niente scarica
  *   immediata): un tocco sulla riga apre il DETTAGLIO del file.
  * - Dettaglio file = pannello inferiore con icona, nome, stato, percorso,
- *   data, dimensione e azioni chiare: Anteprima (PDF), Scarica, Preferito.
+ *   dimensione e azioni chiare: Anteprima (PDF), Scarica, Preferito.
+ *   (v4.16: tolta anche la riga "Data documento" — restano Percorso e
+ *   Dimensione, l'essenziale per capire cosa fare col file.)
  * - Anche i risultati della ricerca si aprono nello stesso dettaglio.
  * - Niente più download accidentali: scaricare è sempre una scelta consapevole.
  *
@@ -230,8 +260,12 @@ import { haptics } from '@/lib/haptics';
 import { api } from '@/api/client';
 import { useAppStore } from '@/store/auth';
 import { formatDate } from '@/lib/utils';
-import { scaricaInDownload, scaricaInCache, apriConApp } from '@/lib/download';
-import { condividiDocumento, inviaDocumentoEmail } from '@/lib/condividi';
+import {
+  scaricaInDownload,
+  scaricaInCacheConRiparazione,
+  apriConApp,
+} from '@/lib/download';
+import { condividiDocumento } from '@/lib/condividi';
 import type { Cartella, FileItem, SearchResult } from '@/types/api';
 import { radius, shadow, spacing, typography, useColors, type ThemeColors } from '@/theme';
 
@@ -244,10 +278,18 @@ const NAVY_QUOTA = '#034078';
 const ORO = '#D4AF37';
 const ORO_CHIARO = '#F7E7B4';
 
-function oraDi(d: Date): string {
-  const hh = String(d.getHours()).padStart(2, '0');
-  const mm = String(d.getMinutes()).padStart(2, '0');
-  return `${hh}:${mm}`;
+/** Giorno d'ingresso di un documento in parole povere (v4.15):
+ * "Oggi", "Ieri", per i più vecchi la data esatta ("12 set 2026"). */
+function giornoIngresso(d: Date | string | null): string {
+  if (!d) return '';
+  const data = typeof d === 'string' ? new Date(d) : d;
+  if (isNaN(data.getTime())) return '';
+  const oggi = new Date();
+  if (data.toDateString() === oggi.toDateString()) return 'Oggi';
+  const ieri = new Date(oggi);
+  ieri.setDate(oggi.getDate() - 1);
+  if (data.toDateString() === ieri.toDateString()) return 'Ieri';
+  return formatDate(data);
 }
 
 /** Spezza il nome evidenziando (in accento) le parti che corrispondono alla query. */
@@ -378,6 +420,22 @@ function campoNumero(o: Record<string, unknown>, nome1: string, nome2: string): 
   return typeof v === 'number' ? v : undefined;
 }
 
+/** v4.15: da una chiave R2 dei preferiti ("Documenti/<utente>/<anno>/<cartella>/
+ * <nome>") ricava anno, cartella e nome del documento, da mostrare nel
+ * pannello "I miei preferiti". Se la forma non corrisponde, degrada con
+ * grazia invece di rompere la riga. */
+function partiPreferito(chiave: string): { anno: string; cartella: string; nome: string } {
+  const pezzi = chiave.split('/');
+  const nome = pezzi.pop() ?? chiave;
+  const senzaPrefisso = pezzi[0] === 'Documenti' ? pezzi.slice(1) : pezzi;
+  // Forma attesa: <utente>/<anno>/<cartella>/... — la cartella può anche
+  // mancare (file direttamente dentro l'anno); senza utente non è valida.
+  const utente = senzaPrefisso[0] ?? '';
+  const anno = senzaPrefisso[1] ?? '';
+  const cartella = senzaPrefisso.slice(2).join('/');
+  return { anno: utente ? anno : '', cartella, nome };
+}
+
 function DettaglioFileModal({
   file,
   percorso,
@@ -386,12 +444,10 @@ function DettaglioFileModal({
   aprendo,
   togglingFav,
   condividendo,
-  inviandoEmail,
   onClose,
   onApri,
   onDownload,
   onCondividi,
-  onEmail,
   onTogglePreferito,
 }: {
   file: FileItem | null;
@@ -401,12 +457,10 @@ function DettaglioFileModal({
   aprendo: boolean;
   togglingFav: boolean;
   condividendo: boolean;
-  inviandoEmail: boolean;
   onClose: () => void;
   onApri: (f: FileItem) => void;
   onDownload: (f: FileItem) => void;
   onCondividi: (f: FileItem) => void;
-  onEmail: (f: FileItem) => void;
   onTogglePreferito: (f: FileItem) => void;
 }) {
   const colors = useColors();
@@ -447,29 +501,29 @@ function DettaglioFileModal({
               style={styles.detailClose}
               accessibilityLabel="Chiudi dettaglio"
             >
-              <Text style={styles.detailCloseText}>✕</Text>
+              <Ionicons name="close" size={18} color={colors.textSecondary} />
             </Pressable>
           </View>
 
-          {/* Scheda informazioni del file */}
+          {/* Scheda informazioni del file (v4.16: solo Percorso e Dimensione) */}
           <View style={styles.detailInfoCard}>
             {percorso ? (
               <View style={styles.detailInfoRow}>
-                <Text style={styles.detailInfoLabel}>📁 Percorso</Text>
+                <View style={styles.detailInfoLabelBox}>
+                  <Ionicons name="folder-open-outline" size={13} color={colors.accentDark} />
+                  <Text style={styles.detailInfoLabel}>Percorso</Text>
+                </View>
                 <Text style={styles.detailInfoValue} numberOfLines={2}>
                   {percorso}
                 </Text>
               </View>
             ) : null}
-            {file.lastModified ? (
-              <View style={styles.detailInfoRow}>
-                <Text style={styles.detailInfoLabel}>📅 Data modifica</Text>
-                <Text style={styles.detailInfoValue}>{formatDate(file.lastModified)}</Text>
-              </View>
-            ) : null}
             {file.sizeStr ? (
               <View style={styles.detailInfoRow}>
-                <Text style={styles.detailInfoLabel}>💾 Dimensione</Text>
+                <View style={styles.detailInfoLabelBox}>
+                  <Ionicons name="save-outline" size={13} color={colors.accentDark} />
+                  <Text style={styles.detailInfoLabel}>Dimensione</Text>
+                </View>
                 <Text style={styles.detailInfoValue}>{file.sizeStr}</Text>
               </View>
             ) : null}
@@ -487,7 +541,7 @@ function DettaglioFileModal({
               ]}
               accessibilityLabel="Apri il file"
             >
-              <Text style={styles.bigPrimaryIcon}>👁</Text>
+              <Ionicons name="eye-outline" size={18} color={NAVY_NOTTE} />
               <Text style={styles.bigPrimaryText}>{aprendo ? 'Apro...' : 'Apri il file'}</Text>
             </Pressable>
 
@@ -507,6 +561,11 @@ function DettaglioFileModal({
                 style={[styles.bigDownloadFill, { width: larghezzaFill }]}
                 pointerEvents="none"
               />
+              <Ionicons
+                name="download-outline"
+                size={17}
+                color={downloading ? ORO_CHIARO : '#FFFFFF'}
+              />
               <Text
                 style={[styles.bigDownloadText, downloading && styles.bigDownloadTextActive]}
                 numberOfLines={1}
@@ -514,41 +573,27 @@ function DettaglioFileModal({
                 {downloading
                   ? `Scarico... ${progresso ?? 0}%`
                   : file.stato === 'scaricato' || file.stato === 'preferito'
-                    ? '⬇ Scarica di nuovo'
-                    : '⬇ Scarica nel telefono'}
+                    ? 'Scarica di nuovo'
+                    : 'Scarica nel telefono'}
               </Text>
             </Pressable>
 
-            {/* Condividi ed email (v3.5, scritte chiare dalla v3.8) */}
+            {/* Condividi (v4.18: via la email dedicata — Condividi fa
+             * tutto, email compresa: nel pannello scegli Gmail/mail) */}
             <View style={styles.shareRow}>
               <Pressable
                 onPress={() => onCondividi(file)}
-                disabled={downloading || aprendo || condividendo || inviandoEmail}
+                disabled={downloading || aprendo || condividendo}
                 style={({ pressed }) => [
                   styles.shareBtn,
-                  (downloading || aprendo || condividendo || inviandoEmail) && styles.bigDisabled,
-                  pressed && !condividendo && !inviandoEmail && styles.bigPressed,
+                  (downloading || aprendo || condividendo) && styles.bigDisabled,
+                  pressed && !condividendo && styles.bigPressed,
                 ]}
                 accessibilityLabel="Condividi il documento"
               >
-                <Text style={styles.shareIcon}>📤</Text>
+                <Ionicons name="share-social-outline" size={16} color={colors.accentDark} />
                 <Text style={styles.shareText} numberOfLines={1}>
                   {condividendo ? 'Preparo...' : 'Condividi file'}
-                </Text>
-              </Pressable>
-              <Pressable
-                onPress={() => onEmail(file)}
-                disabled={downloading || aprendo || condividendo || inviandoEmail}
-                style={({ pressed }) => [
-                  styles.shareBtn,
-                  (downloading || aprendo || condividendo || inviandoEmail) && styles.bigDisabled,
-                  pressed && !condividendo && !inviandoEmail && styles.bigPressed,
-                ]}
-                accessibilityLabel="Invia il documento per email"
-              >
-                <Text style={styles.shareIcon}>✉️</Text>
-                <Text style={styles.shareText} numberOfLines={1}>
-                  {inviandoEmail ? 'Preparo...' : 'Email col file'}
                 </Text>
               </Pressable>
             </View>
@@ -562,14 +607,120 @@ function DettaglioFileModal({
 
           {file.isPreferito !== undefined && (
             <Button
-              label={file.isPreferito ? '★ Rimuovi dai preferiti' : '☆ Aggiungi ai preferiti'}
+              label={file.isPreferito ? 'Rimuovi dai preferiti' : 'Aggiungi ai preferiti'}
               variant="ghost"
+              icon={
+                <Ionicons
+                  name={file.isPreferito ? 'star' : 'star-outline'}
+                  size={16}
+                  color={colors.accentDark}
+                />
+              }
               loading={togglingFav}
               onPress={() => onTogglePreferito(file)}
             />
           )}
         </View>
       )}
+    </Modal>
+  );
+}
+
+/* ============================================================
+ * Pannello "I miei preferiti" (v4.15) — tutti i preferiti di TUTTI
+ * gli anni e le cartelle, apribili e rimovibili al volo.
+ * ============================================================ */
+
+function PreferitiModal({
+  visibile,
+  chiavi,
+  busy,
+  onClose,
+  onApri,
+  onRimuovi,
+}: {
+  visibile: boolean;
+  chiavi: string[];
+  busy: string | null;
+  onClose: () => void;
+  onApri: (f: FileItem) => void;
+  onRimuovi: (chiave: string) => void;
+}) {
+  const colors = useColors();
+  const styles = makeStyles(colors);
+  const righe = useMemo(
+    () => chiavi.map((k) => ({ chiave: k, ...partiPreferito(k) })),
+    [chiavi],
+  );
+  return (
+    <Modal visible={visibile} onClose={onClose}>
+      <View style={styles.favWrap}>
+        <View style={styles.favHead}>
+          <View style={styles.favHeadIcon}>
+            <Ionicons name="star" size={19} color={NAVY_NOTTE} />
+          </View>
+          <View style={styles.favHeadText}>
+            <Text style={styles.favTitle}>I miei preferiti</Text>
+            <Text style={styles.favSub}>
+              {righe.length === 1 ? '1 documento' : `${righe.length} documenti`}
+            </Text>
+          </View>
+          <Pressable
+            onPress={onClose}
+            style={styles.detailClose}
+            accessibilityLabel="Chiudi preferiti"
+          >
+            <Ionicons name="close" size={18} color={colors.textSecondary} />
+          </Pressable>
+        </View>
+        {righe.length === 0 ? (
+          <EmptyState
+            icon={<Ionicons name="star-outline" size={36} color={colors.primary} />}
+            title="Nessun preferito"
+            subtitle="Aggiungi un documento ai preferiti con la stellina sulla sua riga"
+          />
+        ) : (
+          <ScrollView
+            style={styles.favList}
+            contentContainerStyle={styles.favListContent}
+            showsVerticalScrollIndicator
+          >
+            {righe.map((r) => (
+              <Pressable
+                key={r.chiave}
+                onPress={() =>
+                  onApri({ nome: r.nome, key: r.chiave, size: 0, sizeStr: '', lastModified: null })
+                }
+                style={({ pressed }) => [styles.favRow, pressed && styles.rowPressed]}
+                accessibilityLabel={`Apri ${r.nome}`}
+              >
+                <FileIcon filename={r.nome} size={44} />
+                <View style={styles.rowText}>
+                  <Text style={styles.fileName} numberOfLines={1}>
+                    {r.nome}
+                  </Text>
+                  <Text style={styles.rowSubtitle} numberOfLines={1}>
+                    {[r.anno, r.cartella].filter(Boolean).join(' › ')}
+                  </Text>
+                </View>
+                <Pressable
+                  onPress={() => onRimuovi(r.chiave)}
+                  disabled={busy === r.chiave}
+                  style={styles.quickBtn}
+                  hitSlop={8}
+                  accessibilityLabel="Rimuovi dai preferiti"
+                >
+                  <Ionicons
+                    name={busy === r.chiave ? 'hourglass-outline' : 'star'}
+                    size={20}
+                    color={colors.accentDark}
+                  />
+                </Pressable>
+              </Pressable>
+            ))}
+          </ScrollView>
+        )}
+      </View>
     </Modal>
   );
 }
@@ -597,7 +748,11 @@ export default function ArchivioScreen() {
   const [files, setFiles] = useState<FileItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
-  const [lastLoad, setLastLoad] = useState<Date | null>(null);
+  // v4.15: preferiti GLOBALI del cliente (chiavi R2, tutti gli anni) +
+  // pannello dedicato apribile dal pulsante oro dell'hero.
+  const [preferitiKeys, setPreferitiKeys] = useState<string[]>([]);
+  const [preferitiAperto, setPreferitiAperto] = useState(false);
+  const [preferitiBusy, setPreferitiBusy] = useState<string | null>(null);
   const [searchOpen, setSearchOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [searchResults, setSearchResults] = useState<SearchResult[]>([]);
@@ -606,9 +761,8 @@ export default function ArchivioScreen() {
   const [downloading, setDownloading] = useState<string | null>(null);
   const [progresso, setProgresso] = useState<number | null>(null);
   const [opening, setOpening] = useState<string | null>(null);
-  // v3.5: condivisione e invio email in corso (chiave del file)
+  // v3.5: condivisione in corso (chiave del file)
   const [condividendo, setCondividendo] = useState<string | null>(null);
-  const [inviandoEmail, setInviandoEmail] = useState<string | null>(null);
   const [detailFile, setDetailFile] = useState<FileItem | null>(null);
   const [detailPercorso, setDetailPercorso] = useState<string | undefined>(undefined);
 
@@ -619,6 +773,19 @@ export default function ArchivioScreen() {
   const searchSeq = useRef(0);
 
   const step: Step = cartella ? 'file' : anno ? 'cartella' : 'anno';
+
+  // v4.15: la lista dei preferiti GLOBALI (tutti gli anni): alimenta il
+  // pulsante "I miei preferiti (n)" dell'hero e il suo pannello. Silenzioso:
+  // se la rete fallisce resta l'ultimo conteggio noto, mai errori a schermo.
+  const loadPreferiti = useCallback(async () => {
+    if (!user) return;
+    try {
+      const res = await api.preferiti.list();
+      setPreferitiKeys(res.preferiti ?? []);
+    } catch {
+      // Silenzioso, come per il ricaricamento della lista.
+    }
+  }, [user]);
 
   // Percorso leggibile per breadcrumb e dettaglio: "2025 › Altro › Sotto"
   const percorsoBello = anno
@@ -663,7 +830,12 @@ export default function ArchivioScreen() {
     const righeSotto: ItemArchivio[] = [...sotto.entries()]
       .sort((a, b) => a[0].localeCompare(b[0]))
       .map(([nome, v]) => ({ kind: 'sottocartella', nome, count: v.count, nuovi: v.nuovi }));
-    return [...righeSotto, ...diretti.map((file) => ({ kind: 'file', file }) as ItemArchivio)];
+    // v4.15: i PREFERITI sono sempre i PRIMI file della lista (il server
+    // li ordina già per stato, ma le sottocartelle finivano sopra di loro).
+    const fileRow = (file: FileItem) => ({ kind: 'file', file }) as ItemArchivio;
+    const preferiti = diretti.filter((f) => f.isPreferito);
+    const altri = diretti.filter((f) => !f.isPreferito);
+    return [...preferiti.map(fileRow), ...righeSotto, ...altri.map(fileRow)];
   }, [step, cartelle, files]);
 
   const nFileDiretti = items.filter((i) => i.kind === 'file').length;
@@ -692,7 +864,6 @@ export default function ArchivioScreen() {
         }
         setCartelle(res.cartelle ?? []);
         setFiles(res.files ?? []);
-        setLastLoad(new Date());
       } catch (err) {
         toast.error('Errore caricamento', err instanceof Error ? err.message : 'Errore sconosciuto');
       } finally {
@@ -706,6 +877,13 @@ export default function ArchivioScreen() {
   useEffect(() => {
     load();
   }, [load]);
+
+  // v4.15: conteggio dei preferiti per il pulsante dell'hero (e per il
+  // pannello): si aggiorna anche dopo ogni stellina toccata, senza
+  // aspettare il prossimo ricaricamento della lista.
+  useEffect(() => {
+    loadPreferiti();
+  }, [loadPreferiti]);
 
   // v4.12: l'anno è SEMPRE scelto (come l'app v4): appena arriva la lista
   // anni, se nessuno è ancora selezionato parte da solo il più recente.
@@ -721,14 +899,38 @@ export default function ArchivioScreen() {
   // piano (pfc-app-risentita) o arriva una notifica (pfc-push-ricevuta)
   // la lista si ricarica da sola, senza skeleton né spinner.
   useEffect(() => {
-    const ricarica = () => load(false, true);
+    const ricarica = () => {
+      load(false, true);
+      loadPreferiti();
+    };
     const subRisentita = DeviceEventEmitter.addListener('pfc-app-risentita', ricarica);
     const subPush = DeviceEventEmitter.addListener('pfc-push-ricevuta', ricarica);
+    // v4.16: un preferito riparato (file spostato: stellina spostata sul
+    // percorso nuovo) ricarica il conteggio e la lista dei preferiti.
+    const subRiparati = DeviceEventEmitter.addListener('pfc-preferiti-riparati', () => {
+      loadPreferiti();
+    });
+    // v4.17: dall'anteprima PDF (schermata "Documento non trovato") il
+    // cliente può CERCARE il file nell'archivio: qui atterra la richiesta
+    // con il nome già scritto — vede subito dove vive oggi il documento.
+    const subRicerca = DeviceEventEmitter.addListener(
+      'pfc-apri-ricerca',
+      (e: { query?: string } | undefined) => {
+        const q = (e?.query ?? '').trim();
+        if (q) setSearchQuery(q);
+        setPreferitiAperto(false);
+        setDetailFile(null);
+        setDetailPercorso(undefined);
+        setSearchOpen(true);
+      },
+    );
     return () => {
       subRisentita.remove();
       subPush.remove();
+      subRiparati.remove();
+      subRicerca.remove();
     };
-  }, [load]);
+  }, [load, loadPreferiti]);
 
   // v4.6: deep-link a un documento preciso (notifica di scadenza toccata:
   // promemoria locale, push del server o riga della campanella).
@@ -788,6 +990,20 @@ export default function ArchivioScreen() {
     return () => clearTimeout(timer);
   }, [searchQuery, user?.username]);
 
+  // v4.15: stato VERO sulla riga, senza aspettare il server. APRI => visto,
+  // SCARICA => scaricato, non toccare nulla => resta nuovo. Regole del
+  // server rispettate: PREFERITO non si tocca mai, SCARICATO non torna
+  // mai indietro, VISTO si applica solo ai file NUOVI.
+  function aggiornaStatoLocale(key: string, tipo: 'visto' | 'scaricato') {
+    const applica = (f: FileItem): FileItem => {
+      if (f.key !== key || f.stato === 'preferito') return f;
+      if (tipo === 'visto') return f.stato === 'nuovo' ? { ...f, stato: 'visto' } : f;
+      return f.stato === 'nuovo' || f.stato === 'visto' ? { ...f, stato: 'scaricato' } : f;
+    };
+    setFiles((prev) => prev.map(applica));
+    setDetailFile((prev) => (prev ? applica(prev) : prev));
+  }
+
   async function handleTogglePreferito(file: FileItem) {
     setTogglingFav(file.key);
     haptics.tap();
@@ -805,6 +1021,14 @@ export default function ArchivioScreen() {
           ? { ...prev, isPreferito: res.isPreferito, stato: res.isPreferito ? 'preferito' : 'visto' }
           : prev,
       );
+      // v4.15: aggiorna SUBITO il contatore del pulsante "I miei preferiti".
+      setPreferitiKeys((prev) =>
+        res.isPreferito
+          ? prev.includes(file.key)
+            ? prev
+            : [...prev, file.key]
+          : prev.filter((k) => k !== file.key),
+      );
       toast.success(res.isPreferito ? 'Aggiunto ai preferiti' : 'Rimosso dai preferiti');
     } catch {
       toast.error('Errore', 'Impossibile aggiornare i preferiti');
@@ -819,16 +1043,7 @@ export default function ArchivioScreen() {
     haptics.impact();
     try {
       await scaricaInDownload(file.key, file.nome, setProgresso);
-      setFiles((prev) =>
-        prev.map((f) =>
-          f.key === file.key && f.stato !== 'preferito' ? { ...f, stato: 'scaricato' } : f,
-        ),
-      );
-      setDetailFile((prev) =>
-        prev && prev.key === file.key && prev.stato !== 'preferito'
-          ? { ...prev, stato: 'scaricato' }
-          : prev,
-      );
+      aggiornaStatoLocale(file.key, 'scaricato');
       haptics.success();
       // v3.7: nessuna apertura automatica e nessuna notifica dell'app.
       // La conferma e' SOLO la notifica di sistema "Download completato"
@@ -851,7 +1066,9 @@ export default function ArchivioScreen() {
     try {
       let percorso: string | null = null;
       try {
-        percorso = await scaricaInCache(file.key);
+        // v4.16: anche qui riparazione automatica se il file è stato spostato
+        const { percorso: locale } = await scaricaInCacheConRiparazione(file.key, file.nome);
+        percorso = locale;
       } catch (err) {
         toast.error('Condivisione', err instanceof Error ? err.message : 'Impossibile scaricare');
         return;
@@ -867,36 +1084,6 @@ export default function ArchivioScreen() {
       }
     } finally {
       setCondividendo(null);
-    }
-  }
-
-  // v3.5: apre la posta con il documento gia' allegato (dopo il rebuild);
-  // prima di allora apre l'app email con oggetto e testo pronti.
-  async function handleEmail(file: FileItem) {
-    setInviandoEmail(file.key);
-    haptics.tap();
-    try {
-      let percorso: string | null = null;
-      try {
-        percorso = await scaricaInCache(file.key);
-      } catch (err) {
-        toast.error('Email', err instanceof Error ? err.message : 'Impossibile scaricare');
-        return;
-      }
-      const esito = await inviaDocumentoEmail(percorso, file.nome);
-      if (esito === 'ok') {
-        haptics.success();
-        toast.success('Email pronta', 'Aggiungi il destinatario e invia');
-      } else if (esito === 'solo-testo') {
-        toast.info('Posta aperta', "L'allegato parte dopo l'aggiornamento dell'app");
-      } else if (esito === 'niente-email') {
-        toast.error('Email', 'Nessuna app di posta configurata sul telefono');
-      } else if (esito === 'errore') {
-        toast.error('Email', 'Impossibile aprire la posta');
-      }
-      // 'annullato': l'utente ha chiuso la posta, non e' un errore
-    } finally {
-      setInviandoEmail(null);
     }
   }
 
@@ -926,6 +1113,38 @@ export default function ArchivioScreen() {
     setSearchOpen(false);
     setSearchQuery('');
     setSearchResults([]);
+  }
+
+  // v4.15: pannello "I miei preferiti" (dal pulsante oro dell'hero).
+  function apriPreferiti() {
+    haptics.tap();
+    setPreferitiAperto(true);
+  }
+
+  function apriDaPreferiti(file: FileItem) {
+    setPreferitiAperto(false);
+    apriDocumento(file);
+  }
+
+  async function rimuoviDaPreferiti(chiave: string) {
+    setPreferitiBusy(chiave);
+    haptics.tap();
+    try {
+      const res = await api.preferiti.toggle(chiave);
+      if (!res.isPreferito) {
+        setPreferitiKeys((prev) => prev.filter((k) => k !== chiave));
+        // Se il file è anche nella cartella aperta, aggiorno la riga qui.
+        setFiles((prev) =>
+          prev.map((f) =>
+            f.key === chiave ? { ...f, isPreferito: false, stato: 'visto' } : f,
+          ),
+        );
+      }
+    } catch {
+      toast.error('Errore', 'Impossibile aggiornare i preferiti');
+    } finally {
+      setPreferitiBusy(null);
+    }
   }
 
   /** Risale di un livello: da sottocartella a cartella, da cartella alla
@@ -969,22 +1188,35 @@ export default function ArchivioScreen() {
     return () => sub.remove();
   });
 
-  /** Apri (v3.2): i PDF nell'app, gli altri con l'app giusta del telefono. */
+  /** Apri (v3.2): i PDF nell'app, gli altri con l'app giusta del telefono.
+   * v4.15: appena APRI un file la riga diventa VISTO; se non c'è nessuna
+   * app e il file finisce in Download, diventa SCARICATO.
+   * v4.17: se il file non esiste più al suo percorso (404: spostato,
+   * rinominato o ricaricato) viene CERCATO A GRADI — ancora al suo posto
+   * (riprova), stesso nome, nome simile — e aperto quello vivo; se era
+   * un preferito la stellina si sposta da sola. */
   async function apriDocumento(file: FileItem) {
     if (canPreviewFile(file.nome)) {
       haptics.tap();
       chiudiDettaglio();
+      aggiornaStatoLocale(file.key, 'visto');
       setPreviewFile(file);
       return;
     }
     setOpening(file.key);
     haptics.tap();
     try {
-      const percorsoLocale = await scaricaInCache(file.key);
+      const { percorso: percorsoLocale } = await scaricaInCacheConRiparazione(
+        file.key,
+        file.nome,
+      );
       const aperto = await apriConApp(percorsoLocale, file.nome);
-      if (!aperto) {
+      if (aperto) {
+        aggiornaStatoLocale(file.key, 'visto');
+      } else {
         // Nessuna app per questo tipo di file: lo salvo comunque in Download
         await scaricaInDownload(file.key, file.nome);
+        aggiornaStatoLocale(file.key, 'scaricato');
         toast.info('File salvato', 'Nessuna app per questo tipo di file: lo trovi in Download');
       }
     } catch (err) {
@@ -1049,6 +1281,7 @@ export default function ArchivioScreen() {
     }
     toast.success('Preferiti aggiornati', `${count} file modificati`);
     load(true);
+    loadPreferiti();
     clearSelection();
   }
 
@@ -1150,12 +1383,10 @@ export default function ArchivioScreen() {
           aprendo={opening === detailFile?.key}
           togglingFav={togglingFav === detailFile?.key}
           condividendo={condividendo === detailFile?.key}
-          inviandoEmail={inviandoEmail === detailFile?.key}
           onClose={chiudiDettaglio}
           onApri={apriDocumento}
           onDownload={handleDownload}
           onCondividi={handleCondividi}
-          onEmail={handleEmail}
           onTogglePreferito={handleTogglePreferito}
         />
       </SafeAreaView>
@@ -1251,7 +1482,7 @@ export default function ArchivioScreen() {
                           <View style={styles.heroGoldDot} />
                           <Text style={styles.heroGoldChipText}>ESERCIZIO {anno}</Text>
                         </View>
-                        <Text style={styles.heroCount}>{cartelle.length} sezioni</Text>
+                        <Text style={styles.heroCount}>{cartelle.length} cartelle</Text>
                       </View>
                       <View>
                         <Text style={styles.heroNavyTitle}>Archivio {anno}</Text>
@@ -1285,11 +1516,24 @@ export default function ArchivioScreen() {
                           </Pressable>
                         );
                       })()}
-                      <Text style={styles.heroHintLight}>
-                        {lastLoad
-                          ? `Aggiornato alle ${oraDi(lastLoad)} · si aggiorna da solo`
-                          : 'Si aggiorna da solo quando arrivano novità'}
-                      </Text>
+                      {/* v4.15: al posto della vecchia ora di aggiornamento,
+                       * il pulsante che apre TUTTI i preferiti (nascosto
+                       * quando non ce ne sono). */}
+                      {preferitiKeys.length > 0 && (
+                        <Pressable
+                          onPress={apriPreferiti}
+                          style={({ pressed }) =>
+                            [styles.heroFavBtn, pressed && styles.btnPressedOpacity]
+                          }
+                          accessibilityLabel="Apri i miei preferiti"
+                        >
+                          <Ionicons name="star" size={15} color={ORO_CHIARO} />
+                          <Text style={styles.heroFavText}>
+                            I miei preferiti ({preferitiKeys.length})
+                          </Text>
+                          <Ionicons name="arrow-forward" size={13} color={ORO_CHIARO} />
+                        </Pressable>
+                      )}
                     </View>
                   </View>
                 </Entrata>
@@ -1417,7 +1661,7 @@ export default function ArchivioScreen() {
                       </Text>
                       <Text style={styles.rowSubtitle} numberOfLines={1}>
                         {f.sizeStr}
-                        {f.lastModified ? `  ·  ${formatDate(f.lastModified)}` : ''}
+                        {f.lastModified ? `  ·  ${giornoIngresso(f.lastModified)}` : ''}
                       </Text>
                       {!selectMode && (
                         <View style={styles.fileBadgeRow}>
@@ -1476,9 +1720,9 @@ export default function ArchivioScreen() {
                 }
                 subtitle={
                   step === 'file'
-                    ? 'La lista si aggiorna da sola quando torni qui'
+                    ? 'Non ci sono documenti in questa cartella'
                     : anni.length === 0
-                      ? 'Quando lo studio pubblica dei documenti, compariranno qui da soli'
+                      ? 'Quando lo studio pubblica dei documenti, compariranno qui'
                       : 'Prova a scegliere un altro anno dai chip in alto'
                 }
               />
@@ -1486,9 +1730,16 @@ export default function ArchivioScreen() {
           }
           ListFooterComponent={
             step === 'file' && nFileDiretti > 0 ? (
-              <Text style={styles.tipText}>
-                💡 Tocca un file per vederne i dettagli · tieni premuto per selezionarne più di uno
-              </Text>
+              <View style={styles.tipRow}>
+                <Ionicons
+                  name="information-circle-outline"
+                  size={14}
+                  color={colors.textTertiary}
+                />
+                <Text style={styles.tipText}>
+                  Tocca un file per i dettagli · tieni premuto per selezionarne più di uno
+                </Text>
+              </View>
             ) : null
           }
         />
@@ -1526,13 +1777,21 @@ export default function ArchivioScreen() {
         aprendo={opening === detailFile?.key}
         togglingFav={togglingFav === detailFile?.key}
         condividendo={condividendo === detailFile?.key}
-        inviandoEmail={inviandoEmail === detailFile?.key}
         onClose={chiudiDettaglio}
         onApri={apriDocumento}
         onDownload={handleDownload}
         onCondividi={handleCondividi}
-        onEmail={handleEmail}
         onTogglePreferito={handleTogglePreferito}
+      />
+
+      {/* v4.15: pannello con TUTTI i preferiti (pulsante oro dell'hero) */}
+      <PreferitiModal
+        visibile={preferitiAperto}
+        chiavi={preferitiKeys}
+        busy={preferitiBusy}
+        onClose={() => setPreferitiAperto(false)}
+        onApri={apriDaPreferiti}
+        onRimuovi={rimuoviDaPreferiti}
       />
     </SafeAreaView>
   );
@@ -1569,7 +1828,8 @@ const makeStyles = (colors: ThemeColors) =>
     emptyIcon: { fontSize: 48 },
     matchText: { color: colors.accent, fontWeight: '700' },
     resultCount: { ...typography.caption, color: colors.textSecondary, paddingHorizontal: spacing.lg, paddingTop: spacing.xs },
-    tipText: { ...typography.caption, color: colors.textTertiary, textAlign: 'center', paddingVertical: spacing.lg },
+    tipRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 5, paddingVertical: spacing.lg, paddingHorizontal: spacing.lg },
+    tipText: { ...typography.caption, color: colors.textTertiary, flexShrink: 1 },
 
     // Card di benvenuto (v2)
     testataLista: { gap: spacing.md, paddingBottom: spacing.xs },
@@ -1615,9 +1875,24 @@ const makeStyles = (colors: ThemeColors) =>
     heroNavyTitle: { color: '#FFFFFF', fontSize: 22, fontWeight: '800', letterSpacing: -0.3 },
     heroNavySub: { color: '#FFFFFF', fontSize: 14, fontWeight: '600', marginTop: 2 },
     heroNavyDesc: { color: 'rgba(255,255,255,0.85)', fontSize: 12, marginTop: 3, lineHeight: 17 },
-    heroHintLight: { color: 'rgba(255,255,255,0.7)', fontSize: 11, marginTop: 2 },
     heroNuoviPill: { flexDirection: 'row', alignItems: 'center', gap: 6, alignSelf: 'flex-start', backgroundColor: ORO, borderRadius: 999, paddingHorizontal: 14, paddingVertical: 7, marginTop: 2 },
     heroNuoviText: { color: NAVY_NOTTE, fontSize: 12, fontWeight: '700' },
+
+    // v4.15 — Pulsante "I miei preferiti" dell'hero (bordo oro, fondale soft:
+    // distinto dalla pillola Documenti Nuovi che è oro pieno)
+    heroFavBtn: { flexDirection: 'row', alignItems: 'center', gap: 6, alignSelf: 'flex-start', backgroundColor: 'rgba(212, 175, 55, 0.12)', borderRadius: 999, borderWidth: 1, borderColor: 'rgba(212, 175, 55, 0.7)', paddingHorizontal: 14, paddingVertical: 7, marginTop: 2 },
+    heroFavText: { color: ORO_CHIARO, fontSize: 12, fontWeight: '700' },
+
+    // v4.15 — Pannello "I miei preferiti"
+    favWrap: { paddingHorizontal: spacing.xl, paddingTop: spacing.xs, gap: spacing.md },
+    favHead: { flexDirection: 'row', alignItems: 'center', gap: spacing.md },
+    favHeadIcon: { width: 44, height: 44, borderRadius: 14, backgroundColor: ORO, alignItems: 'center', justifyContent: 'center' },
+    favHeadText: { flex: 1, gap: 2 },
+    favTitle: { ...typography.h3, color: colors.textPrimary },
+    favSub: { ...typography.caption, color: colors.textSecondary },
+    favList: { maxHeight: 430 },
+    favListContent: { gap: spacing.sm, paddingBottom: spacing.xs },
+    favRow: { flexDirection: 'row', alignItems: 'center', gap: 12, minHeight: 68, borderRadius: 16, borderWidth: 1, borderColor: colors.border, backgroundColor: colors.surfaceAlt, paddingHorizontal: 12, paddingVertical: 10 },
 
     // v4.11 — Chip anni (FilterChip dell'app v4)
     chipsRow: { flexDirection: 'row', alignItems: 'center', gap: 8, paddingVertical: 2, paddingHorizontal: 2 },
@@ -1702,26 +1977,25 @@ const makeStyles = (colors: ThemeColors) =>
     detailName: { ...typography.h3, color: colors.textPrimary },
     detailBadgeRow: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.xs },
     detailClose: { width: 36, height: 36, borderRadius: 18, alignItems: 'center', justifyContent: 'center', backgroundColor: colors.surfaceAlt },
-    detailCloseText: { fontSize: 15, color: colors.textSecondary },
+    detailInfoLabelBox: { flexDirection: 'row', alignItems: 'center', gap: 5, flexShrink: 0 },
     detailInfoCard: { backgroundColor: colors.surfaceAlt, borderRadius: radius.lg, borderWidth: 1, borderColor: colors.border, padding: spacing.md, gap: spacing.sm },
     detailInfoRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: spacing.md },
     detailInfoLabel: { ...typography.bodySmall, color: colors.textSecondary },
     detailInfoValue: { ...typography.bodySmall, color: colors.textPrimary, fontWeight: '600', flex: 1, textAlign: 'right' },
     detailActions: { gap: spacing.sm },
     bigPrimary: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: spacing.sm, minHeight: 58, borderRadius: radius.lg, backgroundColor: colors.accent, ...shadow.md },
-    bigPrimaryIcon: { fontSize: 16 },
-    bigPrimaryText: { ...typography.button, color: colors.textInverse, fontSize: 16, fontWeight: '800' },
-    bigDownload: { overflow: 'hidden', flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: spacing.sm, minHeight: 58, borderRadius: radius.lg, borderWidth: 2, borderColor: colors.borderStrong, backgroundColor: colors.surface },
-    bigDownloadActive: { borderColor: colors.accent },
-    bigDownloadFill: { position: 'absolute', left: 0, top: 0, bottom: 0, backgroundColor: colors.accentSoft, opacity: 0.9 },
-    bigDownloadText: { ...typography.button, color: colors.textPrimary, fontWeight: '700' },
-    bigDownloadTextActive: { color: colors.accentDark, fontWeight: '800' },
+    bigPrimaryText: { ...typography.button, color: NAVY_NOTTE, fontSize: 16, fontWeight: '800' },
+    // v4.15: Scarica NAVY con barra di avanzamento oro (stile app v4)
+    bigDownload: { overflow: 'hidden', flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: spacing.sm, minHeight: 58, borderRadius: radius.lg, backgroundColor: NAVY_PRIMARIO },
+    bigDownloadActive: { opacity: 0.92 },
+    bigDownloadFill: { position: 'absolute', left: 0, top: 0, bottom: 0, backgroundColor: 'rgba(212, 175, 55, 0.45)' },
+    bigDownloadText: { ...typography.button, color: '#FFFFFF', fontWeight: '700' },
+    bigDownloadTextActive: { color: ORO_CHIARO, fontWeight: '800' },
     bigPressed: { opacity: 0.85, transform: [{ scale: 0.98 }] },
     bigDisabled: { opacity: 0.5 },
     detailHint: { ...typography.caption, color: colors.textTertiary, textAlign: 'center' },
-    // v3.5: riga Condividi / Email nel dettaglio
+    // v4.18: riga Condividi nel dettaglio (via Email: Condividi fa tutto)
     shareRow: { flexDirection: 'row', gap: spacing.sm },
     shareBtn: { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: spacing.xs, minHeight: 50, borderRadius: radius.lg, borderWidth: 1.5, borderColor: colors.border, backgroundColor: colors.surfaceAlt },
-    shareIcon: { fontSize: 15 },
     shareText: { ...typography.button, color: colors.textPrimary, fontWeight: '700' },
   });

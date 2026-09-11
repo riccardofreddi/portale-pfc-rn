@@ -6,7 +6,7 @@
 Documenti, messaggi, scadenze e notifiche — sempre aggiornati, in un unico posto.
 
 ![CI](https://github.com/riccardofreddi/portale-pfc-rn/actions/workflows/ci.yml/badge.svg)
-![Versione](https://img.shields.io/badge/versione-1.13.0%20%2F%20build%2013-1B2A4A?logo=android&logoColor=white)
+![Versione](https://img.shields.io/badge/versione-1.18.0%20%2F%20build%2018-1B2A4A?logo=android&logoColor=white)
 ![React Native](https://img.shields.io/badge/React%20Native-0.76-61DAFB?logo=react&logoColor=black)
 ![Expo SDK](https://img.shields.io/badge/Expo%20SDK-52-000020?logo=expo&logoColor=white)
 ![TypeScript](https://img.shields.io/badge/TypeScript-5.6-3178C6?logo=typescript&logoColor=white)
@@ -35,7 +35,7 @@ Documenti, messaggi, scadenze e notifiche — sempre aggiornati, in un unico pos
 
 ### 📁 Archivio documenti
 
-I documenti dello studio sono organizzati per **anno → cartella → file**. Gli anni stanno nei chip in alto (sempre uno selezionato, di default il più recente) e la lista mostra subito le cartelle: nessun passaggio inutile. La ricerca è globale e trova un documento da qualunque punto dell'app. Ogni file si apre in un'**anteprima PDF integrata** e può essere segnato come preferito, scaricato sul telefono o condiviso.
+I documenti dello studio sono organizzati per **anno → cartella → file**. Gli anni stanno nei chip in alto (sempre uno selezionato, di default il più recente) e la lista mostra subito le cartelle: nessun passaggio inutile. La ricerca è globale e trova un documento da qualunque punto dell'app. Ogni file si apre in un'**anteprima PDF integrata** e può essere segnato come preferito, scaricato sul telefono o condiviso. Il pulsante oro **«I miei preferiti»** apre il pannello con tutti i preferiti di ogni anno e, se lo studio sposta o rinomina un documento, l'app lo ritrova da sola — stellina compresa.
 
 - Ricerca globale tra tutti i documenti
 - Preferiti e download singoli
@@ -239,12 +239,17 @@ La versione vive in tre punti, tenuti allineati:
 2. `package.json` → `version`
 3. `android/app/build.gradle` → `versionName` / `versionCode`
 
-Per pubblicare una nuova versione: incrementa `versionName` (es. `1.14.0`) e `versionCode` (sempre +1) in `android/app/build.gradle`, allinea gli altri due file e fai push — la CI pubblica la nuova APK su GitHub Releases.
+Per pubblicare una nuova versione: incrementa `versionName` (es. `1.19.0`) e `versionCode` (sempre +1) in `android/app/build.gradle`, allinea gli altri due file e fai push — la CI pubblica la nuova APK su GitHub Releases.
 
 ### Ultime versioni
 
 | Versione | App | Novità principali |
 |---|---|---|
+| **v4.18** | 1.18.0 | Niente più doppioni: "Scarica" e "Condividi" sempre insieme, anche nel lettore PDF; via la voce email dedicata (col pannello Condividi la email la fai già, scegliendo Gmail/mail) |
+| **v4.17** | 1.17.0 | I preferiti si curano da soli: file spostato o rinominato viene ritrovato automaticamente (riprova, stesso nome, nome simile); solo se sparito davvero compare una schermata chiara con ricerca e rimozione dai preferiti |
+| **v4.16** | 1.16.0 | Fine del 404 criptico: riparazione automatica dei preferiti rotti; il file scaricato mantiene il SUO nome (non più "download completato"); scheda file essenziale (Percorso + Dimensione) |
+| **v4.15** | 1.15.0 | Archivio ordinato: "3 cartelle" (non più sezioni), via le diciture di aggiornamento, pulsante oro "I miei preferiti (n)", preferiti sempre in cima, stati veri al tocco (apri = visto, scarica = scaricato) |
+| **v4.14** | 1.14.0 | Schermata di accesso ripensata: respirata e centrata, occhietto per mostrare/nascondere la password, logo invariato |
 | **v4.13** | 1.13.0 | Interruttore notifiche vero (acceso = tutto arriva, spento = nulla più), pillola Attivo/Non attivo sempre coerente, via @username e versione app, scroll fluido in tutti i pannelli |
 | **v4.12** | 1.12.0 | Archivio ripensato: anni solo nei chip, cartelle subito visibili, auto-aggiornamento silenzioso, apertura più veloce; Impostazioni stile v4 |
 | **v4.11** | 1.11.0 | Grafica completa v4: palette Midnight Sapphire & Champagne Gold, TopBar con monogramma, interni di tutte le schede rifatti (logica invariata) |
