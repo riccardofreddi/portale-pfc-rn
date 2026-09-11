@@ -45,6 +45,9 @@ import { SettingsModal } from '@/screens/SettingsModal';
 import { SplashScreen } from '@/screens/SplashScreen';
 import OnboardingScreen, { isOnboardingDone } from '@/screens/OnboardingScreen';
 import { TopBar } from '@/components/TopBar';
+// v4.19: banner AVVISI PUBBLICI dello studio, sempre visibile su tutte le
+// tab (come il banner giallo del sito, che sta sopra il contenuto delle tab)
+import { AvvisiBanner } from '@/components/AvvisiBanner';
 import { useAppStore, type ClienteTab } from '@/store/auth';
 import { api } from '@/api/client';
 import { haptics } from '@/lib/haptics';
@@ -228,6 +231,11 @@ function MainTabsScreen() {
         backgroundColor={colors.surface}
       />
       <TopBar />
+      {/* v4.19: avvisi pubblici SEMPRE visibili, appena sotto la TopBar
+       * (fuori dal navigatore a tab: restano su Archivio, Messaggi, Cassetto
+       * e Attivita, identico al sito dove il banner sta sopra le tab).
+       * Se lo studio non ha pubblicato avvisi occupa ZERO spazio. */}
+      <AvvisiBanner />
       <MainTabs.Navigator
         screenListeners={{
           tabPress: () => haptics.tap(),

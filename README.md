@@ -6,7 +6,7 @@
 Documenti, messaggi, scadenze e notifiche — sempre aggiornati, in un unico posto.
 
 ![CI](https://github.com/riccardofreddi/portale-pfc-rn/actions/workflows/ci.yml/badge.svg)
-![Versione](https://img.shields.io/badge/versione-1.18.0%20%2F%20build%2018-1B2A4A?logo=android&logoColor=white)
+![Versione](https://img.shields.io/badge/versione-1.22.0%20%2F%20build%2022-1B2A4A?logo=android&logoColor=white)
 ![React Native](https://img.shields.io/badge/React%20Native-0.76-61DAFB?logo=react&logoColor=black)
 ![Expo SDK](https://img.shields.io/badge/Expo%20SDK-52-000020?logo=expo&logoColor=white)
 ![TypeScript](https://img.shields.io/badge/TypeScript-5.6-3178C6?logo=typescript&logoColor=white)
@@ -239,12 +239,16 @@ La versione vive in tre punti, tenuti allineati:
 2. `package.json` → `version`
 3. `android/app/build.gradle` → `versionName` / `versionCode`
 
-Per pubblicare una nuova versione: incrementa `versionName` (es. `1.19.0`) e `versionCode` (sempre +1) in `android/app/build.gradle`, allinea gli altri due file e fai push — la CI pubblica la nuova APK su GitHub Releases.
+Per pubblicare una nuova versione: incrementa `versionName` (es. `1.23.0`) e `versionCode` (sempre +1) in `android/app/build.gradle`, allinea gli altri due file e fai push — la CI pubblica la nuova APK su GitHub Releases.
 
 ### Ultime versioni
 
 | Versione | App | Novità principali |
 |---|---|---|
+| **v4.22** | 1.22.0 | Bacheca rifinita: la X del pannello è allineata al titolo (come nella scheda), via il pulsante "Chiudi" — la chiusura resta con la X, il tocco fuori o il trascinamento giù |
+| **v4.21** | 1.21.0 | Bacheca senza date e con la chiusura più comoda (richieste del titolare) |
+| **v4.20** | 1.20.0 | Bacheca delle Comunicazioni: scheda elegante oro/blu al posto dei cartelli gialli, elenco completo in un pannello dal basso, la notifica push apre direttamente la Bacheca, pallino NUOVO sulle novità, tema scuro supportato |
+| **v4.19** | 1.19.0 | Gli avvisi pubblici dello studio arrivano anche in app: sempre visibili sotto la barra in alto su ogni schermata, aggiornati in tempo reale; siti internet cliccabili negli avvisi e nei messaggi |
 | **v4.18** | 1.18.0 | Niente più doppioni: "Scarica" e "Condividi" sempre insieme, anche nel lettore PDF; via la voce email dedicata (col pannello Condividi la email la fai già, scegliendo Gmail/mail) |
 | **v4.17** | 1.17.0 | I preferiti si curano da soli: file spostato o rinominato viene ritrovato automaticamente (riprova, stesso nome, nome simile); solo se sparito davvero compare una schermata chiara con ricerca e rimozione dai preferiti |
 | **v4.16** | 1.16.0 | Fine del 404 criptico: riparazione automatica dei preferiti rotti; il file scaricato mantiene il SUO nome (non più "download completato"); scheda file essenziale (Percorso + Dimensione) |

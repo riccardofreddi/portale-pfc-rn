@@ -12,6 +12,10 @@
  *   "Leggi tutto" (come nell'app v4) + pulsante invio file navy.
  * - Logica INTATTA: caricamento, segna-letti automatici, archiviazione,
  *   upload risposta, polling push, trascina per aggiornare.
+ * v4.19: i siti internet scritti dallo studio nel testo dei messaggi sono
+ *   CLICCABILI (aprano il browser): si tocca il link e si arriva al sito.
+ *   Gli avvisi pubblici invece vivono nel banner sotto la TopBar
+ *   (AvvisiBanner) e non finiscono piu' in questa lista, come sul sito.
  */
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
@@ -34,6 +38,7 @@ import { EmptyState } from '@/components/EmptyState';
 import { SkeletonList } from '@/components/Skeleton';
 import { toast } from '@/components/Toaster';
 import { haptics } from '@/lib/haptics';
+import { spezzaLink } from '@/lib/linkify';
 import { api } from '@/api/client';
 import { useAppStore } from '@/store/auth';
 import type { Messaggio } from '@/types/api';
@@ -396,10 +401,11 @@ export default function MessaggiScreen() {
                     )}
                   </View>
 
-                  {/* Corpo SEMPRE visibile, con clamp e "Leggi tutto" (come l'app v4) */}
+                  {/* Corpo SEMPRE visibile, con clamp e "Leggi tutto" (come l'app v4).
+                   * v4.19: i siti internet nel testo sono cliccabili (linkify). */}
                   <View style={styles.corpoBox}>
                     <Text style={styles.corpo} numberOfLines={expanded ? undefined : 4}>
-                      {msg.corpo}
+                      {spezzaLink(msg.corpo, styles.corpoLink)}
                     </Text>
                     {msg.corpo.length > 140 && (
                       <Pressable
@@ -537,6 +543,8 @@ const makeStyles = (colors: ThemeColors) =>
     pillText: { fontSize: 11, fontWeight: '700' },
     corpoBox: { backgroundColor: colors.surfaceAlt, borderRadius: 12, borderWidth: 1, borderColor: colors.border, padding: 14 },
     corpo: { ...typography.bodySmall, color: colors.textPrimary, lineHeight: 21 },
+    // v4.19: i link nel corpo del messaggio si Vedono e si toccano (aprono il browser)
+    corpoLink: { color: colors.primary, fontWeight: '700', textDecorationLine: 'underline' },
     leggiTutto: { color: colors.primary, fontSize: 12, fontWeight: '700', marginTop: 6 },
     allegatoBox: { flexDirection: 'row', alignItems: 'center', gap: 8, backgroundColor: colors.surfaceAlt, borderRadius: 10, borderWidth: 1, borderColor: colors.border, paddingHorizontal: 12, paddingVertical: 9 },
     allegatoText: { ...typography.caption, color: colors.textPrimary, fontWeight: '600', flex: 1 },

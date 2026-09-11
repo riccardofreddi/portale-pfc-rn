@@ -13,6 +13,9 @@
  *    vedeva niente con l'app aperta)
  * 4. onNotificationOpenedApp (background tap) → navigazione alla schermata
  * 5. tocco sugli avvisi locali → stessa navigazione (deep-link)
+ * 6. v4.20: il tap sulla push di un AVVISO PUBBLICO ("Nuovo avviso dallo
+ *    studio") apre direttamente la Bacheca delle Comunicazioni (evento
+ *    'pfc-apri-bacheca' ascoltato da AvvisiBanner)
  *
  * v4.13 — L'INTERRUTTORE "Notifiche" delle Impostazioni comanda TUTTO:
  * se è SPENTO, il telefono NON si (ri)registra al server né ora, né al
@@ -53,6 +56,36 @@ export const pushState = {
   token: '',
   error: '',
 };
+
+/**
+ * v4.20: la push di un AVVISO PUBBLICO dello studio e' riconoscibile dal
+ * titolo: il server la manda con title "Nuovo avviso dallo studio"
+ * (duplicato anche nel data payload, vedi lib/fcm.ts del backend). Il suo
+ * url e' "/" che il deep-link scarta: invece di non fare NIENTE come fino
+ * alla v4.19, ora il tap apre direttamente la Bacheca delle Comunicazioni.
+ */
+function eAvvisoPubblico(titolo: unknown): boolean {
+  return String(titolo ?? '').includes('Nuovo avviso');
+}
+
+/**
+ * v4.20: segnala "apri la Bacheca" a chi ascolta (AvvisiBanner). Il flag
+ * copre l'avvio FREDDO: se l'app parte proprio dal tap sulla push, la
+ * Bacheca non e' ancora montata quando l'evento vola; il flag resta acceso
+ * e la Bacheca lo consuma appena e' pronta (prendiTapAvvisoPendente).
+ */
+let tapAvvisoPendente = false;
+
+export function prendiTapAvvisoPendente(): boolean {
+  const presente = tapAvvisoPendente;
+  tapAvvisoPendente = false;
+  return presente;
+}
+
+function segnalaTapAvviso(): void {
+  tapAvvisoPendente = true;
+  DeviceEventEmitter.emit('pfc-apri-bacheca');
+}
 
 /**
  * Registra il device per le push FCM. Da chiamare dopo il login.
@@ -138,6 +171,9 @@ export function setupPushListeners(
     const datiAvviso: Record<string, string> = {};
     if (url) datiAvviso.url = url;
     if (tipo) datiAvviso.tipo = tipo;
+    // v4.20: se e' la push di un avviso pubblico, il titolo viaggia anche
+    // nei dati: al tocco sull'avviso locale la Bacheca si apre da sola.
+    if (eAvvisoPubblico(title)) datiAvviso.title = title;
     const mostrata = await mostraAvvisoLocale(
       title,
       body,
@@ -165,6 +201,11 @@ export function setupPushListeners(
       '[PUSH] tap notifica (background):',
       String(dati.url ?? ''),
     );
+    // v4.20: tap sulla push di un avviso pubblico => Bacheca (il titolo sta
+    // nel data, con la notification del messaggio come seconda possibilita')
+    if (eAvvisoPubblico(dati.title ?? remoteMessage?.notification?.title)) {
+      segnalaTapAvviso();
+    }
     const target = targetDaDati(dati.url, dati.tipo);
     onNotificationTap?.(target);
   });
@@ -179,6 +220,13 @@ export function setupPushListeners(
           '[PUSH] tap notifica (cold start):',
           String(dati.url ?? ''),
         );
+        // v4.20: avvio FREDDO dal tap sulla push di un avviso pubblico:
+        // il flag resta acceso e la Bacheca lo consuma appena montata.
+        if (
+          eAvvisoPubblico(dati.title ?? remoteMessage.notification?.title)
+        ) {
+          segnalaTapAvviso();
+        }
         const target = targetDaDati(dati.url, dati.tipo);
         if (target) onNotificationTap?.(target);
       }
@@ -188,6 +236,8 @@ export function setupPushListeners(
   // stessa navigazione delle push di sistema (deep-link al documento).
   // v4.6: legge anche il tipo ("scadenza") per il risolutore del file.
   const staccaTocco = sulToccoNotifica((dati) => {
+    // v4.20: tocco sull'avviso LOCALE di un avviso pubblico => Bacheca
+    if (eAvvisoPubblico(dati.title)) segnalaTapAvviso();
     const target = targetDaDati(dati.url, dati.tipo);
     onNotificationTap?.(target);
   });

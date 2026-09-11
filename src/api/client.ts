@@ -228,6 +228,29 @@ export const api = {
     },
   },
 
+  avvisi: {
+    /**
+     * v4.19: AVVISI PUBBLICI dello studio (bacheca admin, API /api/avvisi).
+     * Sono le "Comunicazioni dello Studio" che il sito mostra come banner
+     * giallo: fino alla v4.19 l'app non li chiedeva mai al server e quindi
+     * il messaggio pubblico spariva nel nulla. Ora li scarica AvvisiBanner
+     * (sempre visibile sotto la TopBar). Gli avvisi NON creano notifiche
+     * in campanella (scelta del server): niente effetti sul badge.
+     */
+    async list(): Promise<{ avvisi: Array<{ id: string; text: string; timestamp: string }> }> {
+      const res = await apiFetch<{ avvisi: Array<Record<string, unknown>> }>(
+        '/api/avvisi',
+      );
+      return {
+        avvisi: (res.avvisi ?? []).map((a) => ({
+          id: String(a.id ?? ''),
+          text: String(a.text ?? ''),
+          timestamp: String(a.timestamp ?? ''),
+        })),
+      };
+    },
+  },
+
   risposte: {
     async upload(formData: FormData): Promise<{ ok: boolean; key: string; nome: string }> {
       return apiFetch<{ ok: boolean; key: string; nome: string }>(
