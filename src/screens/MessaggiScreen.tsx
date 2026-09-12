@@ -4,8 +4,8 @@
  * v4.11 — grafica replicata dall'app Android v4 (MessaggiScreen.kt):
  * - Schede "Messaggi Attivi / Archiviati" in stile TabRow: indicatore
  *   navy da 3px sotto la scheda attiva e bollino rosso dei non letti.
- * - Banner informativo "Comunicazioni ufficiali dello Studio PFC" con
- *   pulsante bordato "Segna letti" (stessa funzione di sempre).
+ * - Sopra la lista: pillola oro "Segna tutti letti" (dal v4.23; prima
+ *   c'era un banner informativo fisso con il vecchio pulsante bordato).
  * - Card messaggio: barra laterale navy se non letto, icona quadrata
  *   colorata per stato (risposto/richiesta file/nuovo/letto), etichetta
  *   "STUDIO PFC • data", pillole di stato e corpo SEMPRE visibile con
@@ -16,6 +16,80 @@
  *   CLICCABILI (aprano il browser): si tocca il link e si arriva al sito.
  *   Gli avvisi pubblici invece vivono nel banner sotto la TopBar
  *   (AvvisiBanner) e non finiscono piu' in questa lista, come sul sito.
+ * v4.23: Messaggi raffinati (richiesta del titolare):
+ * - VIA il vecchio banner grigio informativo in alto: la lista respira e
+ *   c'e' piu' spazio per i messaggi veri;
+ * - "Segna tutti letti" diventa una pillola ORO sopra la lista, visibile
+ *   SOLO quando ci sono messaggi non letti;
+ * - grafica allineata alla Bacheca: nome studio in oro, pill "Nuovo"
+ *   ROSSA come quella della Bacheca, link e "Leggi tutto" in oro,
+ *   bordo della scheda non letta piu' morbido, allegato in tinta oro;
+ * - Logica INTATTA: caricamento, segna-letti (automatici e manuali),
+ *   archiviazione, upload risposta, push, pull-to-refresh.
+ * v4.24: i NUOVI si vedono davvero (stesso schema della Bacheca):
+ * - entrando nella tab TUTTO viene segnato letto (come dalla v4.5) ma
+ *   prima scatta una "fotografia" di chi era non letto: quei messaggi
+ *   continuano a mostrare il pill rosso "Nuovo", la barra navy, il titolo
+ *   in grassetto e il bordo in evidenza finche' l'utente non preme la
+ *   pillola oro "Segna tutti letti (n)";
+ * - il pill oro mostra quante novita' ci sono;
+ * - un messaggio che arriva mentre guardi la tab entra nella fotografia.
+ * v4.25: grafica che si vede SEMPRE, anche con tutti i messaggi letti
+ * (richiesta del titolare: "la tab deve migliorare, non solo i non letti"):
+ * - schede Attivi/Archiviati: dal TabRow con barra navy sotto a SEGMENT
+ *   CONTROL a pillola (stesso stile dei chip degli anni nell'Archivio):
+ *   contenitore grigio chiaro, scheda attiva navy con testo bianco;
+ *   il bollino rosso dei non letti resta sul chip "Messaggi Attivi";
+ * - icona di stato: da quadrato a CERCHIO; i messaggi letti prendono la
+ *   tinta ORO (accentSoft + mail-outline oro) come la Bacheca, i non letti
+ *   restano navy pieno con icona bianca, risposto verde, richiesta ambra;
+ * - "STUDIO PFC" in maiuscoletto piu' spaziato (lettering da etichetta);
+ * - schede con ombra piu' morbida e profonda (shadow.md) come la Bacheca;
+ * - "Carica la risposta" diventa una pillola piena navy con ombra piu'
+ *   marcata; Archivia/Ripristino restano pillola bordata;
+ * - Logica INTATTA: caricamento, fotografia NUOVI, segna-letti,
+ *   archiviazione, upload risposta, push, pull-to-refresh.
+ * v4.26: richieste del titolare dopo la prova sul telefono:
+ * - VIA il messaggio scritto DUE volte: lo studio a volte ripete il
+ *   titolo all'inizio del testo, quindi in scheda si vedeva il titolo
+ *   sopra e lo stesso testo ancora nel riquadro sotto. Ora se il corpo
+ *   INIZIA con il titolo (e poi un separatore), il doppione viene tolto
+ *   SOLO dalla visualizzazione (pulisciCorpo): "Avviso" non taglia
+ *   "Avvisiamo che...", e se non c'e' doppione non cambia nulla;
+ * - icona delle LETTERE piu' bella: nella barra in basso la tab Messaggi
+ *   porta la busta (mail/mail-outline, al posto della bolla di chat);
+ *   nelle schede il messaggio nuovo usa la busta col pallino
+ *   (mail-unread-outline) e i letti la busta APERTA in oro
+ *   (mail-open-outline): si capisce al colpo d'occhio chi e' da leggere;
+ * v4.27: la LETTERA va ovunque (richiesta del titolare: "la lettera bella
+ *   la voglio a sinistra vicino STUDIO PFC al posto della nuvola"):
+ *   anche le richieste documento portano la busta (in ambra); il colore
+ *   dice lo stato, la forma resta sempre la lettera. E la scheda si APRE
+ *   BENE al primo colpo: via i difetti di disegno Android che facevano
+ *   la scheda storta finche' non si usciva e si rientrava nella tab
+ *   (lista che taglia i pezzi + ombra del bottone dentro la scheda +
+ *   testo che si ri-allinea male quando si apre);
+ * - grafica SEMPRE quella dell'app: stessi colori oro/navy, stesse
+ *   tonalita' soft dei badge, stesse ombre della Bacheca;
+ * v4.28: la scheda e' PULITA e BELLA sin dall'inizio (richieste del
+ *   titolare dopo la prova v4.27 sul telefono):
+ * - VIA il contorno grigio intorno alle schede: era l'ombra Android
+ *   (elevation) che, unita all'animazione d'ingresso, disegnava un
+ *   alone storto finche' non si usciva e si rientrava nella tab. Ora
+ *   la scheda si definisce col bordo netto, zero ombre: nitida SEMPRE,
+ *   al primo disegno;
+ * - la scheda NON si "espande" piu' in posto: resta compatta (chi ha
+ *   scritto, quando, il titolo e le pillole di stato) e al TOCCO apre
+ *   il testo SOTTO, per intero: via il "Leggi tutto" che allungava la
+ *   scheda a blocchi e il testo tagliato a 4 righe. Tocchi di nuovo =
+ *   si richiude;
+ * - freccina in alto a destra che dice lo stato (giu' = chiusa,
+ *   su = aperta), accanto all'archivio di sempre;
+ * - anche la pill "Richiesta Documento" porta la LETTERA (via l'ultima
+ *   nuvoletta della scheda; la nuvola di caricamento resta solo sul
+ *   bottone "Carica la risposta", dove vuol dire proprio "invia file");
+ * - Logica INTATTA: caricamento, fotografia NUOVI, segna-letti,
+ *   archiviazione, upload risposta, push, pull-to-refresh.
  */
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
@@ -32,6 +106,7 @@ import {
   type ViewStyle,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import Constants from 'expo-constants';
 import { Ionicons } from '@expo/vector-icons';
 import DocumentPicker, { types } from 'react-native-document-picker';
 import { EmptyState } from '@/components/EmptyState';
@@ -43,6 +118,12 @@ import { api } from '@/api/client';
 import { useAppStore } from '@/store/auth';
 import type { Messaggio } from '@/types/api';
 import { shadow, spacing, typography, useColors, type ThemeColors } from '@/theme';
+
+// v4.32: sigillo dell'INTERFACCIA (parte JS): cambia a ogni release e viaggia
+// col codice, non col build. Nella tacca si legge "v1.32.0 - js432": se vedi
+// js432 il codice nuovo sta girando davvero; se leggi v1.32.0 il build nuovo
+// e' installato sul telefono (dopo reinstallazione v4.32).
+const CODICE_INTERFACCIA = 432;
 
 type Tab = 'attivi' | 'archiviati';
 
@@ -62,6 +143,49 @@ function dataGentile(iso: string): string {
   ieri.setDate(adesso.getDate() - 1);
   if (d.toDateString() === ieri.toDateString()) return `Ieri alle ${ora}`;
   return `${d.getDate()} ${MESI[d.getMonth()]} ${d.getFullYear()} alle ${ora}`;
+}
+
+/** v4.26: il messaggio era scritto DUE volte (titolo sopra + testo sotto):
+ * lo studio a volte ripete il titolo all'inizio del corpo. Qui togliamo
+ * il doppione SOLO dalla visualizzazione; il testo vero nel database resta
+ * intatto.
+ * v4.31: sul messaggio vero del titolare la vecchia regola non bastava
+ * (confronto troppo severo). Ora la pulizia tollera le differenze reali:
+ * 1) la PRIMA RIGA del corpo coincide col titolo (spazi multipli,
+ *    maiuscole, "Studio PFC:" davanti, punteggiatura in fondo) => salta
+ *    l'intera prima riga;
+ * 2) il corpo INIZIA col titolo (spazi interni liberi) seguito da un
+ *    separatore (spazio, a-capo, punteggiatura) => salta quel pezzo;
+ * "Avviso" NON taglia "Avvisiamo che..." (serve il confine di parola) e
+ * senza doppione non cambia nulla. */
+function pulisciCorpo(corpo: string, titolo: string): string {
+  const t = titolo.trim();
+  if (!t) return corpo;
+  const c = corpo.trimStart();
+  // Normalizza una riga per il confronto: spazi tutti uguali, minuscole,
+  // via "Studio PFC:" iniziale e punteggiatura finale
+  const norma = (s: string) =>
+    s
+      .replace(/\s+/g, ' ')
+      .trim()
+      .toLowerCase()
+      .replace(/^studio pfc\s*[:\-–—•]\s*/, '')
+      .replace(/[\s:;.,\-–—]+$/, '');
+  // 1) prima riga coincidente col titolo => salta l'intera prima riga
+  const fineRiga = c.indexOf('\n');
+  const primaRiga = fineRiga === -1 ? c : c.slice(0, fineRiga);
+  if (primaRiga.trim() && norma(primaRiga) === norma(t)) {
+    const resto = fineRiga === -1 ? '' : c.slice(fineRiga + 1).replace(/^\s+/, '');
+    if (resto.trim().length > 0) return resto;
+  }
+  // 2) il corpo inizia col titolo (spazi interni liberi) + separatore
+  const esc = t.replace(/[.*+?^${}()|[\]\\]/g, '\\$&').replace(/\s+/g, '\\s+');
+  const m = c.match(new RegExp(`^${esc}[\\s:;.,\\-–—]+`, 'i'));
+  if (m) {
+    const resto = c.slice(m[0].length).trimStart();
+    if (resto.length > 0) return resto;
+  }
+  return corpo;
 }
 
 /** Entrata: fade + piccola scivolata dal basso (stessa dell'Archivio). */
@@ -113,6 +237,9 @@ export default function MessaggiScreen() {
   const [refreshing, setRefreshing] = useState(false);
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [uploadingId, setUploadingId] = useState<string | null>(null);
+  // v4.24: la "fotografia" dei NUOVI presa all'apertura della tab (come la
+  // Bacheca): il segna-letti automatico non spegne piu' le novita' a schermo.
+  const [nuoviIds, setNuoviIds] = useState<string[]>([]);
 
   const load = useCallback(
     async (showRefresh = false) => {
@@ -127,6 +254,13 @@ export default function MessaggiScreen() {
         setNMessaggiNonLetti(
           res.messaggi.filter((m) => !m.letto && !m.archiviato).length,
         );
+        // v4.24: chi e' non letto entra nella fotografia dei NUOVI
+        // (merge: un messaggio appena arrivato mentre guardi la tab
+        // si aggiunge a quelli fotografati all'apertura).
+        const nuoviAdesso = res.messaggi.filter((m) => !m.letto && !m.archiviato);
+        if (nuoviAdesso.length > 0) {
+          setNuoviIds((prev) => Array.from(new Set([...prev, ...nuoviAdesso.map((m) => m.id)])));
+        }
       } catch (err) {
         toast.error('Errore caricamento', err instanceof Error ? err.message : 'Errore caricamento messaggi');
       } finally {
@@ -158,9 +292,14 @@ export default function MessaggiScreen() {
   // (li sta guardando apposta) => niente rosso che resta appeso.
   useEffect(() => {
     if (clienteTab !== 'messaggi') return;
+    // v4.24: nuova fotografia a ogni apertura della tab (come la Bacheca):
+    // prima carichiamo (cosi' vediamo chi era non letto), POI segniamo
+    // tutto letto: il pallino rosso del tab si pulisce, ma i "Nuovo"
+    // restano a schermo finche' l'utente non li chiude con la pillola oro.
+    setNuoviIds([]);
     (async () => {
-      await segnaLettiSilenzioso();
       await load();
+      await segnaLettiSilenzioso();
     })();
   }, [clienteTab, load, segnaLettiSilenzioso]);
 
@@ -176,8 +315,8 @@ export default function MessaggiScreen() {
       if (!url.includes('tab=messaggi')) return;
       if (clienteTab === 'messaggi') {
         (async () => {
+          await load(); // v4.24: prima la fotografia, poi il segna-letti
           await segnaLettiSilenzioso();
-          await load();
         })();
       } else {
         load();
@@ -206,6 +345,8 @@ export default function MessaggiScreen() {
       await api.messaggi.segnaLetti();
       setMessaggi((prev) => prev.map((m) => ({ ...m, letto: true })));
       setNMessaggiNonLetti(0);
+      // v4.24: la pillola oro chiude anche la fotografia dei NUOVI
+      setNuoviIds([]);
       toast.success('Tutti contrassegnati come letti');
     } catch {
       toast.error('Errore', 'Impossibile aggiornare i messaggi');
@@ -258,24 +399,34 @@ export default function MessaggiScreen() {
     }
   }
 
-  function iconaStato(msg: Messaggio): { icon: keyof typeof Ionicons.glyphMap; color: string; bg: string } {
+  function iconaStato(msg: Messaggio, eNuovo: boolean): { icon: keyof typeof Ionicons.glyphMap; color: string; bg: string } {
+    // v4.27: la LETTERA e' l'icona di tutti i messaggi ("la lettera bella
+    // la voglio a sinistra vicino STUDIO PFC al posto della nuvola"):
+    // la forma non cambia piu', e' il COLORE a dire lo stato:
+    //   verde  = gia' risposto (spunta: azione fatta)
+    //   navy   = nuovo, da leggere
+    //   ambra  = richiesta documento da sistemare (prima c'era la nuvola)
+    //   oro    = letto e archiviato nella memoria
     if (msg.haRisposta) return { icon: 'checkmark-circle', color: colors.success, bg: `${colors.success}26` };
-    if (msg.richiedeUpload) return { icon: 'cloud-upload', color: colors.warning, bg: `${colors.warning}26` };
-    if (!msg.letto) return { icon: 'mail', color: '#FFFFFF', bg: colors.primary };
-    return { icon: 'mail-outline', color: colors.textSecondary, bg: colors.surfaceAlt };
+    if (eNuovo) return { icon: 'mail-unread-outline', color: '#FFFFFF', bg: colors.primary };
+    // v4.27: richiesta documento = busta AMBRA (via la nuvola)
+    if (msg.richiedeUpload) return { icon: 'mail-unread-outline', color: colors.warning, bg: `${colors.warning}26` };
+    // v4.25: i messaggi letti prendono la tinta ORO della Bacheca (era grigio)
+    return { icon: 'mail-open-outline', color: colors.accentDark, bg: colors.accentSoft };
   }
 
   return (
     <SafeAreaView style={styles.safe} edges={['top']}>
-      {/* Schede Attivi / Archiviati con indicatore (TabRow dell'app v4) */}
-      <View style={styles.tabsSurface}>
-        <View style={styles.tabsRow}>
+      {/* v4.25: schede Attivi/Archiviati a segment control a pillola
+          (stesso linguaggio dei chip degli anni nell'Archivio v4.12) */}
+      <View style={styles.tabsWrap}>
+        <View style={styles.tabsPill}>
           <Pressable
             onPress={() => {
               haptics.tap();
               setTab('attivi');
             }}
-            style={styles.tabBtn}
+            style={[styles.tabBtn, tab === 'attivi' && styles.tabBtnActive]}
             accessibilityRole="button"
             accessibilityState={{ selected: tab === 'attivi' }}
           >
@@ -291,7 +442,7 @@ export default function MessaggiScreen() {
               haptics.tap();
               setTab('archiviati');
             }}
-            style={styles.tabBtn}
+            style={[styles.tabBtn, tab === 'archiviati' && styles.tabBtnActive]}
             accessibilityRole="button"
             accessibilityState={{ selected: tab === 'archiviati' }}
           >
@@ -300,33 +451,28 @@ export default function MessaggiScreen() {
             </Text>
           </Pressable>
         </View>
-        <View style={[styles.tabIndicator, tab === 'attivi' ? styles.tabIndicatorLeft : styles.tabIndicatorRight]} />
       </View>
 
-      {/* Banner informativo + "Segna letti" (come l'app v4) */}
-      <View style={styles.infoBanner}>
-        <Ionicons name="mail" size={19} color={colors.primary} />
-        <Text style={styles.infoText}>
-          Comunicazioni ufficiali dello Studio PFC. Puoi leggere i dettagli e inviare gli allegati richiesti.
-        </Text>
-        {tab === 'attivi' && unreadCount > 0 && (
-          <Pressable
-            onPress={handleSegnaLetti}
-            style={({ pressed }) => [styles.segnaLettiBtn, pressed && { opacity: 0.8 }]}
-            accessibilityRole="button"
-            accessibilityLabel="Segna tutti come letti"
-          >
-            <Ionicons name="checkmark-done" size={14} color={colors.primary} />
-            <Text style={styles.segnaLettiText}>Segna letti</Text>
-          </Pressable>
-        )}
-      </View>
+      {/* v4.29: tacca di versione sotto le linguette: chi dice la verita' su
+       * quale build sta girando davvero sul telefono (anti "non vedo le
+       * modifiche": o vedi v1.30.0, oppure il build nuovo non e' partito).
+       * v4.30: c'e' anche il sigillo JS: se leggi js430 il codice nuovo e'
+       * caricato anche a caldo, senza reinstallare nulla. */}
+      <Text style={styles.versioneTag}>
+        v{Constants.expoConfig?.version ?? '?'} · js{CODICE_INTERFACCIA}
+      </Text>
 
       <FlatList
         style={styles.list}
         contentContainerStyle={styles.listContent}
         data={loading && !refreshing ? [] : displayList}
         keyExtractor={(item) => item.id}
+        // v4.27: la scheda si APRE BENE al primo colpo. Su Android la lista
+        // di default "taglia" i pezzi fuori schermo (removeClippedSubviews):
+        // con le schede animate questo taglia disegna le card storte finche'
+        // non esci e rientri nella tab. Lista corta => lo spegniamo e la
+        // scheda si disegna sempre intera e dritta.
+        removeClippedSubviews={false}
         refreshControl={
           <RefreshControl
             refreshing={refreshing}
@@ -336,14 +482,34 @@ export default function MessaggiScreen() {
             progressBackgroundColor={colors.surface}
           />
         }
+        /* v4.24: pillola oro con il CONTAGGIO delle novita', sparisce quando le chiudi */
+        ListHeaderComponent={
+          tab === 'attivi' && nuoviIds.length > 0 ? (
+            <View style={styles.lettiRiga}>
+              <Pressable
+                onPress={handleSegnaLetti}
+                style={({ pressed }) => [styles.segnaLettiPill, pressed && { opacity: 0.8 }]}
+                accessibilityRole="button"
+                accessibilityLabel="Segna tutti come letti"
+              >
+                <Ionicons name="checkmark-done" size={13} color={colors.accentDark} />
+                <Text style={styles.segnaLettiPillText}>Segna tutti letti ({nuoviIds.length})</Text>
+              </Pressable>
+            </View>
+          ) : null
+        }
         renderItem={({ item: msg, index }) => {
           const expanded = expandedId === msg.id;
-          const ic = iconaStato(msg);
-          const nonLetto = !msg.letto && !msg.archiviato;
+          // v4.24: "Nuovo" = non letto ORA oppure era nella fotografia
+          // presa all'apertura della tab (il segna-letti automatico
+          // non spegne la segnalazione finche' l'utente non la chiude).
+          const eNuovo = !msg.archiviato && (!msg.letto || nuoviIds.includes(msg.id));
+          const ic = iconaStato(msg, eNuovo);
+          // v4.26: il corpo mostrato non ripete il titolo (via il doppione)
+          const corpoMostrato = pulisciCorpo(msg.corpo, msg.titolo);
           return (
             <Entrata delay={Math.min(60 + index * 50, 400)}>
-              <View style={[styles.msgCard, nonLetto && styles.msgCardUnread]}>
-                {nonLetto && <View style={styles.unreadBar} />}
+              <View style={[styles.msgCard, eNuovo && styles.msgCardUnread]}>
                 <View style={styles.msgInner}>
                   {/* Testata: icona stato + STUDIO PFC • data + titolo + archivia */}
                   <Pressable
@@ -352,10 +518,10 @@ export default function MessaggiScreen() {
                       setExpandedId(expanded ? null : msg.id);
                     }}
                     style={styles.msgHeader}
-                    accessibilityLabel="Mostra dettaglio messaggio"
+                    accessibilityLabel="Apri o chiudi il messaggio"
                   >
                     <View style={[styles.msgIcon, { backgroundColor: ic.bg }]}>
-                      <Ionicons name={ic.icon} size={21} color={ic.color} />
+                      <Ionicons name={ic.icon} size={20} color={ic.color} />
                     </View>
                     <View style={styles.msgHeaderText}>
                       <View style={styles.msgOverRow}>
@@ -363,33 +529,45 @@ export default function MessaggiScreen() {
                         <Text style={styles.msgOverDot}>•</Text>
                         <Text style={styles.msgDate}>{dataGentile(msg.dataInvio)}</Text>
                       </View>
-                      <Text style={[styles.msgTitle, nonLetto && styles.msgTitleUnread]} numberOfLines={2}>
+                      <Text style={[styles.msgTitle, eNuovo && styles.msgTitleUnread]} numberOfLines={2}>
                         {msg.titolo}
                       </Text>
                     </View>
-                    <Pressable
-                      onPress={() => (msg.archiviato ? handleDearchivia(msg.id) : handleArchivia(msg.id))}
-                      style={({ pressed }) => [styles.iconAction, pressed && { opacity: 0.6 }]}
-                      accessibilityLabel={msg.archiviato ? 'Ripristina messaggio' : 'Archivia messaggio'}
-                    >
-                      <Ionicons
-                        name={msg.archiviato ? 'arrow-undo-outline' : 'archive-outline'}
-                        size={18}
-                        color={colors.textSecondary}
-                      />
-                    </Pressable>
+                    <View style={styles.headerActions}>
+                      {/* v4.28: freccina che indica l'apertura (il tocco sulla
+                       * testata apre il testo sotto): giu' = chiusa, su = aperta */}
+                      <View style={styles.chevWrap}>
+                        <Ionicons
+                          name={expanded ? 'chevron-up' : 'chevron-down'}
+                          size={16}
+                          color={colors.textTertiary}
+                        />
+                      </View>
+                      <Pressable
+                        onPress={() => (msg.archiviato ? handleDearchivia(msg.id) : handleArchivia(msg.id))}
+                        style={({ pressed }) => [styles.iconAction, pressed && { opacity: 0.6 }]}
+                        accessibilityLabel={msg.archiviato ? 'Ripristina messaggio' : 'Archivia messaggio'}
+                      >
+                        <Ionicons
+                          name={msg.archiviato ? 'arrow-undo-outline' : 'archive-outline'}
+                          size={18}
+                          color={colors.textSecondary}
+                        />
+                      </Pressable>
+                    </View>
                   </Pressable>
 
                   {/* Pillole di stato (come i badge dell'app v4) */}
                   <View style={styles.badgeRow}>
-                    {nonLetto && (
-                      <View style={[styles.pill, { backgroundColor: `${colors.primary}26` }]}>
-                        <Text style={[styles.pillText, { color: colors.primary }]}>Nuovo</Text>
+                    {eNuovo && (
+                      <View style={[styles.pill, { backgroundColor: colors.dangerSoft }]}>
+                        <Text style={[styles.pillText, { color: colors.danger }]}>Nuovo</Text>
                       </View>
                     )}
                     {msg.richiedeUpload && !msg.haRisposta && (
                       <View style={[styles.pill, { backgroundColor: `${colors.warning}26` }]}>
-                        <Ionicons name="cloud-upload" size={11} color={colors.warning} />
+                        {/* v4.28: anche nella pill c'e' la LETTERA (via l'ultima nuvoletta) */}
+                        <Ionicons name="mail-unread-outline" size={12} color={colors.warning} />
                         <Text style={[styles.pillText, { color: colors.warning }]}>Richiesta Documento</Text>
                       </View>
                     )}
@@ -401,68 +579,64 @@ export default function MessaggiScreen() {
                     )}
                   </View>
 
-                  {/* Corpo SEMPRE visibile, con clamp e "Leggi tutto" (come l'app v4).
+                  {/* v4.28: al TOCCO la scheda apre SOTTO il testo, per intero:
+                   * niente piu' corpo sempre visibile tagliato a 4 righe con il
+                   * "Leggi tutto" che allunga la scheda in posto. La scheda
+                   * chiusa resta compatta; aperta mostra TUTTO il messaggio.
                    * v4.19: i siti internet nel testo sono cliccabili (linkify). */}
-                  <View style={styles.corpoBox}>
-                    <Text style={styles.corpo} numberOfLines={expanded ? undefined : 4}>
-                      {spezzaLink(msg.corpo, styles.corpoLink)}
-                    </Text>
-                    {msg.corpo.length > 140 && (
-                      <Pressable
-                        onPress={() => setExpandedId(expanded ? null : msg.id)}
-                        hitSlop={6}
-                        accessibilityLabel={expanded ? 'Mostra meno' : 'Leggi tutto'}
-                      >
-                        <Text style={styles.leggiTutto}>{expanded ? 'Mostra meno ▲' : 'Leggi tutto ▼'}</Text>
-                      </Pressable>
-                    )}
-                  </View>
-
-                  {/* Allegato dello studio, se presente */}
-                  {msg.allegatoNome ? (
-                    <View style={styles.allegatoBox}>
-                      <Ionicons name="attach" size={15} color={colors.primary} />
-                      <Text style={styles.allegatoText} numberOfLines={1}>
-                        Allegato dallo Studio: {msg.allegatoNome}
-                      </Text>
-                    </View>
-                  ) : null}
-
-                  {/* Dettagli aperti: invio file + archivia/ripristina */}
                   {expanded && (
-                    <View style={styles.actionsWrap}>
-                      {msg.richiedeUpload && !msg.haRisposta && (
+                    <>
+                      <View style={styles.corpoBox}>
+                        <Text style={styles.corpo}>
+                          {spezzaLink(corpoMostrato, styles.corpoLink)}
+                        </Text>
+                      </View>
+
+                      {/* Allegato dello studio, se presente */}
+                      {msg.allegatoNome ? (
+                        <View style={styles.allegatoBox}>
+                          <Ionicons name="attach" size={15} color={colors.accentDark} />
+                          <Text style={styles.allegatoText} numberOfLines={1}>
+                            Allegato dallo Studio: {msg.allegatoNome}
+                          </Text>
+                        </View>
+                      ) : null}
+
+                      {/* Azioni: invio file + archivia/ripristina */}
+                      <View style={styles.actionsWrap}>
+                        {msg.richiedeUpload && !msg.haRisposta && (
+                          <Pressable
+                            onPress={() => handleUpload(msg)}
+                            disabled={uploadingId === msg.id}
+                            style={({ pressed }) => [
+                              styles.uploadBtn,
+                              pressed && styles.btnPressed,
+                              uploadingId === msg.id && styles.btnDisabled,
+                            ]}
+                            accessibilityLabel="Carica la risposta"
+                          >
+                            <Ionicons name="cloud-upload-outline" size={18} color={colors.textInverse} />
+                            <Text style={styles.uploadBtnText}>
+                              {uploadingId === msg.id ? 'Invio in corso…' : 'Carica la risposta'}
+                            </Text>
+                          </Pressable>
+                        )}
                         <Pressable
-                          onPress={() => handleUpload(msg)}
-                          disabled={uploadingId === msg.id}
-                          style={({ pressed }) => [
-                            styles.uploadBtn,
-                            pressed && styles.btnPressed,
-                            uploadingId === msg.id && styles.btnDisabled,
-                          ]}
-                          accessibilityLabel="Carica la risposta"
+                          onPress={() => (tab === 'attivi' ? handleArchivia(msg.id) : handleDearchivia(msg.id))}
+                          style={({ pressed }) => [styles.outlineBtn, pressed && styles.btnPressed]}
+                          accessibilityLabel={tab === 'attivi' ? 'Archivia messaggio' : 'Ripristina messaggio'}
                         >
-                          <Ionicons name="cloud-upload-outline" size={18} color={colors.textInverse} />
-                          <Text style={styles.uploadBtnText}>
-                            {uploadingId === msg.id ? 'Invio in corso…' : 'Carica la risposta'}
+                          <Ionicons
+                            name={tab === 'attivi' ? 'archive-outline' : 'arrow-undo-outline'}
+                            size={15}
+                            color={colors.textSecondary}
+                          />
+                          <Text style={styles.outlineBtnText}>
+                            {tab === 'attivi' ? 'Archivia' : 'Ripristina'}
                           </Text>
                         </Pressable>
-                      )}
-                      <Pressable
-                        onPress={() => (tab === 'attivi' ? handleArchivia(msg.id) : handleDearchivia(msg.id))}
-                        style={({ pressed }) => [styles.outlineBtn, pressed && styles.btnPressed]}
-                        accessibilityLabel={tab === 'attivi' ? 'Archivia messaggio' : 'Ripristina messaggio'}
-                      >
-                        <Ionicons
-                          name={tab === 'attivi' ? 'archive-outline' : 'arrow-undo-outline'}
-                          size={15}
-                          color={colors.textSecondary}
-                        />
-                        <Text style={styles.outlineBtnText}>
-                          {tab === 'attivi' ? 'Archivia' : 'Ripristina'}
-                        </Text>
-                      </Pressable>
-                    </View>
+                      </View>
+                    </>
                   )}
                 </View>
               </View>
@@ -501,55 +675,72 @@ const makeStyles = (colors: ThemeColors) =>
   StyleSheet.create({
     safe: { flex: 1, backgroundColor: colors.background },
 
-    // Schede in stile TabRow (v4.11)
-    tabsSurface: { backgroundColor: colors.surface, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: colors.border, ...shadow.sm },
-    tabsRow: { flexDirection: 'row' },
-    tabBtn: { flex: 1, height: 48, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 7 },
-    tabLabel: { ...typography.bodySmall, fontSize: 14, color: colors.textSecondary, fontWeight: '500' },
-    tabLabelActive: { color: colors.primary, fontWeight: '800' },
+    // v4.25: segment control a pillola (come i chip degli anni dell'Archivio)
+    tabsWrap: { paddingHorizontal: spacing.lg, paddingTop: spacing.sm, paddingBottom: spacing.xs },
+    tabsPill: { flexDirection: 'row', backgroundColor: colors.surfaceAlt, borderRadius: 999, padding: 4, borderWidth: 1, borderColor: colors.border },
+    tabBtn: { flex: 1, height: 42, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 7, borderRadius: 999 },
+    tabBtnActive: { backgroundColor: colors.primary, ...shadow.sm },
+    tabLabel: { ...typography.bodySmall, fontSize: 13.5, color: colors.textSecondary, fontWeight: '600' },
+    tabLabelActive: { color: colors.textInverse, fontWeight: '800' },
     tabCount: { minWidth: 20, height: 20, borderRadius: 10, backgroundColor: colors.danger, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 5 },
     tabCountText: { color: '#FFFFFF', fontSize: 10, fontWeight: '700' },
-    tabIndicator: { position: 'absolute', bottom: 0, height: 3, width: '50%', backgroundColor: colors.primary, borderTopLeftRadius: 3, borderTopRightRadius: 3 },
-    tabIndicatorLeft: { left: 0 },
-    tabIndicatorRight: { left: '50%' },
 
-    // Banner informativo (v4.11)
-    infoBanner: { flexDirection: 'row', alignItems: 'center', gap: 10, paddingHorizontal: spacing.lg, paddingVertical: 10, backgroundColor: `${colors.primary}14` },
-    infoText: { ...typography.caption, color: colors.textPrimary, flex: 1, lineHeight: 16 },
-    segnaLettiBtn: { flexDirection: 'row', alignItems: 'center', gap: 4, borderRadius: 8, borderWidth: 1, borderColor: `${colors.primary}99`, paddingHorizontal: 10, paddingVertical: 5 },
-    segnaLettiText: { color: colors.primary, fontSize: 11, fontWeight: '700' },
+    // v4.23: pillola oro "Segna tutti letti" (al posto del vecchio banner)
+    lettiRiga: { flexDirection: 'row', justifyContent: 'flex-end' },
+    segnaLettiPill: { flexDirection: 'row', alignItems: 'center', gap: 5, borderRadius: 999, borderWidth: 1, borderColor: `${colors.accent}99`, backgroundColor: colors.accentSoft, paddingHorizontal: 12, paddingVertical: 6 },
+    segnaLettiPillText: { color: colors.accentDark, fontSize: 12, fontWeight: '800' },
 
     list: { flex: 1 },
     listContent: { padding: spacing.lg, gap: 14, paddingBottom: spacing.xxl },
     skeletonInList: { paddingVertical: spacing.sm },
+    // v4.29: tacca di versione: piccola, discreta, sempre veritiera (letta dalla config)
+    versioneTag: { textAlign: 'center', fontSize: 11, color: colors.textTertiary, paddingBottom: spacing.xs, letterSpacing: 0.3 },
 
     // Card messaggio (v4.11, stile MessaggioCard dell'app v4)
-    msgCard: { flexDirection: 'row', borderRadius: 20, backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.border, overflow: 'hidden', ...shadow.sm },
-    msgCardUnread: { backgroundColor: `${colors.primary}14`, borderColor: `${colors.primary}99`, borderWidth: 1.5 },
-    unreadBar: { width: 4, backgroundColor: colors.primary },
-    msgInner: { flex: 1, padding: 18, gap: 10 },
+    // v4.28: VIA l'ombra (era shadow.md): l'elevation Android unita
+    // all'animazione d'ingresso disegnava il contorno grigio storto che
+    // si sistemava solo uscendo e rientrando nella tab.
+    // v4.31: VIA anche il CONTORNO (il bordo grigio attorno a tutta la
+    // scheda, piu' spesso sui nuovi, che il titolare non vuole): le schede
+    // si definiscono col fondo e con lo spazio; i nuovi si riconoscono dal
+    // fondo leggermente tinto, dal titolo in grassetto e dalla pillola
+    // "Nuovo" (nessun contorno perimetrale, nessuna barra laterale).
+    msgCard: { flexDirection: 'row', borderRadius: 20, backgroundColor: colors.surface, overflow: 'hidden' },
+    msgCardUnread: { backgroundColor: `${colors.primary}0D` },
+    msgInner: { flex: 1, padding: 18, gap: 12 },
     msgHeader: { flexDirection: 'row', alignItems: 'flex-start', gap: 12 },
-    msgIcon: { width: 42, height: 42, borderRadius: 12, alignItems: 'center', justifyContent: 'center' },
+    msgIcon: { width: 40, height: 40, borderRadius: 20, alignItems: 'center', justifyContent: 'center' },
     msgHeaderText: { flex: 1, gap: 2 },
     msgOverRow: { flexDirection: 'row', alignItems: 'center', gap: 5 },
-    msgStudio: { color: colors.primary, fontSize: 10.5, fontWeight: '800', letterSpacing: 0.6 },
+    // v4.25: lettering da etichetta (maiuscoletto piu' spaziato)
+    msgStudio: { color: colors.accentDark, fontSize: 10, fontWeight: '800', letterSpacing: 1.2 },
     msgOverDot: { color: colors.textTertiary, fontSize: 11 },
     msgDate: { ...typography.caption, color: colors.textSecondary },
     msgTitle: { ...typography.body, color: colors.textPrimary, fontWeight: '500', fontSize: 15.5 },
     msgTitleUnread: { fontWeight: '800' },
     iconAction: { width: 32, height: 32, borderRadius: 10, alignItems: 'center', justifyContent: 'center' },
+    // v4.28: freccina d'apertura accanto all'archivio
+    headerActions: { flexDirection: 'row', alignItems: 'center', gap: 2 },
+    chevWrap: { width: 26, height: 32, alignItems: 'center', justifyContent: 'center' },
     badgeRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
     pill: { flexDirection: 'row', alignItems: 'center', gap: 4, borderRadius: 999, paddingHorizontal: 8, paddingVertical: 3 },
     pillText: { fontSize: 11, fontWeight: '700' },
-    corpoBox: { backgroundColor: colors.surfaceAlt, borderRadius: 12, borderWidth: 1, borderColor: colors.border, padding: 14 },
+    // v4.31: VIA il bordo anche dal riquadro del testo (il contorno grigio
+    // interno): il testo si stacca dal fondo senza cornici.
+    corpoBox: { backgroundColor: colors.surfaceAlt, borderRadius: 14, padding: 14 },
     corpo: { ...typography.bodySmall, color: colors.textPrimary, lineHeight: 21 },
     // v4.19: i link nel corpo del messaggio si Vedono e si toccano (aprono il browser)
-    corpoLink: { color: colors.primary, fontWeight: '700', textDecorationLine: 'underline' },
-    leggiTutto: { color: colors.primary, fontSize: 12, fontWeight: '700', marginTop: 6 },
-    allegatoBox: { flexDirection: 'row', alignItems: 'center', gap: 8, backgroundColor: colors.surfaceAlt, borderRadius: 10, borderWidth: 1, borderColor: colors.border, paddingHorizontal: 12, paddingVertical: 9 },
+    // v4.23: link in oro, stessa lingua della Bacheca
+    corpoLink: { color: colors.accentDark, fontWeight: '700', textDecorationLine: 'underline' },
+    // v4.23: allegato dello Studio in tinta oro (come la Bacheca)
+    allegatoBox: { flexDirection: 'row', alignItems: 'center', gap: 8, backgroundColor: colors.accentSoft, borderRadius: 12, borderWidth: 1, borderColor: `${colors.accent}55`, paddingHorizontal: 12, paddingVertical: 9 },
     allegatoText: { ...typography.caption, color: colors.textPrimary, fontWeight: '600', flex: 1 },
     actionsWrap: { gap: 10 },
-    uploadBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, minHeight: 50, borderRadius: 14, backgroundColor: colors.primary, ...shadow.sm },
+    // v4.25: "Carica la risposta" a pillola piena
+    // v4.27: VIA l'ombra del bottone: un'ombra dentro una scheda che si
+    // apre fa disegnare ad Android il bottone storto finche' non si
+    // rientra nella tab. La pillola resta identica, solo piu' affidabile.
+    uploadBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, minHeight: 48, borderRadius: 999, backgroundColor: colors.primary },
     outlineBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, minHeight: 42, borderRadius: 999, backgroundColor: colors.surfaceAlt, borderWidth: 1, borderColor: colors.border },
     outlineBtnText: { ...typography.caption, color: colors.textSecondary, fontWeight: '700' },
     uploadBtnText: { ...typography.button, color: colors.textInverse },

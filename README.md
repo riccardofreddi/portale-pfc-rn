@@ -6,7 +6,7 @@
 Documenti, messaggi, scadenze e notifiche — sempre aggiornati, in un unico posto.
 
 ![CI](https://github.com/riccardofreddi/portale-pfc-rn/actions/workflows/ci.yml/badge.svg)
-![Versione](https://img.shields.io/badge/versione-1.22.0%20%2F%20build%2022-1B2A4A?logo=android&logoColor=white)
+![Versione](https://img.shields.io/badge/versione-1.32.0%20%2F%20build%2032-1B2A4A?logo=android&logoColor=white)
 ![React Native](https://img.shields.io/badge/React%20Native-0.76-61DAFB?logo=react&logoColor=black)
 ![Expo SDK](https://img.shields.io/badge/Expo%20SDK-52-000020?logo=expo&logoColor=white)
 ![TypeScript](https://img.shields.io/badge/TypeScript-5.6-3178C6?logo=typescript&logoColor=white)
@@ -239,12 +239,20 @@ La versione vive in tre punti, tenuti allineati:
 2. `package.json` → `version`
 3. `android/app/build.gradle` → `versionName` / `versionCode`
 
-Per pubblicare una nuova versione: incrementa `versionName` (es. `1.23.0`) e `versionCode` (sempre +1) in `android/app/build.gradle`, allinea gli altri due file e fai push — la CI pubblica la nuova APK su GitHub Releases.
+Per pubblicare una nuova versione: incrementa `versionName` (es. `1.26.0`) e `versionCode` (sempre +1) in `android/app/build.gradle`, allinea gli altri due file e fai push — la CI pubblica la nuova APK su GitHub Releases.
 
 ### Ultime versioni
 
 | Versione | App | Novità principali |
 |---|---|---|
+| **v4.32** | 1.32.0 | Riconsegna completa della v4.31 con lo ZIP A 7 FILE: dentro anche `Modal.tsx` (il foglio dal basso condiviso, mai spedito prima: sul PC restava quello del clone e il pannello non coincideva con quello testato). Le comunicazioni aprono il PANNELLO DAL BASSO (come richiesto): la striscia oro resta sottile e fissa — un tocco e sale il pannello con tutte le comunicazioni, si chiude toccando fuori o con la X; via la lista in linea che spingeva il contenuto; VIA il bordo grigio attorno alle schede dei messaggi (soprattutto sui nuovi) e dal riquadro del testo; il doppione (titolo ripetuto sotto) ora salta anche con spazi, maiuscole, punteggiatura e "Studio PFC:" davanti — logica invariata |
+| **v4.30** | 1.30.0 | Comunicazioni dello Studio aperte come richiesto: la striscia oro resta sottile e NON si espande più — un tocco e la lista delle comunicazioni si apre SOTTO, in linea, con la freccina che gira (secondo tocco e si richiude); via la scheda grande e via il pannello dal basso; tacca sotto le linguette ora "v1.30.0 · js430" (versione + sigillo del codice: doppia prova di quale build gira sul telefono) — logica invariata |
+| **v4.29** | 1.29.0 | Tacca di versione visibile: sotto le linguette Attivi/Archiviati compare "v1.29.0" — letta direttamente dalla configurazione dell'app, dice sempre la verità su quale build gira sul telefono (se la vedi, il telefono è aggiornato; se non la vedi, il nuovo build non è stato installato) — grafica invariata, logica invariata |
+| **v4.28** | 1.28.0 | Messaggi puliti sin dall'inizio: via il contorno grigio (l'ombra Android che si disegnava storta finché non si rientrava nella tab); le schede non si "espandono" più — restano compatte e al tocco aprono il testo SOTTO, per intero, con freccina (via il "Leggi tutto"); anche la pill "Richiesta Documento" porta la lettera; via la barretta scura in alto nei pannelli (quella che si vedeva all'altezza dei preferiti) — logica invariata |
+| **v4.27** | 1.27.0 | Messaggi: la lettera è l'icona di tutti i messaggi — anche le richieste documento (via la nuvola: busta ambra al suo posto, il colore dice lo stato); le schede ora si APRONO bene al primo colpo, senza più dover uscire e rientrare nella tab — logica invariata |
+| **v4.26** | 1.26.0 | Messaggi: via il testo scritto due volte (il titolo ripetuto nel corpo non si vede più), icona delle lettere elegante nelle schede — busta col pallino per i nuovi, busta aperta in oro per i letti — barra di navigazione invariata, logica invariata |
+| **v4.25** | 1.25.0 | Messaggi belli sempre (anche tutti letti): schede Attivi/Archiviati a segment control a pillola (stile Archivio), icona di stato a cerchio con i letti in tinta oro, "STUDIO PFC" a lettering elegante, schede con ombra morbida, "Carica la risposta" a pillola — logica invariata |
+| **v4.24** | 1.24.0 | Messaggi raffinati: via il banner informativo (più spazio alla lista), "Segna tutti letti (n)" come pillola oro, i messaggi nuovi restano segnati "Nuovo" anche a tab aperta (come nella Bacheca) e si chiudono solo col tocco, schede in tinta oro — logica invariata |
 | **v4.22** | 1.22.0 | Bacheca rifinita: la X del pannello è allineata al titolo (come nella scheda), via il pulsante "Chiudi" — la chiusura resta con la X, il tocco fuori o il trascinamento giù |
 | **v4.21** | 1.21.0 | Bacheca senza date e con la chiusura più comoda (richieste del titolare) |
 | **v4.20** | 1.20.0 | Bacheca delle Comunicazioni: scheda elegante oro/blu al posto dei cartelli gialli, elenco completo in un pannello dal basso, la notifica push apre direttamente la Bacheca, pallino NUOVO sulle novità, tema scuro supportato |

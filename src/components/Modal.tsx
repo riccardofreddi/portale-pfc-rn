@@ -11,6 +11,11 @@
  * - il foglio e' una View semplice, che non gareggia con lo scroll:
  *   le liste dentro i pannelli (Impostazioni, Notifiche, Cassetto,
  *   dettaglio file dell'Archivio) scorrono fluide.
+ * v4.28 — VIA la maniglia: la barretta grigio-scuro in alto sopra il
+ *   titolo era vista come "una riga nera" (il titolare l'ha notata
+ *   all'altezza dei preferiti e non la vuole). I pannelli aprono
+ *   direttamente coi contenuti, con un piccolo respiro in piu' in cima
+ *   (paddingTop del foglio al posto dello spazio della maniglia).
  */
 import React from 'react';
 import {
@@ -52,7 +57,6 @@ export function Modal({ visible, onClose, children, style }: ModalProps) {
         {/* Foglio: View semplice, senza gestione del tocco: lo scroll
          * interno funziona nativo, senza liti di responder. */}
         <View style={[styles.sheet, style]}>
-          <View style={styles.handle} />
           {children}
         </View>
       </View>
@@ -72,15 +76,7 @@ const makeStyles = (colors: ThemeColors) =>
       borderTopLeftRadius: radius.xxl,
       borderTopRightRadius: radius.xxl,
       maxHeight: '85%',
+      paddingTop: spacing.lg,
       paddingBottom: spacing.xxxl,
-    },
-    handle: {
-      width: 40,
-      height: 4,
-      borderRadius: 2,
-      backgroundColor: colors.borderStrong,
-      alignSelf: 'center',
-      marginTop: spacing.md,
-      marginBottom: spacing.sm,
     },
   });
