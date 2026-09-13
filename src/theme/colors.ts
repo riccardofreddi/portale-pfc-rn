@@ -75,10 +75,13 @@ const lightColors: ThemeColors = {
 };
 
 // Dark: "Midnight Luxury" (dall'app Android v4)
+// v4.33: VIA il nero — lo sfondo era quasi nero e il velo dei pannelli
+// era nero puro: ora sfondo blu notte #0A1128 (il colore firma del
+// brand) e velo azzurro notte uguale al tema chiaro.
 const darkColors: ThemeColors = {
   primary: '#1C2B4B',
   primaryLight: '#334A75',
-  background: '#070B19',
+  background: '#0A1128',
   surface: '#0D1527',
   surfaceAlt: '#131D36',
 
@@ -103,7 +106,8 @@ const darkColors: ThemeColors = {
   border: '#1E2D4A',
   borderStrong: '#334A75',
 
-  overlay: 'rgba(0, 0, 0, 0.7)',
+  // v4.33: velo dei pannelli = blu notte translucido (prima nero puro)
+  overlay: 'rgba(10, 17, 40, 0.6)',
 };
 
 export function getColors(theme: 'light' | 'dark'): ThemeColors {

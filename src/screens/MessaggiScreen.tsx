@@ -119,11 +119,11 @@ import { useAppStore } from '@/store/auth';
 import type { Messaggio } from '@/types/api';
 import { shadow, spacing, typography, useColors, type ThemeColors } from '@/theme';
 
-// v4.32: sigillo dell'INTERFACCIA (parte JS): cambia a ogni release e viaggia
-// col codice, non col build. Nella tacca si legge "v1.32.0 - js432": se vedi
-// js432 il codice nuovo sta girando davvero; se leggi v1.32.0 il build nuovo
-// e' installato sul telefono (dopo reinstallazione v4.32).
-const CODICE_INTERFACCIA = 432;
+// v4.39: sigillo dell'INTERFACCIA (parte JS): cambia a ogni release e viaggia
+// col codice, non col build. Nella tacca si legge "v1.39.0 - js439": se vedi
+// js439 il codice nuovo sta girando davvero; se leggi v1.39.0 il build nuovo
+// e' installato sul telefono (dopo reinstallazione v4.39).
+const CODICE_INTERFACCIA = 439;
 
 type Tab = 'attivi' | 'archiviati';
 
@@ -157,11 +157,48 @@ function dataGentile(iso: string): string {
  * 2) il corpo INIZIA col titolo (spazi interni liberi) seguito da un
  *    separatore (spazio, a-capo, punteggiatura) => salta quel pezzo;
  * "Avviso" NON taglia "Avvisiamo che..." (serve il confine di parola) e
- * senza doppione non cambia nulla. */
+ * senza doppione non cambia nulla.
+ * v4.35: il titolo a volte e' scritto DUE volte (riga 1 e riga 2, anche
+ * con "Studio PFC:" davanti): la pulizia ora RIPETE il taglio fino a 3
+ * volte, cosi' spariscono anche i doppioni doppi.
+ * v4.36: VIA la SECONDA duplicazione vista dal titolare ("quando clicco
+ * sul messaggio si apre e mi fa rivedere il messaggio che gia' sta
+ * sopra"): due casi che la pulizia non copriva —
+ * 1) il corpo IDENTICO al titolo (messaggi brevi): il box sotto
+ *    ripeteva pari pari la riga della testata => ora il corpo pulito
+ *    diventa vuoto e il box non si mostra proprio;
+ * 2) il MESSAGGIO INTERO scritto DUE volte di fila (prima meta' del
+ *    testo identica alla seconda): ora viene riconosciuto e resta solo
+ *    la prima copia.
+ * In piu' norma() ora considera uguali anche i trattini diversi
+ * (–, —, -) cosi' il taglio del titolo funziona anche quando lo studio
+ * scrive il titolo nel corpo con un trattino diverso. */
+
+/* v4.36 (2): messaggio intero scritto DUE volte di fila. Confronta la
+ * prima meta' del testo con la seconda (attorno alla meta' esatta, con
+ * un margine di 40 caratteri per punteggiature e spazi diversi): se una
+ * copia coincide con l'altra, resta solo la PRIMA. Il confronto usa la
+ * stessa normalizzazione del taglio del titolo, quindi tollera spazi,
+ * maiuscole, punteggiatura, trattini e "Studio PFC:" davanti. */
+function tagliaMessaggioDoppio(c: string, norma: (s: string) => string): string {
+  const compatto = c.replace(/\s+/g, ' ').trim();
+  const len = compatto.length;
+  // sotto 24 caratteri non c'e' spazio per un doppione credibile
+  if (len < 24) return c;
+  const meta = Math.round(len / 2);
+  for (let taglio = meta + 40; taglio >= meta - 40 && taglio >= 8; taglio--) {
+    const prima = compatto.slice(0, taglio).trim();
+    const seconda = compatto.slice(taglio).trim();
+    if (prima.length < 12 || seconda.length < 12) continue;
+    if (norma(prima) === norma(seconda)) return prima;
+  }
+  return c;
+}
+
 function pulisciCorpo(corpo: string, titolo: string): string {
   const t = titolo.trim();
   if (!t) return corpo;
-  const c = corpo.trimStart();
+  let c = corpo.trimStart();
   // Normalizza una riga per il confronto: spazi tutti uguali, minuscole,
   // via "Studio PFC:" iniziale e punteggiatura finale
   const norma = (s: string) =>
@@ -170,22 +207,50 @@ function pulisciCorpo(corpo: string, titolo: string): string {
       .trim()
       .toLowerCase()
       .replace(/^studio pfc\s*[:\-–—•]\s*/, '')
+      .replace(/[–—‑]/g, '-') // v4.36: trattini diversi = stesso testo
       .replace(/[\s:;.,\-–—]+$/, '');
-  // 1) prima riga coincidente col titolo => salta l'intera prima riga
-  const fineRiga = c.indexOf('\n');
-  const primaRiga = fineRiga === -1 ? c : c.slice(0, fineRiga);
-  if (primaRiga.trim() && norma(primaRiga) === norma(t)) {
-    const resto = fineRiga === -1 ? '' : c.slice(fineRiga + 1).replace(/^\s+/, '');
-    if (resto.trim().length > 0) return resto;
+  // v4.35: fino a 3 tagli (il titolo puo' essere ripetuto piu' volte)
+  // v4.36: ma PRIMA il taglio del MESSAGGIO INTERO scritto due volte di fila
+  // (anche con il titolo dentro entrambe le copie): confronta le due meta'
+  // del testo e resta la prima copia. Va fatto PRIMA dei tagli del titolo:
+  // se il titolo della prima copia venisse tagliato subito, le due meta'
+  // non sarebbero piu' simmetriche e il doppione intero non si vedrebbe.
+  const senzaDoppioIntero = tagliaMessaggioDoppio(c, norma);
+  const doppioIntero = senzaDoppioIntero !== c;
+  c = senzaDoppioIntero;
+  let cambiato = false;
+  for (let giro = 0; giro < 3; giro++) {
+    // 1) prima riga coincidente col titolo => salta l'intera prima riga
+    const fineRiga = c.indexOf('\n');
+    const primaRiga = fineRiga === -1 ? c : c.slice(0, fineRiga);
+    if (primaRiga.trim() && norma(primaRiga) === norma(t)) {
+      const resto = fineRiga === -1 ? '' : c.slice(fineRiga + 1).replace(/^\s+/, '');
+      if (resto.trim().length > 0) {
+        c = resto;
+        cambiato = true;
+        continue;
+      }
+    }
+    // 2) il corpo inizia col titolo (spazi interni liberi) + separatore
+    const esc = t.replace(/[.*+?^${}()|[\]\\]/g, '\\$&').replace(/\s+/g, '\\s+');
+    const m = c.match(new RegExp(`^${esc}[\\s:;.,\\-–—]+`, 'i'));
+    if (m) {
+      const resto = c.slice(m[0].length).trimStart();
+      if (resto.length > 0) {
+        c = resto;
+        cambiato = true;
+        continue;
+      }
+    }
+    break;
   }
-  // 2) il corpo inizia col titolo (spazi interni liberi) + separatore
-  const esc = t.replace(/[.*+?^${}()|[\]\\]/g, '\\$&').replace(/\s+/g, '\\s+');
-  const m = c.match(new RegExp(`^${esc}[\\s:;.,\\-–—]+`, 'i'));
-  if (m) {
-    const resto = c.slice(m[0].length).trimStart();
-    if (resto.length > 0) return resto;
-  }
-  return corpo;
+  // v4.36: se dopo i tagli e' rimasto SOLO il titolo (il corpo era
+  // identico alla testata): il box sotto ripeterebbe la riga gia' visibile
+  // sopra => corpo vuoto (il box non si mostra piu', vedi il rendering).
+  if (c.trim() && norma(c) === norma(t)) return '';
+  // se e' stata tolta una ripetizione (messaggio intero o titolo) resta il
+  // testo pulito; se non e' cambiato NIENTE resta il corpo originale.
+  return doppioIntero || cambiato ? c : corpo;
 }
 
 /** Entrata: fade + piccola scivolata dal basso (stessa dell'Archivio). */
@@ -586,11 +651,16 @@ export default function MessaggiScreen() {
                    * v4.19: i siti internet nel testo sono cliccabili (linkify). */}
                   {expanded && (
                     <>
-                      <View style={styles.corpoBox}>
-                        <Text style={styles.corpo}>
-                          {spezzaLink(corpoMostrato, styles.corpoLink)}
-                        </Text>
-                      </View>
+                      {/* v4.36: se il corpo pulito e' VUOTO (era identico al
+                       * titolo) il box non si mostra proprio: niente riga
+                       * ripetuta sotto la testata. */}
+                      {corpoMostrato.trim().length > 0 && (
+                        <View style={styles.corpoBox}>
+                          <Text style={styles.corpo}>
+                            {spezzaLink(corpoMostrato, styles.corpoLink)}
+                          </Text>
+                        </View>
+                      )}
 
                       {/* Allegato dello studio, se presente */}
                       {msg.allegatoNome ? (

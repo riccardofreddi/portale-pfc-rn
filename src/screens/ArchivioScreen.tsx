@@ -1,6 +1,81 @@
 /**
  * Schermata Archivio — grafica replicata dall'app Android v4 (v4.18).
  *
+ * Novità v4.39 (l'hero ORA è identico al Cassetto — e senza riga nera):
+ * - "in archivio voglio la stessa grafica di cassetto, adesso è troppo
+ *   chiara; stai attento alla riga nera in prossimità dei miei
+ *   preferiti. perché non ci riesci?" — Perché finora le due cose si
+ *   tiravano contro: v4.34 copiò i colori del Cassetto, ma l'hero
+ *   dell'Archivio vive dentro un'animazione d'ingresso (fade +
+ *   scivolata, useNativeDriver) che l'hero del Cassetto NON ha: su
+ *   Android quell'animazione può aprire una fessura di 1 pixel ai bordi
+ *   della scheda, e sotto la fessura c'era il fondo blu notte #0A1128
+ *   (a schermo quasi nero) -> riga nera accanto a "I miei preferiti".
+ *   v4.37 tolse lo scuro per uccidere la riga -> riga sparita ma la
+ *   banda risultava più CHIARA del Cassetto. Ora ENTRAMBE le cose:
+ *   (a) gradiente IDENTICO al Cassetto: blu notte #0A1128 -> blu
+ *       primario #003566 -> blu notte (angoli 22, bordo oro 0.4);
+ *   (b) la fessura è resa INOFFENSIVA: il disegno ora sborda di 6 pixel
+ *       oltre i bordi della scheda (qualunque pixel della fessura mostra
+ *       disegno, mai il fondo) e il fondo della scheda è dello STESSO
+ *       colore degli estremi del gradiente (anche un pixel visibile è
+ *       invisibile perché identico). Fisicamente impossibile vedere la
+ *       riga, anche durante l'animazione.
+ * - Tutto il resto intatto: preferiti, ricerca, cartelle, download,
+ *   guardie v4.36 (arrivatoPer + loadSeq), Cassetto v4.38 intatto.
+ *
+ * Novità v4.37 (ADDIO la riga nera accanto a "I miei preferiti"):
+ * - "c'è ancora la riga nera in prossimità dei miei preferiti, risolvi
+ *   nuovamente e definitivamente". Perché era tornata: il gradiente v4.34
+ *   (copia della Vault Hero del Cassetto) finiva ai bordi col blu notte
+ *   #0A1128, che a schermo sembra NERO; il pulsante "I miei preferiti" sta
+ *   in basso a sinistra dell'hero, esattamente nella zona più scura, e
+ *   accanto ad esso tornava la riga nera (stesso difetto già visto in
+ *   v4.33). Ora il gradiente usa SOLO blu veri: estremi blu marino
+ *   #034078 e "luce" al centro zaffiro #0B5AA5; il fondo
+ *   della scheda è allineato al blu marino, così qualunque hairline di
+ *   rendering mostra BLU, mai nero. Effetto voluto invariato: scheda
+ *   scura con la luce al centro — ma zero nero possibile.
+ *   (v4.39: sostituito — la banda risultava più chiara del Cassetto.)
+ * - Tutto il resto intatto: preferiti, ricerca, cartelle, download,
+ *   guardie v4.36 (arrivatoPer + loadSeq).
+ *
+ * Novità v4.36 (mai più falso "vuoto" — richiesta del titolare):
+ * - Appena aperto l'Archivio il 2025 sembrava SENZA cartelle; si andava
+ *   nel 2024 e tornando nel 2025 le cartelle ricomparivano. Non era un
+ *   problema di dati: tra la risposta che porta gli anni e quella che
+ *   porta le cartelle dell'anno scelto la lista restava vuota con lo
+ *   spinner spento, e lo stato "Nessuna cartella per il 2025" usciva
+ *   PER ERRORE mentre la risposta era ancora in viaggio. Ora lo stato
+ *   vuoto esce SOLO quando il server ha davvero risposto (guardia
+ *   arrivatoPer) e le risposte vecchie non sovrascrivono più le nuove
+ *   (guardia di sequenza loadSeq).
+ * - Grafica invariata (hero come il Cassetto, v4.34). Preferiti,
+ *   ricerca, cartelle, download: intatti.
+ *
+ * Novità v4.34 (hero come il Cassetto — richiesta del titolare):
+ * - "voglio il blu più scuro: vedi la grafica del cassetto e rifalla per
+ *   archivio" — fatto: l'hero dell'anno ora usa la STESSA grafica della
+ *   Vault Hero del Cassetto (CassettoScreen): gradiente ORIZZONTALE da
+ *   blu notte #0A1128 a blu primario #003566 e ritorno (la "luce" al
+ *   centro), fondo della scheda #0A1128, angoli 22 e bordo oro 0.4
+ *   identici. La scheda è più scura e più elegante, come il Cassetto.
+ * - Tema scuro invariato (sfondo #0A1128, velo azzurro: zero nero puro,
+ *   come da v4.33). Preferiti, ricerca, cartelle, download: intatti.
+ *
+ * Novità v4.33 (VIA il nero — richiesta del titolare):
+ * - L'hero dell'anno aveva un gradiente che PARTIVA da #0A1128 (quasi
+ *   nero): la scheda sembrava divisa a metà tra nero e blu, proprio
+ *   attorno al pulsante "I miei preferiti", e in orizzontale si vedeva
+ *   blu e nero. Ora il gradiente va da blu notte (#003566) a zaffiro
+ *   chiaro (#0B5AA5): la scheda è TUTTA blu, in verticale e in orizzontale.
+ * - Fondo della scheda (sotto il gradiente) allineato al blu.
+ * - Nel tema scuro: sfondo #070B19 (nero) → #0A1128 (blu notte) e il
+ *   velo dietro ai pannelli era nero puro → ora è azzurro notte come
+ *   nel tema chiaro. Zero nero in tutta la app (src/theme/colors.ts).
+ * - Icone e testi scuri SOPRA l'oro restano #0A1128 (sono scritte, non
+ *   superfici: non generano aree nere).
+ *
  * Novità v4.18 (niente più doppioni: si condivide e basta):
  * - VIA il vecchio pulsante che mandava la email col file: con
  *   "Condividi" il file parte con TUTTE le app del telefono, email
@@ -274,7 +349,6 @@ type Step = 'anno' | 'cartella' | 'file';
 // Colori firma del brand (validi in entrambi i temi, come nell'app v4)
 const NAVY_NOTTE = '#0A1128';
 const NAVY_PRIMARIO = '#003566';
-const NAVY_QUOTA = '#034078';
 const ORO = '#D4AF37';
 const ORO_CHIARO = '#F7E7B4';
 
@@ -772,6 +846,17 @@ export default function ArchivioScreen() {
 
   const searchSeq = useRef(0);
 
+  // v4.36: PROVA di caricamento COMPLETATO ("arrivatoPer"): la chiave della
+  // ultima selezione (anno|cartella) di cui è ARRIVATA la risposta del
+  // server. Finché la risposta della selezione corrente non è arrivata la
+  // lista mostra lo scheletro: MAI lo stato vuoto (era il falso "Nessuna
+  // cartella per il 2025" visto dal titolare appena aperto l'Archivio).
+  const [arrivatoPer, setArrivatoPer] = useState<string | null>(null);
+  // v4.36: guardia di sequenza — se due caricamenti si sovrappongono,
+  // la risposta vecchia non deve poter sovrascrivere quella nuova.
+  const loadSeq = useRef(0);
+  const selezione = `${anno ?? ''}|${cartella ?? ''}`;
+
   const step: Step = cartella ? 'file' : anno ? 'cartella' : 'anno';
 
   // v4.15: la lista dei preferiti GLOBALI (tutti gli anni): alimenta il
@@ -843,6 +928,9 @@ export default function ArchivioScreen() {
   const load = useCallback(
     async (showRefresh = false, silenzioso = false) => {
       if (!user) return;
+      // v4.36: ogni caricamento prende un numero; solo l'ULTIMO numero può
+      // scrivere lo stato (una risposta vecchia arrivata tardi viene buttata).
+      const seq = ++loadSeq.current;
       // v4.12: "silenzioso" = aggiorna in background SENZA skeleton né
       // spinner (arriva una notifica o l'app torna in primo piano): se la
       // rete è lenta l'utente continua a usare la lista che già vede.
@@ -856,6 +944,7 @@ export default function ArchivioScreen() {
           anno: anno ?? undefined,
           cartella: cartella ?? undefined,
         });
+        if (seq !== loadSeq.current) return; // risposta vecchia: buttata
         if (res.anni) {
           // v4.12: solo la lista anni (ordinata dal più recente). Tolte le
           // N chiamate "quante novità per ogni anno": servivano solo alle
@@ -865,10 +954,16 @@ export default function ArchivioScreen() {
         setCartelle(res.cartelle ?? []);
         setFiles(res.files ?? []);
       } catch (err) {
+        if (seq !== loadSeq.current) return; // errore di una richiesta vecchia
         toast.error('Errore caricamento', err instanceof Error ? err.message : 'Errore sconosciuto');
       } finally {
-        setLoading(false);
-        setRefreshing(false);
+        // v4.36: solo l'ultimo caricamento pulisce gli spinner e firma la
+        // selezione come "arrivata" (sblocca l'eventuale stato vuoto VERO).
+        if (seq === loadSeq.current) {
+          setArrivatoPer(`${anno ?? ''}|${cartella ?? ''}`);
+          setLoading(false);
+          setRefreshing(false);
+        }
       }
     },
     [user, anno, cartella],
@@ -1466,12 +1561,21 @@ export default function ArchivioScreen() {
               {step === 'cartella' && (
                 <Entrata>
                   <View style={styles.heroNavy}>
-                    <Svg style={StyleSheet.absoluteFill}>
+                    <Svg style={{ ...StyleSheet.absoluteFillObject, top: -6, left: -6, right: -6, bottom: -6 }}>
                       <Defs>
-                        <LinearGradient id="archHeroAnno" x1="0" y1="0" x2="1" y2="1">
+                        {/* v4.39: gradiente IDENTICO al Cassetto (blu notte ->
+                         * blu primario -> blu notte) e riga nera resa
+                         * IMPOSSIBILE: il disegno sborda di 6 pixel oltre i
+                         * bordi della scheda, quindi la fessura da 1 pixel
+                         * che l'animazione d'ingresso apre su Android può
+                         * mostrare solo disegno, mai il fondo; inoltre il
+                         * fondo della scheda è dello stesso colore degli
+                         * estremi del gradiente (anche un pixel visibile è
+                         * identico = invisibile). */}
+                        <LinearGradient id="archHeroAnno" x1="0" y1="0" x2="1" y2="0">
                           <Stop offset="0" stopColor={NAVY_NOTTE} />
-                          <Stop offset="0.55" stopColor={NAVY_PRIMARIO} />
-                          <Stop offset="1" stopColor={NAVY_QUOTA} />
+                          <Stop offset="0.5" stopColor={NAVY_PRIMARIO} />
+                          <Stop offset="1" stopColor={NAVY_NOTTE} />
                         </LinearGradient>
                       </Defs>
                       <Rect width="100%" height="100%" fill="url(#archHeroAnno)" />
@@ -1708,6 +1812,13 @@ export default function ArchivioScreen() {
               <View style={styles.skeletonInList}>
                 <SkeletonList count={5} height={76} />
               </View>
+            ) : arrivatoPer !== selezione ? (
+              /* v4.36: la risposta della selezione corrente è ancora in
+               * viaggio: scheletro, MAI lo stato vuoto (era il falso
+               * "Nessuna cartella per il 2025" visto dal titolare). */
+              <View style={styles.skeletonInList}>
+                <SkeletonList count={5} height={76} />
+              </View>
             ) : (
               <EmptyState
                 icon={<Ionicons name="folder-open-outline" size={36} color={colors.primary} />}
@@ -1865,7 +1976,11 @@ const makeStyles = (colors: ThemeColors) =>
     searchBarText: { ...typography.body, fontSize: 13, color: colors.textSecondary },
 
     // v4.11 — Hero blu notte (Smart Year Overview Banner dell'app v4)
-    heroNavy: { borderRadius: 20, overflow: 'hidden', borderWidth: 1, borderColor: 'rgba(212, 175, 55, 0.35)', backgroundColor: NAVY_NOTTE, ...shadow.md },
+    // v4.39: grafica IDENTICA al Cassetto (gradiente notte->primario->notte,
+    // angoli 22, bordo oro 0.4) e fondo della scheda = colore degli estremi
+    // del gradiente: la fessura da 1 pixel dell'animazione d'ingresso non
+    // può più mostrare nulla di diverso dal disegno (che ora sborda di 6px)
+    heroNavy: { borderRadius: 22, overflow: 'hidden', borderWidth: 1, borderColor: 'rgba(212, 175, 55, 0.4)', backgroundColor: NAVY_NOTTE, ...shadow.md },
     heroNavyInner: { padding: spacing.xl, gap: 12 },
     heroNavyTopRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
     heroGoldChip: { flexDirection: 'row', alignItems: 'center', gap: 5, backgroundColor: 'rgba(212, 175, 55, 0.25)', borderRadius: 8, borderWidth: 1, borderColor: 'rgba(212, 175, 55, 0.6)', paddingHorizontal: 8, paddingVertical: 4 },

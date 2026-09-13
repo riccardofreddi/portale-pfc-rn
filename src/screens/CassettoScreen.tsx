@@ -1,13 +1,36 @@
 ﻿/**
  * Schermata Cassetto Personale.
  *
+ * v4.38 — richiesta del titolare:
+ * - "in cassetto se faccio scarica non deve finire in Download, deve
+ *   lavorare come in archivio": il pulsante "Scarica" ora usa lo STESSO
+ *   MOTORE dell'Archivio (scaricaInDownload da lib/download.ts):
+ *   percentuale dentro il pulsante, controllo della sessione, NOTIFICA
+ *   DI SISTEMA di Android "Download completato" col NOME del file (in
+ *   alto, dove c'e' l'orologio: toccala e il documento si apre) e file
+ *   registrato nell'app File del telefono, sezione Download. Prima era
+ *   un salvataggio muto che mostrava un percorso interno incomprensibile.
+ *
+ * v4.37 — richieste del titolare:
+ * - "invece di Caveau scrivi Archivio": l'hero ora si chiama
+ *   "Archivio Documentale" (la tab in basso resta "Cassetto").
+ * - VIA la pillola "Anteprima" (il file si apre già tocchandolo, la
+ *   pillola era un doppione): al suo posto tre bottoni con la SCRITTA,
+ *   uno per azione — "Scarica", "Modifica" (rinomina) ed "Elimina"
+ *   (rosso). Niente più icone da indovinare.
+ * - Dopo "Scegli file" ora è chiaro DOVE va il file: il pulsante dice
+ *   "Scegli file dal telefono" (si apre il selettore di Android, come
+ *   sempre) e il messaggio verde dopo il caricamento dice
+ *   "«nome.pdf» è ora nel tuo archivio".
+ *
  * v4.11 — grafica replicata dall'app Android v4 (CassettoScreen.kt):
- * - Hero "Caveau Documentale": card blu notte con gradiente Midnight →
+ * - Hero "Archivio Documentale": card blu notte con gradiente Midnight →
  *   GeoPrimary → Midnight, bordo oro, lucchetto oro in box soft e pulsante
  *   oro "Aggiungi" (apre lo stesso pannello di sempre).
  * - Card documento: icona tipo file, nome, dimensione · data, linea di
- *   separazione e riga azioni: pillola "Anteprima" + icone Scarica /
- *   Rinomina / Elimina (stesse funzioni di sempre).
+ *   separazione e riga azioni (v4.37: tre bottoni con la scritta
+ *   Scarica / Modifica / Elimina al posto della pillola "Anteprima" e
+ *   delle icone).
  * - Tolto il pulsante "Aggiorna": si usa il trascina-per-aggiornare
  *   (il caricamento all'apertura resta identico).
  * - Logica INTATTA: caricamento, upload con tipo, download, rinomina,
@@ -30,7 +53,7 @@ import DocumentPicker, { types } from 'react-native-document-picker';
 import ReactNativeBlobUtil from 'react-native-blob-util';
 import { Card } from '@/components/Card';
 import { EmptyState } from '@/components/EmptyState';
-import { FileIcon, canPreviewFile } from '@/components/FileIcon';
+import { FileIcon } from '@/components/FileIcon';
 import { Modal } from '@/components/Modal';
 import { confirmDialog } from '@/components/ConfirmDialog';
 import { Button } from '@/components/Button';
@@ -39,6 +62,7 @@ import { toast } from '@/components/Toaster';
 import { haptics } from '@/lib/haptics';
 import { api } from '@/api/client';
 import { useAppStore } from '@/store/auth';
+import { scaricaInDownload } from '@/lib/download';
 import { formatDate, MAX_FILE_SIZE_BYTES, MAX_FILE_SIZE_MB } from '@/lib/utils';
 import type { CassettoFile, FileItem } from '@/types/api';
 import { shadow, spacing, typography, useColors, type ThemeColors } from '@/theme';
@@ -70,6 +94,11 @@ export default function CassettoScreen() {
   const [uploading, setUploading] = useState(false);
   const [renaming, setRenaming] = useState<CassettoFile | null>(null);
   const [renameValue, setRenameValue] = useState('');
+  // v4.38: stato del download in corso (chiave del file + percentuale),
+  // come in Archivio: il pulsante mostra l'avanzamento invece di restare
+  // muto finche' arriva la notifica di sistema.
+  const [scaricando, setScaricando] = useState<string | null>(null);
+  const [percento, setPercento] = useState(0);
 
   const load = useCallback(async (showRefresh = false) => {
     if (showRefresh) setRefreshing(true);
@@ -106,7 +135,8 @@ export default function CassettoScreen() {
       fd.append('file', { uri: doc.uri, type: doc.type ?? 'application/octet-stream', name: doc.name } as unknown as Blob);
       fd.append('tipo', selectedTipo);
       await api.cassetto.upload(fd);
-      toast.success('File caricato con successo');
+      // v4.37: feedback CHIARO — dove va il file? Nel tuo archivio, col nome.
+      toast.success('Documento caricato', `"${doc.name}" è ora nel tuo archivio`);
       setUploadOpen(false);
       setSelectedTipo(null);
       load(true);
@@ -118,16 +148,29 @@ export default function CassettoScreen() {
     }
   }
 
+  // v4.38: lo Scarica del Cassetto lavora ESATTAMENTE come in Archivio:
+  // stesso motore (scaricaInDownload) — nome file sicuro, controllo della
+  // sessione (401/403 -> messaggio chiaro), percentuale nel pulsante —
+  // e stessa conferma: la NOTIFICA DI SISTEMA di Android "Download
+  // completato" col nome del file, in alto nella barra di stato (toccala
+  // per aprire il documento); il file risulta anche nell'app File del
+  // telefono, sezione Download. Prima era un salvataggio muto col percorso
+  // interno a video e senza registrazione nel sistema: il file "spariva"
+  // nella cartella Download senza dire nulla.
   async function handleDownload(file: CassettoFile) {
+    if (scaricando) return; // un download alla volta, come in Archivio
+    setScaricando(file.key);
+    setPercento(0);
     haptics.impact();
     try {
-      const cookie = await api.documenti.sessionCookieHeader();
-      const url = api.documenti.downloadUrl(file.key);
-      const localPath = `${ReactNativeBlobUtil.fs.dirs.DownloadDir}/${file.nome}`;
-      const res = await ReactNativeBlobUtil.config({ path: localPath, fileCache: true }).fetch('GET', url, { Cookie: cookie });
-      toast.success('Download completato', `Salvato in: ${res.path()}`);
+      await scaricaInDownload(file.key, file.nome, setPercento);
+      haptics.success();
+      toast.success('Download completato', 'Il file è in Download e nella barra in alto');
     } catch (err) {
       toast.error('Errore download', err instanceof Error ? err.message : 'Errore sconosciuto');
+    } finally {
+      setScaricando(null);
+      setPercento(0);
     }
   }
 
@@ -179,7 +222,7 @@ export default function CassettoScreen() {
   return (
     <SafeAreaView style={styles.safe} edges={['top']}>
       <View style={styles.listContentWrap}>
-        {/* Hero "Caveau Documentale" (come la Vault Hero Card dell'app v4) */}
+        {/* Hero "Archivio Documentale" (come la Vault Hero Card dell'app v4) */}
         <View style={styles.vaultHero}>
           <Svg style={StyleSheet.absoluteFill}>
             <Defs>
@@ -198,7 +241,7 @@ export default function CassettoScreen() {
               </View>
               <View style={styles.flex}>
                 <Text style={styles.vaultOverline}>CASSETTO RISERVATO</Text>
-                <Text style={styles.vaultTitle}>Caveau Documentale</Text>
+                <Text style={styles.vaultTitle}>Archivio Documentale</Text>
                 <Text style={styles.vaultSubtitle}>
                   {files.length} document{files.length === 1 ? 'o' : 'i'} archiviat{files.length === 1 ? 'o' : 'i'} con cifratura
                 </Text>
@@ -227,7 +270,7 @@ export default function CassettoScreen() {
           refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => load(true)} tintColor={colors.accent} colors={[colors.accent]} progressBackgroundColor={colors.surface} />}
           renderItem={({ item: file }) => (
             <Card style={styles.fileCard} padded={false}>
-              <Pressable onPress={() => apriAnteprima(file)} accessibilityLabel="Apri anteprima">
+              <Pressable onPress={() => apriAnteprima(file)} accessibilityLabel="Apri documento">
                 {({ pressed }) => (
                   <View style={[styles.fileTop, pressed && { opacity: 0.8 }]}>
                     <FileIcon filename={file.nome} size={44} />
@@ -241,37 +284,41 @@ export default function CassettoScreen() {
                 )}
               </Pressable>
               <View style={styles.divider} />
+              {/* v4.37: VIA la pillola "Anteprima" (il file si apre già
+               * tocchandolo) e VIA le icone da indovinare: tre bottoni con
+               * la scritta, uno per azione — Scarica, Modifica (rinomina)
+               * ed Elimina (rosso). */}
               <View style={styles.fileActionsRow}>
-                {canPreviewFile(file.nome) ? (
-                  <Pressable
-                    onPress={() => apriAnteprima(file)}
-                    style={({ pressed }) => [styles.previewPill, pressed && { opacity: 0.8 }]}
-                    accessibilityLabel="Anteprima"
-                  >
-                    <Ionicons name="eye-outline" size={15} color={colors.primary} />
-                    <Text style={styles.previewPillText}>Anteprima</Text>
-                  </Pressable>
-                ) : (
-                  <View style={styles.previewPillSpacer} />
-                )}
-                <View style={styles.iconActions}>
-                  <Pressable onPress={() => handleDownload(file)} style={styles.iconAction} accessibilityLabel="Scarica">
-                    <Ionicons name="download-outline" size={18} color={colors.textSecondary} />
-                  </Pressable>
-                  <Pressable
-                    onPress={() => {
-                      setRenaming(file);
-                      setRenameValue(file.nome);
-                    }}
-                    style={styles.iconAction}
-                    accessibilityLabel="Rinomina"
-                  >
-                    <Ionicons name="pencil-outline" size={18} color={colors.textSecondary} />
-                  </Pressable>
-                  <Pressable onPress={() => handleDelete(file)} style={styles.iconAction} accessibilityLabel="Elimina">
-                    <Ionicons name="trash-outline" size={18} color={colors.danger} />
-                  </Pressable>
-                </View>
+                <Pressable
+                  onPress={() => handleDownload(file)}
+                  disabled={scaricando !== null}
+                  style={({ pressed }) => [styles.actionPill, pressed && { opacity: 0.8 }]}
+                  accessibilityLabel="Scarica"
+                >
+                  <Ionicons name="download-outline" size={15} color={colors.primary} />
+                  {/* v4.38: durante il download il pulsante mostra la
+                   * percentuale, come la barra di avanzamento di Archivio. */}
+                  <Text style={styles.actionPillText}>{scaricando === file.key ? `Scarica... ${percento}%` : 'Scarica'}</Text>
+                </Pressable>
+                <Pressable
+                  onPress={() => {
+                    setRenaming(file);
+                    setRenameValue(file.nome);
+                  }}
+                  style={({ pressed }) => [styles.actionPill, pressed && { opacity: 0.8 }]}
+                  accessibilityLabel="Modifica"
+                >
+                  <Ionicons name="pencil-outline" size={15} color={colors.primary} />
+                  <Text style={styles.actionPillText}>Modifica</Text>
+                </Pressable>
+                <Pressable
+                  onPress={() => handleDelete(file)}
+                  style={({ pressed }) => [styles.actionPill, styles.actionPillDanger, pressed && { opacity: 0.8 }]}
+                  accessibilityLabel="Elimina"
+                >
+                  <Ionicons name="trash-outline" size={15} color={colors.danger} />
+                  <Text style={[styles.actionPillText, styles.actionPillTextDanger]}>Elimina</Text>
+                </Pressable>
               </View>
             </Card>
           )}
@@ -306,7 +353,7 @@ export default function CassettoScreen() {
           </View>
           {selectedTipo && (
             <Button
-              label={uploading ? '⏳ Caricamento...' : 'Scegli file'}
+              label={uploading ? '⏳ Caricamento...' : 'Scegli file dal telefono'}
               onPress={handleUpload}
               loading={uploading}
               style={styles.uploadCtaBtn}
@@ -342,7 +389,7 @@ const makeStyles = (colors: ThemeColors) =>
     safe: { flex: 1, backgroundColor: colors.background },
     flex: { flex: 1 },
     listContentWrap: { paddingHorizontal: spacing.lg, paddingTop: spacing.lg },
-    // Hero Caveau (v4.11)
+    // Hero Archivio (v4.11)
     vaultHero: { borderRadius: 22, overflow: 'hidden', borderWidth: 1, borderColor: 'rgba(212, 175, 55, 0.4)', backgroundColor: NAVY_NOTTE, ...shadow.md },
     vaultInner: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: spacing.md, padding: 18 },
     vaultLeft: { flexDirection: 'row', alignItems: 'center', gap: 14, flex: 1 },
@@ -361,12 +408,12 @@ const makeStyles = (colors: ThemeColors) =>
     fileName: { ...typography.body, color: colors.textPrimary, fontWeight: '600' },
     fileMeta: { ...typography.caption, color: colors.textSecondary },
     divider: { height: StyleSheet.hairlineWidth, backgroundColor: colors.border, marginHorizontal: 16 },
-    fileActionsRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 10, paddingVertical: 8 },
-    previewPill: { flexDirection: 'row', alignItems: 'center', gap: 5, backgroundColor: colors.surfaceAlt, borderRadius: 999, paddingHorizontal: 12, paddingVertical: 7 },
-    previewPillSpacer: { width: 8 },
-    previewPillText: { color: colors.primary, fontWeight: '700', fontSize: 12 },
-    iconActions: { flexDirection: 'row', alignItems: 'center' },
-    iconAction: { width: 36, height: 36, borderRadius: 10, alignItems: 'center', justifyContent: 'center' },
+    // v4.37: tre bottoni con la scritta (Scarica / Modifica / Elimina)
+    fileActionsRow: { flexDirection: 'row', alignItems: 'center', gap: 8, paddingHorizontal: 12, paddingVertical: 10 },
+    actionPill: { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 5, backgroundColor: colors.surfaceAlt, borderRadius: 999, paddingVertical: 9 },
+    actionPillText: { color: colors.primary, fontWeight: '700', fontSize: 12 },
+    actionPillDanger: { backgroundColor: colors.dangerSoft },
+    actionPillTextDanger: { color: colors.danger },
     modalContent: { padding: spacing.xl, gap: spacing.md },
     modalTitle: { ...typography.h4, color: colors.textPrimary, fontWeight: '700' },
     modalSubtitle: { ...typography.bodySmall, color: colors.textSecondary },
