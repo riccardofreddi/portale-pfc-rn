@@ -130,11 +130,12 @@ import { useAppStore } from '@/store/auth';
 import type { Messaggio } from '@/types/api';
 import { shadow, spacing, typography, useColors, type ThemeColors } from '@/theme';
 
-// v4.42: sigillo dell'INTERFACCIA (parte JS): cambia a ogni release e viaggia
-// col codice, non col build. Nella tacca si legge "v1.42.0 - js442": se vedi
-// js442 il codice nuovo sta girando davvero; se leggi v1.42.0 il build nuovo
-// e' installato sul telefono (dopo reinstallazione v4.42).
-const CODICE_INTERFACCIA = 442;
+// v4.47: sigillo dell'INTERFACCIA (parte JS): cambia a ogni release e viaggia
+// col codice, non col build. Nella tacca si legge "v1.43.0 - js447": se vedi
+// js447 il codice nuovo sta girando davvero; se leggi js446 il Metro sta
+// servendo ancora il codice di prima (ricarica con r) o la build non si e'
+// aggiornata.
+const CODICE_INTERFACCIA = 447;
 
 type Tab = 'attivi' | 'archiviati';
 

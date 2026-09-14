@@ -1,6 +1,19 @@
 /**
  * Schermata Archivio — grafica replicata dall'app Android v4 (v4.18).
  *
+ * Novità v4.47 (ripristino su disposizione del titolare):
+ * - "togli il velo e ripristina come anche con la riga nera, non fa
+ *   nulla" — i tentativi v4.44/v4.45/v4.46 sulla grafica dell'hero
+ *   (colori più chiari, pillola spostata, pannello-velo) sono ANNULLATI
+ *   e rimossi: l'hero è tornato ESATTAMENTE al v4.39, identico al
+ *   Cassetto (gradiente blu notte #0A1128 -> blu primario #003566 ->
+ *   blu notte, fondo scheda allineato, disegno che sborda di 6 pixel;
+ *   pillola "Documenti Nuovi" al posto di sempre, sopra "I miei
+ *   preferiti"). La striscia scura fra i due elementi oro, quando ci
+ *   sono documenti nuovi, resta come caratteristica accettata.
+ * - Resta intatto il fix v4.43: la lista degli ANNI si aggiorna sempre,
+ *   anche a app viva (i chip mostrano i nuovi anni senza riavvio).
+ *
  * Novità v4.39 (l'hero ORA è identico al Cassetto — e senza riga nera):
  * - "in archivio voglio la stessa grafica di cassetto, adesso è troppo
  *   chiara; stai attento alla riga nera in prossimità dei miei
@@ -939,17 +952,36 @@ export default function ArchivioScreen() {
         else setLoading(true);
       }
       try {
-        const res = await api.documenti.list({
-          username: user.username,
-          anno: anno ?? undefined,
-          cartella: cartella ?? undefined,
-        });
+        // v4.43: la lista ANNI si aggiorna SEMPRE, anche a anno già
+        // selezionato. Prima la lista anni partiva SOLO con anno vuoto
+        // (prima apertura o cambio utente): se lo studio creava un anno
+        // nuovo (es. 2026) mentre l'app era viva in background, i chip
+        // degli anni restavano fermi sui valori vecchi, il nuovo anno non
+        // compariva e i documenti dentro sembravano "spariti" finché l'app
+        // non veniva riavviata da zero. Ora la richiesta principale parte
+        // come sempre e, quando un anno è già selezionato, le affianchiamo
+        // in parallelo la richiesta della sola lista anni: nessun costo
+        // in più alla prima apertura, anni sempre veritieri dopo.
+        const [res, resAnni] = await Promise.all([
+          api.documenti.list({
+            username: user.username,
+            anno: anno ?? undefined,
+            cartella: cartella ?? undefined,
+          }),
+          // Solo se la richiesta principale NON è già quella degli anni
+          // (anno vuoto). Se la chiamata anni fallisce (rete lenta) non
+          // deve bloccare il caricamento della lista principale: -> null.
+          anno
+            ? api.documenti.list({ username: user.username }).catch(() => null)
+            : Promise.resolve(null),
+        ]);
         if (seq !== loadSeq.current) return; // risposta vecchia: buttata
-        if (res.anni) {
+        const anniFreschi = resAnni?.anni ?? res.anni;
+        if (anniFreschi) {
           // v4.12: solo la lista anni (ordinata dal più recente). Tolte le
           // N chiamate "quante novità per ogni anno": servivano solo alle
           // righe-anno rimosse e rallentavano l'apertura per niente.
-          setAnni([...res.anni].sort((a, b) => b.localeCompare(a)));
+          setAnni([...anniFreschi].sort((a, b) => b.localeCompare(a)));
         }
         setCartelle(res.cartelle ?? []);
         setFiles(res.files ?? []);
