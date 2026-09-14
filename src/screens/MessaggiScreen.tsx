@@ -90,6 +90,17 @@
  *   bottone "Carica la risposta", dove vuol dire proprio "invia file");
  * - Logica INTATTA: caricamento, fotografia NUOVI, segna-letti,
  *   archiviazione, upload risposta, push, pull-to-refresh.
+ * v4.40: la data NON tocca piu' le icone (richiesta del titolare: "si
+ *   sovrappone l'icona per espansione e per archivio con la data"):
+ * - la data esce dalla riga "STUDIO PFC • data" e va su una SUA riga
+ *   sotto il titolo: ha tutto lo spazio che vuole, a qualsiasi larghezza
+ *   di schermo e con qualsiasi dimensione testo del telefono;
+ * - le due icone (apri/chiudi + archivia) stanno in una capsula grigia
+ *   morbida in alto a destra: UN gruppo chiaro, separato dal testo, che
+ *   non puo' piu' sovrapporsi a niente;
+ * - mesi brevi nella data lunga ("15 set 2026 alle 14:32");
+ * - Logica INTATTA: caricamento, fotografia NUOVI, segna-letti,
+ *   archiviazione, upload risposta, push, pull-to-refresh.
  */
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
@@ -119,17 +130,19 @@ import { useAppStore } from '@/store/auth';
 import type { Messaggio } from '@/types/api';
 import { shadow, spacing, typography, useColors, type ThemeColors } from '@/theme';
 
-// v4.39: sigillo dell'INTERFACCIA (parte JS): cambia a ogni release e viaggia
-// col codice, non col build. Nella tacca si legge "v1.39.0 - js439": se vedi
-// js439 il codice nuovo sta girando davvero; se leggi v1.39.0 il build nuovo
-// e' installato sul telefono (dopo reinstallazione v4.39).
-const CODICE_INTERFACCIA = 439;
+// v4.42: sigillo dell'INTERFACCIA (parte JS): cambia a ogni release e viaggia
+// col codice, non col build. Nella tacca si legge "v1.42.0 - js442": se vedi
+// js442 il codice nuovo sta girando davvero; se leggi v1.42.0 il build nuovo
+// e' installato sul telefono (dopo reinstallazione v4.42).
+const CODICE_INTERFACCIA = 442;
 
 type Tab = 'attivi' | 'archiviati';
 
+// v4.40: mesi brevi ("15 set 2026 alle 14:32"): la riga della data
+// respira anche sugli schermi stretti e con i testi ingranditi.
 const MESI = [
-  'gennaio', 'febbraio', 'marzo', 'aprile', 'maggio', 'giugno',
-  'luglio', 'agosto', 'settembre', 'ottobre', 'novembre', 'dicembre',
+  'gen', 'feb', 'mar', 'apr', 'mag', 'giu',
+  'lug', 'ago', 'set', 'ott', 'nov', 'dic',
 ];
 
 /** Data gentile: "Oggi alle 14:32", "Ieri alle 09:10", poi data completa. */
@@ -576,7 +589,7 @@ export default function MessaggiScreen() {
             <Entrata delay={Math.min(60 + index * 50, 400)}>
               <View style={[styles.msgCard, eNuovo && styles.msgCardUnread]}>
                 <View style={styles.msgInner}>
-                  {/* Testata: icona stato + STUDIO PFC • data + titolo + archivia */}
+                  {/* Testata: icona stato + STUDIO PFC + titolo + data (v4.40) + archivia */}
                   <Pressable
                     onPress={() => {
                       haptics.tap();
@@ -589,14 +602,15 @@ export default function MessaggiScreen() {
                       <Ionicons name={ic.icon} size={20} color={ic.color} />
                     </View>
                     <View style={styles.msgHeaderText}>
-                      <View style={styles.msgOverRow}>
-                        <Text style={styles.msgStudio}>STUDIO PFC</Text>
-                        <Text style={styles.msgOverDot}>•</Text>
-                        <Text style={styles.msgDate}>{dataGentile(msg.dataInvio)}</Text>
-                      </View>
+                      <Text style={styles.msgStudio}>STUDIO PFC</Text>
                       <Text style={[styles.msgTitle, eNuovo && styles.msgTitleUnread]} numberOfLines={2}>
                         {msg.titolo}
                       </Text>
+                      {/* v4.40: la data sta da sola, sotto il titolo: tutta
+                       * visibile, mai sotto le icone (prima la riga
+                       * "STUDIO PFC • data" sbordava sulla freccia e
+                       * sull'archivio). */}
+                      <Text style={styles.msgDate}>{dataGentile(msg.dataInvio)}</Text>
                     </View>
                     <View style={styles.headerActions}>
                       {/* v4.28: freccina che indica l'apertura (il tocco sulla
@@ -781,16 +795,20 @@ const makeStyles = (colors: ThemeColors) =>
     msgHeader: { flexDirection: 'row', alignItems: 'flex-start', gap: 12 },
     msgIcon: { width: 40, height: 40, borderRadius: 20, alignItems: 'center', justifyContent: 'center' },
     msgHeaderText: { flex: 1, gap: 2 },
-    msgOverRow: { flexDirection: 'row', alignItems: 'center', gap: 5 },
     // v4.25: lettering da etichetta (maiuscoletto piu' spaziato)
     msgStudio: { color: colors.accentDark, fontSize: 10, fontWeight: '800', letterSpacing: 1.2 },
-    msgOverDot: { color: colors.textTertiary, fontSize: 11 },
-    msgDate: { ...typography.caption, color: colors.textSecondary },
+    // v4.40: data su riga propria sotto il titolo (prima stava accanto a
+    // "STUDIO PFC" e sbordava fino a toccare le icone in alto a destra);
+    // tinta meta' discreta, come le date dell'Attivita.
+    msgDate: { ...typography.caption, color: colors.textTertiary, marginTop: 1 },
     msgTitle: { ...typography.body, color: colors.textPrimary, fontWeight: '500', fontSize: 15.5 },
     msgTitleUnread: { fontWeight: '800' },
     iconAction: { width: 32, height: 32, borderRadius: 10, alignItems: 'center', justifyContent: 'center' },
     // v4.28: freccina d'apertura accanto all'archivio
-    headerActions: { flexDirection: 'row', alignItems: 'center', gap: 2 },
+    // v4.40: le due icone in una capsula morbida = UN gruppo netto e
+    // staccato dal testo; marginTop 4 la centra contro l'icona tonda da
+    // 40; flexShrink 0: mai schiacciate dal testo.
+    headerActions: { flexDirection: 'row', alignItems: 'center', gap: 2, backgroundColor: colors.surfaceAlt, borderRadius: 999, paddingHorizontal: 3, height: 32, marginTop: 4, flexShrink: 0 },
     chevWrap: { width: 26, height: 32, alignItems: 'center', justifyContent: 'center' },
     badgeRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
     pill: { flexDirection: 'row', alignItems: 'center', gap: 4, borderRadius: 999, paddingHorizontal: 8, paddingVertical: 3 },
