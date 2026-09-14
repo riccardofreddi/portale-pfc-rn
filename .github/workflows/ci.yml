@@ -51,9 +51,11 @@ jobs:
           distribution: "temurin"
           java-version: "17"
 
-      - name: Setup Android SDK
-        uses: android-actions/setup-android@v3
-
+      # NOTA: android-actions/setup-android RIMOSSO: Google ha tolto il
+      # pacchetto "tools" dai repository dell'SDK e l'action muore con
+      # "Failed to find package 'tools'". I runner ubuntu-latest hanno
+      # gia' l'Android SDK preinstallato (ANDROID_HOME + licenze
+      # accettate): Gradle usa quello.
       - name: Install npm dependencies
         run: npm ci --no-audit --no-fund
 
