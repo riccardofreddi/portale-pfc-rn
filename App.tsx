@@ -14,7 +14,7 @@ import { AppState, DeviceEventEmitter } from 'react-native';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { api } from '@/api/client';
 import { useAppStore } from '@/store/auth';
-import { setupPushListeners } from '@/lib/push';
+import { riRegistraPushSilenziosa, setupPushListeners } from '@/lib/push';
 import { aggiornaPromemoriaScadenze } from '@/lib/scadenze-locali';
 import { AppNavigator } from '@/navigation/AppNavigator';
 import { Toaster } from '@/components/Toaster';
@@ -35,6 +35,12 @@ export default function App() {
         const me = await api.auth.me();
         if (me.user && me.user.role === 'client') {
           setUser(me.user);
+          // v4.51: sessione ripristinata => l'app si ri-presenta al server
+          // da sola (token FCM aggiornato, zero prompt, zero schermate).
+          // Prima questo avveniva SOLO al login: se Google rinnovava il
+          // token tra due login, il server busava alla porta vecchia e le
+          // notifiche sparivano. Non blocca il bootstrap: vola e basta.
+          void riRegistraPushSilenziosa();
         } else {
           setUser(null);
         }
@@ -140,6 +146,36 @@ export default function App() {
     // Al ritorno sull'app: sync se sono passati almeno 30 minuti.
     const sub = AppState.addEventListener('change', (stato) => {
       if (stato === 'active') sincronizza();
+    });
+    return () => sub.remove();
+  }, [user]);
+
+  // v4.51: auto-riparazione notifiche. Al login e a ogni ritorno sull'app
+  // (max 1 volta ogni 10 minuti) l'app ridice al server "l'indirizzo di
+  // questo telefono e' questo". Silenziosa: se il permesso non c'e' gia',
+  // non chiede nulla; se l'interruttore Notifiche e' spento non fa nulla;
+  // se la chiamata fallisce riprovera' alla prossima apertura. E' la
+  // copertura del caso "Google rinnova il token mentre l'app e' chiusa":
+  // alla riapertura il server si aggiorna da solo, senza tocchi.
+  const ultimaRiRegistrazione = useRef(0);
+  useEffect(() => {
+    if (!user) return;
+
+    const riprova = () => {
+      const ora = Date.now();
+      if (ora - ultimaRiRegistrazione.current < 10 * 60 * 1000) return;
+      ultimaRiRegistrazione.current = ora;
+      void riRegistraPushSilenziosa();
+    };
+
+    // Al login: subito (se il permesso e' gia' dato, sistema l'indirizzo
+    // anche quando LoginScreen sta ancora mostrando la richiesta).
+    ultimaRiRegistrazione.current = 0;
+    riprova();
+
+    // Al ritorno sull'app: ri-registrazione se sono passati 10 minuti.
+    const sub = AppState.addEventListener('change', (stato) => {
+      if (stato === 'active') riprova();
     });
     return () => sub.remove();
   }, [user]);

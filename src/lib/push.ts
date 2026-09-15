@@ -24,6 +24,15 @@
  * al login avrebbe riagganciato il telefono alle notifiche ignorando
  * la scelta). L'accensione avviene dall'Impostazioni, che chiama di
  * nuovo registerPushForCurrentUser().
+ *
+ * v4.51 — AUTO-RIPARAZIONE SILENZIOSA: finora il token arrivava al
+ * server SOLO al login o all'interruttore. Se Google rinnovava il
+ * token (disinstallazione, pulizia, aggiornamento, a volte a distanza
+ * di mesi) il server restava sull'indirizzo vecchio e le notifiche
+ * sparivano finché il cliente non rifaceva il login. Ora l'app si
+ * ri-presenta al server DA SOLA: all'avvio con sessione valida e a
+ * ogni ritorno in primo piano (max 1 volta ogni 10 minuti), senza
+ * mai mostrare prompt né schermate (riRegistraPushSilenziosa).
  */
 
 import messaging from '@react-native-firebase/messaging';
@@ -88,6 +97,34 @@ function segnalaTapAvviso(): void {
 }
 
 /**
+ * v4.51: il listener di rinnovo del token si attacca UNA SOLA VOLTA per
+ * tutta la vita dell'app. Prima ogni chiamata a registerPushForCurrentUser
+ * (login, interruttore, e ora anche avvio/foreground) ne aggiungeva un
+ * altro: dopo qualche giorno lo stesso rinnovo veniva gestito 3-4 volte
+ * da listener duplicati (innocui ma sprecone di chiamate al server).
+ */
+let listenerRinnovoAttaccato = false;
+function attaccaListenerRinnovoToken(): void {
+  if (listenerRinnovoAttaccato) return;
+  listenerRinnovoAttaccato = true;
+  messaging().onTokenRefresh(async (newToken) => {
+    // v4.13: anche il rinnovo del token rispetta l'interruttore
+    if (!(await promemoriaAttivi())) {
+      console.log('[PUSH] token rinnovato ma notifiche SPENTE: non inviato');
+      return;
+    }
+    pushState.token = newToken;
+    try {
+      const device = Platform.OS === 'ios' ? 'iOS' : 'Android';
+      await api.push.fcmRegister(newToken, device);
+      console.log('[PUSH] token refreshed e re-inviato');
+    } catch (err) {
+      console.error('[PUSH] errore refresh token:', err);
+    }
+  });
+}
+
+/**
  * Registra il device per le push FCM. Da chiamare dopo il login.
  */
 export async function registerPushForCurrentUser(): Promise<void> {
@@ -119,23 +156,55 @@ export async function registerPushForCurrentUser(): Promise<void> {
     pushState.registered = true;
     console.log('[PUSH] token registrato:', token.slice(0, 20) + '...');
 
-    messaging().onTokenRefresh(async (newToken) => {
-      // v4.13: anche il rinnovo del token rispetta l'interruttore
-      if (!(await promemoriaAttivi())) {
-        console.log('[PUSH] token rinnovato ma notifiche SPENTE: non inviato');
-        return;
-      }
-      pushState.token = newToken;
-      try {
-        await api.push.fcmRegister(newToken, device);
-        console.log('[PUSH] token refreshed e re-inviato');
-      } catch (err) {
-        console.error('[PUSH] errore refresh token:', err);
-      }
-    });
+    // v4.51: listener di rinnovo attaccato una sola volta (vedi sopra)
+    attaccaListenerRinnovoToken();
   } catch (err) {
     pushState.error = err instanceof Error ? err.message : String(err);
     console.error('[PUSH] errore registrazione:', err);
+  }
+}
+
+/**
+ * v4.51 — AUTO-RIPARAZIONE SILENZIOSA.
+ * Ri-presenta il token al server SENZA mai chiedere nulla all'utente:
+ * - niente prompt di permessi: usa getPermissions (solo lettura), non
+ *   requestPermission — se il permesso non era già concesso esce in
+ *   silenzio e non compare NESSUNA schermata;
+ * - se l'interruttore "Notifiche" è SPENTO non fa nulla (v4.13);
+ * - ogni errore viene ingoiato: riproverà alla prossima apertura.
+ *
+ * Chiamata da App.tsx in due momenti: (1) all'avvio, quando il
+ * bootstrap ripristina una sessione valida; (2) ogni volta che l'app
+ * torna in primo piano (throttle 10 minuti). Se Google rinnova il
+ * token mentre l'app è chiusa, alla riapertura il server si aggiorna
+ * da solo e le notifiche ripartono senza che il cliente tocchi niente.
+ */
+export async function riRegistraPushSilenziosa(): Promise<void> {
+  try {
+    if (!(await promemoriaAttivi())) {
+      console.log('[PUSH] auto-riparazione saltata (notifiche SPENTE)');
+      return;
+    }
+    const perm = await messaging().hasPermission();
+    const giaAutorizzato =
+      perm === messaging.AuthorizationStatus.AUTHORIZED ||
+      perm === messaging.AuthorizationStatus.PROVISIONAL;
+    if (!giaAutorizzato) {
+      console.log(
+        '[PUSH] auto-riparazione saltata (permesso non concesso, nessun prompt)',
+      );
+      return;
+    }
+    const token = await messaging().getToken();
+    const device = Platform.OS === 'ios' ? 'iOS' : 'Android';
+    await api.push.fcmRegister(token, device);
+    pushState.token = token;
+    pushState.registered = true;
+    pushState.error = '';
+    console.log('[PUSH] auto-riparazione OK:', token.slice(0, 20) + '...');
+  } catch (err) {
+    // Silenzioso di proposito: il prossimo avvio/foreground riproverà.
+    console.log('[PUSH] auto-riparazione fallita, si riprova più tardi:', err);
   }
 }
 
