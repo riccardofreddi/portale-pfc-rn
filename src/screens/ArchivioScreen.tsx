@@ -1,6 +1,32 @@
 /**
  * Schermata Archivio — grafica replicata dall'app Android v4 (v4.18).
  *
+ * Novità v4.49 (la costruzione della scheda si allinea al Cassetto):
+ * - Il titolare individua la riga nera: "probabilmente il bordo/gap della
+ *   scheda, si trova appena attorno alla pillola". L'hero v4.39 aveva tre
+ *   differenze rispetto al Cassetto (che la riga NON l'ha mai avuta):
+ *   il disegno SVG che sborda di 6 pixel oltre la scheda, l'animazione
+ *   d'ingresso (Entrata) attorno alla scheda e il bordo oro trasparente.
+ *   Tutte e tre vengono eliminate: disegno ESATTO come il Cassetto
+ *   (StyleSheet.absoluteFill), NESSUNA animazione sulla scheda, bordo del
+ *   STESSO colore del fondo scheda (invisibile: la fessura o il bordo non
+ *   possono piu' mostrare nulla di diverso dal disegno stesso);
+ * - Il resto (pillola Documenti Nuovi nell'hero, "I miei preferiti" sotto
+ *   la ricerca v4.48, chip anni, cartelle, dettaglio) resta INTATTO;
+ * - Verificata anche la variante SENZA documenti nuovi: senza pillola la
+ *   scheda resta completa (chip, titolo, sottotitolo, descrizione) e i
+ *   bordi sono identici nei due casi.
+ *
+ * Novità v4.48 (idea del titolare, addio definitivo alla riga nera):
+ * - "I miei preferiti" ESCE dall'hero blu e va appena sotto la barra
+ *   di ricerca, con la STESSA grafica e grandezza della pillola
+ *   "Documenti Nuovi" (ordine del titolare: identiche). Nell'hero
+ *   resta al massimo UN solo elemento oro: la fessura scura fra due
+ *   ori — la "riga nera" — non può più esistere, per costruzione.
+ * - La pillola "Documenti Nuovi" resta dove è e come è: compare solo
+ *   quando ci sono davvero documenti nuovi (logica invariata).
+ * - Gradiente v4.39 e fix anni v4.43: zero modifiche.
+ *
  * Novità v4.47 (ripristino su disposizione del titolare):
  * - "togli il velo e ripristina come anche con la riga nera, non fa
  *   nulla" — i tentativi v4.44/v4.45/v4.46 sulla grafica dell'hero
@@ -1591,88 +1617,72 @@ export default function ArchivioScreen() {
                * vivono SOLO nei chip; la radice mostra subito l'hero dell'anno
                * con le sue cartelle, identico all'app Android v4. */}
               {step === 'cartella' && (
-                <Entrata>
-                  <View style={styles.heroNavy}>
-                    <Svg style={{ ...StyleSheet.absoluteFillObject, top: -6, left: -6, right: -6, bottom: -6 }}>
-                      <Defs>
-                        {/* v4.39: gradiente IDENTICO al Cassetto (blu notte ->
-                         * blu primario -> blu notte) e riga nera resa
-                         * IMPOSSIBILE: il disegno sborda di 6 pixel oltre i
-                         * bordi della scheda, quindi la fessura da 1 pixel
-                         * che l'animazione d'ingresso apre su Android può
-                         * mostrare solo disegno, mai il fondo; inoltre il
-                         * fondo della scheda è dello stesso colore degli
-                         * estremi del gradiente (anche un pixel visibile è
-                         * identico = invisibile). */}
-                        <LinearGradient id="archHeroAnno" x1="0" y1="0" x2="1" y2="0">
-                          <Stop offset="0" stopColor={NAVY_NOTTE} />
-                          <Stop offset="0.5" stopColor={NAVY_PRIMARIO} />
-                          <Stop offset="1" stopColor={NAVY_NOTTE} />
-                        </LinearGradient>
-                      </Defs>
-                      <Rect width="100%" height="100%" fill="url(#archHeroAnno)" />
-                    </Svg>
-                    <View style={styles.heroNavyInner}>
-                      <View style={styles.heroNavyTopRow}>
-                        <View style={styles.heroGoldChip}>
-                          <View style={styles.heroGoldDot} />
-                          <Text style={styles.heroGoldChipText}>ESERCIZIO {anno}</Text>
-                        </View>
-                        <Text style={styles.heroCount}>{cartelle.length} cartelle</Text>
+                /* v4.49: NIENTE Entrata attorno alla scheda (come nel Cassetto,
+                 * che la riga nera non l'ha mai avuta): l'animazione d'ingresso
+                 * col disegno SVG era uno dei tre sospettati rimasti. */
+                <View style={styles.heroNavy}>
+                  {/* v4.49: disegno ESATTO come il Cassetto (niente sbordo di
+                   * 6 pixel): con il disegno che copre ESATTAMENTE la scheda
+                   * e il bordo dello stesso colore del fondo, nessuna fessura
+                   * o bordo puo' mostrare qualcosa di diverso dal disegno. */}
+                  <Svg style={StyleSheet.absoluteFill}>
+                    <Defs>
+                      {/* v4.39: gradiente IDENTICO al Cassetto (blu notte ->
+                       * blu primario -> blu notte). */}
+                      <LinearGradient id="archHeroAnno" x1="0" y1="0" x2="1" y2="0">
+                        <Stop offset="0" stopColor={NAVY_NOTTE} />
+                        <Stop offset="0.5" stopColor={NAVY_PRIMARIO} />
+                        <Stop offset="1" stopColor={NAVY_NOTTE} />
+                      </LinearGradient>
+                    </Defs>
+                    <Rect width="100%" height="100%" fill="url(#archHeroAnno)" />
+                  </Svg>
+                  <View style={styles.heroNavyInner}>
+                    <View style={styles.heroNavyTopRow}>
+                      <View style={styles.heroGoldChip}>
+                        <View style={styles.heroGoldDot} />
+                        <Text style={styles.heroGoldChipText}>ESERCIZIO {anno}</Text>
                       </View>
-                      <View>
-                        <Text style={styles.heroNavyTitle}>Archivio {anno}</Text>
-                        <Text style={styles.heroNavySub}>Tutti i documenti archiviati per l'anno</Text>
-                        <Text style={styles.heroNavyDesc}>
-                          Consulta e scarica i documenti fiscali e societari organizzati per cartella.
-                        </Text>
-                      </View>
-                      {(() => {
-                        // Pillola oro "Documenti Nuovi" (come nell'app v4):
-                        // apre la prima cartella che ha documenti nuovi.
-                        const totalNuovi = cartelle.reduce(
-                          (somma, c) => somma + (campoNumero(c, 'nuovi', 'nNuovi') ?? 0),
-                          0,
-                        );
-                        const targetCartella =
-                          cartelle.find((c) => (campoNumero(c, 'nuovi', 'nNuovi') ?? 0) > 0) ?? cartelle[0];
-                        if (totalNuovi <= 0 || !targetCartella) return null;
-                        return (
-                          <Pressable
-                            onPress={() => {
-                              haptics.tap();
-                              setCartella(targetCartella.nome);
-                            }}
-                            style={({ pressed }) => [styles.heroNuoviPill, pressed && styles.btnPressedOpacity]}
-                            accessibilityLabel="Apri cartella con documenti nuovi"
-                          >
-                            <Ionicons name="sparkles" size={15} color={NAVY_NOTTE} />
-                            <Text style={styles.heroNuoviText}>Documenti Nuovi ({totalNuovi})</Text>
-                            <Ionicons name="arrow-forward" size={13} color={NAVY_NOTTE} />
-                          </Pressable>
-                        );
-                      })()}
-                      {/* v4.15: al posto della vecchia ora di aggiornamento,
-                       * il pulsante che apre TUTTI i preferiti (nascosto
-                       * quando non ce ne sono). */}
-                      {preferitiKeys.length > 0 && (
-                        <Pressable
-                          onPress={apriPreferiti}
-                          style={({ pressed }) =>
-                            [styles.heroFavBtn, pressed && styles.btnPressedOpacity]
-                          }
-                          accessibilityLabel="Apri i miei preferiti"
-                        >
-                          <Ionicons name="star" size={15} color={ORO_CHIARO} />
-                          <Text style={styles.heroFavText}>
-                            I miei preferiti ({preferitiKeys.length})
-                          </Text>
-                          <Ionicons name="arrow-forward" size={13} color={ORO_CHIARO} />
-                        </Pressable>
-                      )}
+                      <Text style={styles.heroCount}>{cartelle.length} cartelle</Text>
                     </View>
+                    <View>
+                      <Text style={styles.heroNavyTitle}>Archivio {anno}</Text>
+                      <Text style={styles.heroNavySub}>Tutti i documenti archiviati per l'anno</Text>
+                      <Text style={styles.heroNavyDesc}>
+                        Consulta e scarica i documenti fiscali e societari organizzati per cartella.
+                      </Text>
+                    </View>
+                    {(() => {
+                      // Pillola oro "Documenti Nuovi" (come nell'app v4):
+                      // apre la prima cartella che ha documenti nuovi.
+                      const totalNuovi = cartelle.reduce(
+                        (somma, c) => somma + (campoNumero(c, 'nuovi', 'nNuovi') ?? 0),
+                        0,
+                      );
+                      const targetCartella =
+                        cartelle.find((c) => (campoNumero(c, 'nuovi', 'nNuovi') ?? 0) > 0) ?? cartelle[0];
+                      if (totalNuovi <= 0 || !targetCartella) return null;
+                      return (
+                        <Pressable
+                          onPress={() => {
+                            haptics.tap();
+                            setCartella(targetCartella.nome);
+                          }}
+                          style={({ pressed }) => [styles.pillGold, pressed && styles.btnPressedOpacity]}
+                          accessibilityLabel="Apri cartella con documenti nuovi"
+                        >
+                          <Ionicons name="sparkles" size={15} color={NAVY_NOTTE} />
+                          <Text style={styles.pillGoldText}>Documenti Nuovi ({totalNuovi})</Text>
+                          <Ionicons name="arrow-forward" size={13} color={NAVY_NOTTE} />
+                        </Pressable>
+                      );
+                    })()}
+                    {/* v4.48: "I miei preferiti" non sta più qui (era il
+                     * secondo elemento oro: la fessura col fondo scuro
+                     * fra i due creava la "riga nera"). Ora vive sotto la
+                     * barra di ricerca, vedi pillGold più avanti. */}
                   </View>
-                </Entrata>
+                </View>
               )}
               <Entrata delay={90}>
                 <ScalablePress onPress={apriRicerca} style={styles.searchBar} accessibilityLabel="Apri ricerca">
@@ -1680,6 +1690,24 @@ export default function ArchivioScreen() {
                   <Text style={styles.searchBarText}>Cerca per nome, data o tipo...</Text>
                 </ScalablePress>
               </Entrata>
+              {/* v4.48: "I miei preferiti" sotto la ricerca, con la STESSA
+               * pillola oro di "Documenti Nuovi" (stessa grandezza e
+               * grafica, per ordine del titolare). Apre il pannello
+               * preferiti di sempre; nascosto se non hai preferiti;
+               * visibile solo nella radice dell'anno, come prima nell'hero. */}
+              {step === 'cartella' && preferitiKeys.length > 0 && (
+                <Entrata delay={90}>
+                  <Pressable
+                    onPress={apriPreferiti}
+                    style={({ pressed }) => [styles.pillGold, pressed && styles.btnPressedOpacity]}
+                    accessibilityLabel="Apri i miei preferiti"
+                  >
+                    <Ionicons name="star" size={15} color={NAVY_NOTTE} />
+                    <Text style={styles.pillGoldText}>I miei preferiti ({preferitiKeys.length})</Text>
+                    <Ionicons name="arrow-forward" size={13} color={NAVY_NOTTE} />
+                  </Pressable>
+                </Entrata>
+              )}
               {/* Selettore anni a chip scorrevoli (come i FilterChip dell'app v4) */}
               {!loading && anni.length > 0 && (
                 <ScrollView
@@ -2009,10 +2037,14 @@ const makeStyles = (colors: ThemeColors) =>
 
     // v4.11 — Hero blu notte (Smart Year Overview Banner dell'app v4)
     // v4.39: grafica IDENTICA al Cassetto (gradiente notte->primario->notte,
-    // angoli 22, bordo oro 0.4) e fondo della scheda = colore degli estremi
-    // del gradiente: la fessura da 1 pixel dell'animazione d'ingresso non
-    // può più mostrare nulla di diverso dal disegno (che ora sborda di 6px)
-    heroNavy: { borderRadius: 22, overflow: 'hidden', borderWidth: 1, borderColor: 'rgba(212, 175, 55, 0.4)', backgroundColor: NAVY_NOTTE, ...shadow.md },
+    // angoli 22) e fondo della scheda = colore degli estremi del gradiente.
+    // v4.49: il BORDO oro trasparente (rgba(212,175,55,0.4)) diventa
+    // NAVY_NOTTE — invisibile, dello stesso colore del fondo scheda e degli
+    // estremi del disegno: il titolare ha individuato la riga nera proprio
+    // nel bordo/gap attorno alla pillola, e cosi' bordo e fessura non possono
+    // piu' mostrare nulla di diverso dal disegno (come nel Cassetto, che la
+    // riga non l'ha mai avuta).
+    heroNavy: { borderRadius: 22, overflow: 'hidden', borderWidth: 1, borderColor: NAVY_NOTTE, backgroundColor: NAVY_NOTTE, ...shadow.md },
     heroNavyInner: { padding: spacing.xl, gap: 12 },
     heroNavyTopRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
     heroGoldChip: { flexDirection: 'row', alignItems: 'center', gap: 5, backgroundColor: 'rgba(212, 175, 55, 0.25)', borderRadius: 8, borderWidth: 1, borderColor: 'rgba(212, 175, 55, 0.6)', paddingHorizontal: 8, paddingVertical: 4 },
@@ -2022,13 +2054,12 @@ const makeStyles = (colors: ThemeColors) =>
     heroNavyTitle: { color: '#FFFFFF', fontSize: 22, fontWeight: '800', letterSpacing: -0.3 },
     heroNavySub: { color: '#FFFFFF', fontSize: 14, fontWeight: '600', marginTop: 2 },
     heroNavyDesc: { color: 'rgba(255,255,255,0.85)', fontSize: 12, marginTop: 3, lineHeight: 17 },
-    heroNuoviPill: { flexDirection: 'row', alignItems: 'center', gap: 6, alignSelf: 'flex-start', backgroundColor: ORO, borderRadius: 999, paddingHorizontal: 14, paddingVertical: 7, marginTop: 2 },
-    heroNuoviText: { color: NAVY_NOTTE, fontSize: 12, fontWeight: '700' },
-
-    // v4.15 — Pulsante "I miei preferiti" dell'hero (bordo oro, fondale soft:
-    // distinto dalla pillola Documenti Nuovi che è oro pieno)
-    heroFavBtn: { flexDirection: 'row', alignItems: 'center', gap: 6, alignSelf: 'flex-start', backgroundColor: 'rgba(212, 175, 55, 0.12)', borderRadius: 999, borderWidth: 1, borderColor: 'rgba(212, 175, 55, 0.7)', paddingHorizontal: 14, paddingVertical: 7, marginTop: 2 },
-    heroFavText: { color: ORO_CHIARO, fontSize: 12, fontWeight: '700' },
+    // v4.48 — Pillola oro CONDIVISA: "Documenti Nuovi" (nell'hero) e
+    // "I miei preferiti" (sotto la ricerca) hanno la STESSA grandezza e
+    // grafica, per ordine del titolare. Valori identici alla pillola
+    // "Documenti Nuovi" approvata (v4.11/v4.39): zero differenze.
+    pillGold: { flexDirection: 'row', alignItems: 'center', gap: 6, alignSelf: 'flex-start', backgroundColor: ORO, borderRadius: 999, paddingHorizontal: 14, paddingVertical: 7, marginTop: 2 },
+    pillGoldText: { color: NAVY_NOTTE, fontSize: 12, fontWeight: '700' },
 
     // v4.15 — Pannello "I miei preferiti"
     favWrap: { paddingHorizontal: spacing.xl, paddingTop: spacing.xs, gap: spacing.md },

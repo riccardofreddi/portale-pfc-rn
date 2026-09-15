@@ -78,7 +78,11 @@ jobs:
 
       - name: Build release APK
         working-directory: android
-        run: ./gradlew assembleRelease -x lintVitalRelease
+        run: |
+          # Difesa: se un commit fatto da Windows perde il bit eseguibile di
+          # gradlew (mode 644), la CI muore con "Permission denied" (126).
+          chmod +x gradlew
+          ./gradlew assembleRelease -x lintVitalRelease
 
       - name: Upload APK artifact
         uses: actions/upload-artifact@v4
