@@ -1,6 +1,18 @@
 ﻿/**
  * Schermata Cassetto Personale.
  *
+ * v4.52 — risolto l'errore al caricamento:
+ * - "aggiungi -> tipo -> scegli file -> errore start path null": il
+ *   colpevole era il controllo della dimensione, che chiedeva a
+ *   react-native-blob-util di leggere il file scelto. Ma Android spesso
+ *   consegna un indirizzo "content://..." (scelta fatta da Recenti,
+ *   Download o cloud) che quella lettura non sa aprire: tutto si fermava
+ *   li' con "failed to stat path `null`..." e il file non saliva mai.
+ * - Ora il peso si legge SOLO quando il file e' un vero file del telefono
+ *   (file://) e SOLO per avvisare prima; in tutti gli altri casi il file
+ *   sale lo stesso e il limite vero lo controlla il server (come fa gia'
+ *   la risposta ai messaggi, che ha sempre funzionato).
+ *
  * v4.38 — richiesta del titolare:
  * - "in cassetto se faccio scarica non deve finire in Download, deve
  *   lavorare come in archivio": il pulsante "Scarica" ora usa lo STESSO
@@ -124,10 +136,26 @@ export default function CassettoScreen() {
       const picked = await DocumentPicker.pick({ type: [types.allFiles], allowMultiSelection: false });
       const doc = picked[0];
       if (!doc) return;
-      const stat = await ReactNativeBlobUtil.fs.stat(doc.uri.replace('file://', ''));
-      if (stat.size > MAX_FILE_SIZE_BYTES) {
-        toast.error('File troppo grande', `Massimo ${MAX_FILE_SIZE_MB}MB`);
-        return;
+      // v4.52: il controllo della dimensione NON deve piu' poter bloccare
+      // il caricamento. Prima si leggeva il peso chiedendo il percorso del
+      // file a react-native-blob-util: ma Android spesso consegna un
+      // indirizzo "content://..." (scelta fatta da Recenti, Download o
+      // cloud) che quella lettura non sa aprire: si fermava tutto con
+      // l'errore "failed to stat path `null`..." e il file non saliva.
+      // Ora il peso si legge SOLO se e' un vero file del telefono (file://)
+      // e SOLO per avvisare prima; in tutti gli altri casi il file sale lo
+      // stesso e il limite vero lo controlla il server (come fa gia' la
+      // risposta ai messaggi, che ha sempre funzionato).
+      if (doc.uri.startsWith('file://')) {
+        try {
+          const stat = await ReactNativeBlobUtil.fs.stat(doc.uri.replace('file://', ''));
+          if (stat && typeof stat.size === 'number' && stat.size > MAX_FILE_SIZE_BYTES) {
+            toast.error('File troppo grande', `Massimo ${MAX_FILE_SIZE_MB}MB`);
+            return;
+          }
+        } catch {
+          // peso non leggibile: si prosegue, il limite lo guarda il server
+        }
       }
       setUploading(true);
       haptics.impact();

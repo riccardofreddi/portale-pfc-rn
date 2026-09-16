@@ -301,6 +301,7 @@ Per pubblicare una nuova versione: incrementa `versionName` (es. `1.26.0`) e `ve
 | Metro non si collega al device | Stessa rete Wi-Fi o `adb reverse tcp:8081 tcp:8081`; riavvia con `npx expo start --dev-client --clear` |
 | Errore Firebase su build nuova | Verifica che `android/app/google-services.json` esista e contenga package `com.portalepfcrn` |
 | Non arrivano notifiche | Apri **Impostazioni**: la pillola deve dire **Attivo** (verde). Se dice Non attivo, accendi l'interruttore "Ricevi gli avvisi dello studio": il telefono viene registrato automaticamente e la pillola diventa verde |
+| Caricamento nel Cassetto fallito ("stat path null") | Corretto dalla v4.52: il peso del file non blocca più il caricamento; il limite vero (20MB) lo controlla il server. Installa l'APK nuovo dalla release `latest-apk` |
 | Kotlin/compose errori in build | Assicurati che `android/build.gradle` abbia `kotlinVersion = "2.0.21"` e il classpath esplicito `kotlin-gradle-plugin:2.0.21` |
 | Gradle cache corrotta | `cd android && ./gradlew clean` oppure elimina `android/.gradle` |
 
