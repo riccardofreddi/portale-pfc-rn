@@ -271,6 +271,8 @@ export const api = {
         size: Number(f.size ?? 0),
         sizeStr: String(f.sizeStr ?? ''),
         lastModified: f.lastModified ? new Date(String(f.lastModified)) : null,
+        // v4.53: tipo riconosciuto dal server (serve per gli slot "uno per tipo")
+        tipoKey: f.tipoKey ? String(f.tipoKey) : null,
       }));
       return { files: mapped };
     },

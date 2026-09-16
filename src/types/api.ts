@@ -77,6 +77,8 @@ export interface CassettoFile {
   size: number;
   sizeStr: string;
   lastModified: Date | null;
+  /** v4.53: tipo riconosciuto dal server (prefisso della chiave); null se non riconoscibile. */
+  tipoKey?: string | null;
 }
 
 // === Notifiche ===

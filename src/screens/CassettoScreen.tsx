@@ -1,6 +1,18 @@
 ﻿/**
  * Schermata Cassetto Personale.
  *
+ * v4.53 — regola "uno slot per tipo" + limite 5MB:
+ * - Ogni tipo (QR Code P.IVA, Certificato P.IVA, Visura Camerale, Doc.
+ *   Identita, IBAN) si puo' caricare UNA volta sola. Nella scelta del tipo,
+ *   quelli gia' presenti appaiono in GRIGIO con la targhetta "già caricato"
+ *   e non si possono toccare: per ricaricare, prima si cancella il vecchio.
+ * - Il riconoscimento usa il tipo inciso nella chiave lato server
+ *   (campo tipoKey restituito da /api/cassetto/list), NON il nome del file:
+ *   rinominare non libera piu' lo slot. Il blocco vero resta sul server
+ *   (errore 409): qui e' solo comodita' visiva.
+ * - Limite Cassetto portato a 5MB (pre-controllo locale, allineato al
+ *   server); le altre superfici restano come prima.
+ *
  * v4.52 — risolto l'errore al caricamento:
  * - "aggiungi -> tipo -> scegli file -> errore start path null": il
  *   colpevole era il controllo della dimensione, che chiedeva a
@@ -75,7 +87,7 @@ import { haptics } from '@/lib/haptics';
 import { api } from '@/api/client';
 import { useAppStore } from '@/store/auth';
 import { scaricaInDownload } from '@/lib/download';
-import { formatDate, MAX_FILE_SIZE_BYTES, MAX_FILE_SIZE_MB } from '@/lib/utils';
+import { formatDate } from '@/lib/utils';
 import type { CassettoFile, FileItem } from '@/types/api';
 import { shadow, spacing, typography, useColors, type ThemeColors } from '@/theme';
 
@@ -86,6 +98,22 @@ const TIPI_FILE = [
   { value: 'Doc. Identita', color: '#dc2626' },
   { value: 'IBAN', color: '#d97706' },
 ] as const;
+
+// v4.53: corrispondenza tra le etichette del menu e i "tipoKey" incisi nelle
+// chiavi lato server (stessa mappa del portale). Serve per sapere quali slot
+// sono gia' occupati leggendo il campo tipoKey di /api/cassetto/list.
+const TIPO_KEY_DA_LABEL: Record<string, string> = {
+  'QR Code P.IVA': 'qr_code_p_iva',
+  'Certificato P.IVA': 'certificato_p_iva',
+  'Visura Camerale': 'visura_camerale',
+  'Doc. Identita': 'doc_identita',
+  'IBAN': 'iban',
+};
+
+// v4.53: limite Cassetto 5MB, allineato al server (che resta l'ultima parola:
+// il pre-controllo serve solo ad avvisare prima, sui file leggibili).
+const CASSETTO_MAX_FILE_SIZE_MB = 5;
+const CASSETTO_MAX_FILE_SIZE_BYTES = CASSETTO_MAX_FILE_SIZE_MB * 1024 * 1024;
 
 // Colori firma del brand (validi in entrambi i temi, come nell'app v4)
 const NAVY_NOTTE = '#0A1128';
@@ -111,6 +139,10 @@ export default function CassettoScreen() {
   // muto finche' arriva la notifica di sistema.
   const [scaricando, setScaricando] = useState<string | null>(null);
   const [percento, setPercento] = useState(0);
+
+  // v4.53: slot gia' occupati, dedotti dal campo tipoKey che il server mette
+  // su ogni file (null per file non riconoscibili, che non occupano slot).
+  const tipiOccupati = new Set(files.map((f) => f.tipoKey).filter((t): t is string => !!t));
 
   const load = useCallback(async (showRefresh = false) => {
     if (showRefresh) setRefreshing(true);
@@ -149,8 +181,8 @@ export default function CassettoScreen() {
       if (doc.uri.startsWith('file://')) {
         try {
           const stat = await ReactNativeBlobUtil.fs.stat(doc.uri.replace('file://', ''));
-          if (stat && typeof stat.size === 'number' && stat.size > MAX_FILE_SIZE_BYTES) {
-            toast.error('File troppo grande', `Massimo ${MAX_FILE_SIZE_MB}MB`);
+          if (stat && typeof stat.size === 'number' && stat.size > CASSETTO_MAX_FILE_SIZE_BYTES) {
+            toast.error('File troppo grande', `Massimo ${CASSETTO_MAX_FILE_SIZE_MB}MB`);
             return;
           }
         } catch {
@@ -364,20 +396,48 @@ export default function CassettoScreen() {
         <View style={styles.modalContent}>
           <Text style={styles.modalTitle}>Carica documento</Text>
           <Text style={styles.modalSubtitle}>Seleziona il tipo di documento:</Text>
+          {/* v4.53: i tipi gia' caricati restano visibili ma in grigio, con la
+           * targhetta "già caricato" e il tocco spento: per ricaricare, prima
+           * si cancella quello esistente (regola "uno slot per tipo"). */}
+          <Text style={styles.modalRule}>
+            Ogni tipo si può caricare una volta sola: per sostituirlo, cancella prima quello esistente.
+          </Text>
           <View style={styles.tipiList}>
-            {TIPI_FILE.map((tipo) => (
-              <Pressable
-                key={tipo.value}
-                onPress={() => setSelectedTipo(tipo.value)}
-                style={[styles.tipoRow, selectedTipo === tipo.value && styles.tipoRowActive]}
-              >
-                {/* Radio come nell'app v4 (AddCassettoDialog) */}
-                <View style={[styles.radio, selectedTipo === tipo.value && styles.radioSelected]}>
-                  {selectedTipo === tipo.value && <View style={styles.radioDot} />}
-                </View>
-                <Text style={[styles.tipoLabel, selectedTipo === tipo.value && styles.tipoLabelActive]}>{tipo.value}</Text>
-              </Pressable>
-            ))}
+            {TIPI_FILE.map((tipo) => {
+              const tipoKey = TIPO_KEY_DA_LABEL[tipo.value];
+              const occupato = !!tipoKey && tipiOccupati.has(tipoKey);
+              return (
+                <Pressable
+                  key={tipo.value}
+                  onPress={() => setSelectedTipo(tipo.value)}
+                  disabled={occupato}
+                  style={[
+                    styles.tipoRow,
+                    selectedTipo === tipo.value && styles.tipoRowActive,
+                    occupato && styles.tipoRowDisabled,
+                  ]}
+                >
+                  {/* Radio come nell'app v4 (AddCassettoDialog) */}
+                  <View style={[styles.radio, selectedTipo === tipo.value && styles.radioSelected]}>
+                    {selectedTipo === tipo.value && <View style={styles.radioDot} />}
+                  </View>
+                  <Text
+                    style={[
+                      styles.tipoLabel,
+                      selectedTipo === tipo.value && styles.tipoLabelActive,
+                      occupato && styles.tipoLabelDisabled,
+                    ]}
+                  >
+                    {tipo.value}
+                  </Text>
+                  {occupato && (
+                    <View style={styles.slotBadge}>
+                      <Text style={styles.slotBadgeText}>già caricato</Text>
+                    </View>
+                  )}
+                </Pressable>
+              );
+            })}
           </View>
           {selectedTipo && (
             <Button
@@ -445,6 +505,17 @@ const makeStyles = (colors: ThemeColors) =>
     modalContent: { padding: spacing.xl, gap: spacing.md },
     modalTitle: { ...typography.h4, color: colors.textPrimary, fontWeight: '700' },
     modalSubtitle: { ...typography.bodySmall, color: colors.textSecondary },
+    // v4.53: riga della regola "uno slot per tipo" + stili tipo occupato
+    modalRule: { ...typography.bodySmall, color: colors.textTertiary, marginTop: spacing.xs, marginBottom: spacing.xs },
+    tipoRowDisabled: { opacity: 0.45 },
+    tipoLabelDisabled: { color: colors.textTertiary },
+    slotBadge: {
+      backgroundColor: colors.border,
+      borderRadius: 999,
+      paddingHorizontal: spacing.sm,
+      paddingVertical: 3,
+    },
+    slotBadgeText: { ...typography.caption, color: colors.textSecondary, fontWeight: '600' },
     tipiList: { gap: spacing.xs },
     tipoRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.md, paddingVertical: spacing.md, paddingHorizontal: spacing.md, borderRadius: 10 },
     tipoRowActive: { backgroundColor: colors.accentSoft },
