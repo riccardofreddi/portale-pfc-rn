@@ -1,0 +1,20 @@
+name: Promemoria scadenze (seconda sveglia)
+on:
+  schedule:
+    - cron: '5 6 * * *'   # 06:05 UTC = 08:05 ora italiana
+  workflow_dispatch: {}   # permette la prova manuale dal tab Actions
+jobs:
+  scadenze-check:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Busso al portale (check scadenze)
+        env:
+          CRON_SECRET: ${{ secrets.CRON_SECRET }}
+        run: |
+          esito=$(curl -s -X POST "https://portale-pfc-v2.vercel.app/api/scadenze/check" \
+            -H "Authorization: Bearer $CRON_SECRET" --max-time 60)
+          echo "Risposta del portale: $esito"
+          case "$esito" in
+            *'"ok":true'*) echo "OK: controllo scadenze eseguito" ;;
+            *) echo "PROBLEMA: risposta inattesa dal portale"; exit 1 ;;
+          esac
