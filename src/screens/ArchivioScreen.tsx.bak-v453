@@ -1,26 +1,6 @@
 /**
  * Schermata Archivio — grafica replicata dall'app Android v4 (v4.18).
  *
- * Novità v4.56 (etichetta più chiara):
- * - La targhetta della scadenza diventa "⏰ SCADENZA gg/mm" (prima
- *   era "⏰ SCADE gg/mm"). Nessun'altra modifica.
- *
- * Novità v4.55 (la scadenza si vede e si paga dall'archivio):
- * - La riga del documento con una scadenza impostata dallo studio mostra
- *   la targhetta: "⏰ SCADENZA gg/mm" (ambra se nel periodo di preavviso,
- *   neutra oltre), "⏰ SCADE OGGI" / "⏰ SCADUTA gg/mm" (rosso) e
- *   "✓ PAGATA" (verde). I giorni si calcolano come sul server.
- * - Nuova azione rapida sulla riga: la spunta (accanto a stellina e
- *   scarica). Vuota = da pagare: premuta (con conferma) segna la scadenza
- *   PAGATA e il server FERMA TUTTE le notifiche di quella scadenza (cron,
- *   banner web, campanella) e registra chi/quando; piena verde = pagata,
- *   premuta di nuovo (con conferma) riattiva le notifiche.
- * - Dopo il tocco la riga si aggiorna SUBITO e i promemoria locali
- *   (l'allarme delle 08:30 del giorno di scadenza) vengono ri-regolati
- *   senza aspettare il prossimo ricaricamento: la scadenza pagata non
- *   suona più.
- * - Il resto è intatto: preferiti, ricerca, cartelle, download, deep-link.
- *
  * Novità v4.49 (la costruzione della scheda si allinea al Cassetto):
  * - Il titolare individua la riga nera: "probabilmente il bordo/gap della
  *   scheda, si trova appena attorno alla pillola". L'hero v4.39 aveva tre
@@ -400,9 +380,7 @@ import {
   apriConApp,
 } from '@/lib/download';
 import { condividiDocumento } from '@/lib/condividi';
-import { aggiornaPromemoriaScadenze } from '@/lib/scadenze-locali';
-import { confirmDialog } from '@/components/ConfirmDialog';
-import type { Cartella, FileItem, ScadenzaDocumento, SearchResult } from '@/types/api';
+import type { Cartella, FileItem, SearchResult } from '@/types/api';
 import { radius, shadow, spacing, typography, useColors, type ThemeColors } from '@/theme';
 
 type Step = 'anno' | 'cartella' | 'file';
@@ -541,32 +519,6 @@ const STATO_BADGE: Record<
   scaricato: { label: '✓ SCARICATO', variant: 'accent' },
   preferito: { label: '★ PREFERITO', variant: 'accent' },
 };
-
-/**
- * v4.55: targhetta della scadenza sulla riga del documento. Giorni calcolati
- * come sul server (differenza di giorni UTC): scaduta/oggi = rosso, nel
- * periodo di preavviso = ambra, oltre = neutra, pagata = verde.
- */
-function etichettaScadenza(s: ScadenzaDocumento): { label: string; variant: 'danger' | 'neutral' | 'success' | 'warning' } {
-  const msAlGiorno = 24 * 60 * 60 * 1000;
-  const giorni =
-    Math.floor(new Date(s.dataScadenza).getTime() / msAlGiorno) -
-    Math.floor(Date.now() / msAlGiorno);
-  const dataTxt = new Date(s.dataScadenza).toLocaleDateString('it-IT', { day: '2-digit', month: '2-digit' });
-  if (s.pagata) {
-    return { label: '✓ PAGATA', variant: 'success' };
-  }
-  if (giorni < 0) {
-    return { label: `⏰ SCADUTA ${dataTxt}`, variant: 'danger' };
-  }
-  if (giorni === 0) {
-    return { label: '⏰ SCADE OGGI', variant: 'danger' };
-  }
-  return {
-    label: `⏰ SCADENZA ${dataTxt}`,
-    variant: giorni <= s.anticipoGiorni ? 'warning' : 'neutral',
-  };
-}
 
 /** Riga della lista archivio: cartella (con conteggio), sottocartella o file.
  * v4.12: le RIGHE-ANNO non esistono più (gli anni vivono solo nei chip). */
@@ -1238,53 +1190,6 @@ export default function ArchivioScreen() {
     }
   }
 
-  // v4.55: il cliente segna (o annulla) il pagamento direttamente dall'archivio.
-  // Il server ferma TUTTE le notifiche di quella scadenza (cron, banner web,
-  // campanella) e registra chi/quando; qui aggiorniamo la riga SUBITO e
-  // ri-regoliamo i promemoria locali (l'allarme del giorno di scadenza sparisce
-  // senza aspettare il prossimo ricaricamento).
-  async function handleScadenzaPagata(file: FileItem, pagata: boolean) {
-    haptics.impact();
-    try {
-      const res = await api.scadenze.paga(file.key, pagata);
-      const applica = (f: FileItem): FileItem =>
-        f.key === file.key && f.scadenza
-          ? {
-              ...f,
-              scadenza: {
-                ...f.scadenza,
-                pagata: res.pagata,
-                pagataDa: res.pagataDa ?? null,
-                pagataIl: res.pagataIl ?? null,
-              },
-            }
-          : f;
-      setFiles((prev) => prev.map(applica));
-      setDetailFile((prev) => (prev ? applica(prev) : prev));
-      toast.success(
-        pagata ? 'Segnata come pagata: le notifiche si fermano' : 'Pagamento annullato: le notifiche riprendono',
-      );
-      aggiornaPromemoriaScadenze().catch(() => {});
-    } catch {
-      toast.error('Errore', 'Impossibile aggiornare la scadenza');
-    }
-  }
-
-  function chiediConfermaScadenza(file: FileItem) {
-    if (!file.scadenza) {
-      return;
-    }
-    const pagata = file.scadenza.pagata;
-    confirmDialog({
-      title: pagata ? 'Riattivare le notifiche?' : 'Segnare come pagata?',
-      message: pagata
-        ? 'La scadenza torna attiva: promemoria, push e campanella ripartono per questo documento.'
-        : 'Le notifiche di questa scadenza (promemoria, push, campanella) si fermano.',
-      confirmText: pagata ? 'Riattiva' : 'Pagata',
-      onConfirm: () => { handleScadenzaPagata(file, !pagata); },
-    });
-  }
-
   async function handleDownload(file: FileItem) {
     setDownloading(file.key);
     setProgresso(0);
@@ -1883,8 +1788,6 @@ export default function ArchivioScreen() {
             const f = item.file;
             const isSelected = selected.has(f.key);
             const stato = f.stato ? STATO_BADGE[f.stato] : null;
-            // v4.55: targhetta scadenza calcolata una volta per render
-            const scadBadge = f.scadenza ? etichettaScadenza(f.scadenza) : null;
             return (
               <Pressable
                 onPress={() => {
@@ -1930,8 +1833,6 @@ export default function ArchivioScreen() {
                             <Badge label={stato.label} variant={stato.variant} />
                           )}
                           {f.isPreferito && <Badge label="★ PREFERITO" variant="accent" />}
-                          {/* v4.55: la scadenza impostata dallo studio, sempre leggibile */}
-                          {scadBadge && <Badge label={scadBadge.label} variant={scadBadge.variant} />}
                         </View>
                       )}
                     </View>
@@ -1955,22 +1856,6 @@ export default function ArchivioScreen() {
                         >
                           <Ionicons name="download-outline" size={19} color={colors.textSecondary} />
                         </Pressable>
-                        {/* v4.55: pulsante PAGATO - ferma le notifiche della scadenza.
-                            Spunta vuota = da pagare; spunta piena verde = pagata
-                            (premerla di nuovo riattiva le notifiche, con conferma). */}
-                        {f.scadenza && !selectMode && (
-                          <Pressable
-                            onPress={() => chiediConfermaScadenza(f)}
-                            style={styles.quickBtn}
-                            accessibilityLabel={f.scadenza.pagata ? 'Scadenza pagata: premi per riattivare le notifiche' : 'Segna come pagata'}
-                          >
-                            <Ionicons
-                              name={f.scadenza.pagata ? 'checkmark-circle' : 'checkmark-circle-outline'}
-                              size={20}
-                              color={f.scadenza.pagata ? colors.success : colors.textSecondary}
-                            />
-                          </Pressable>
-                        )}
                       </View>
                     ) : (
                       <View style={styles.chevronCircle}>

@@ -180,22 +180,6 @@ export const api = {
       }));
       return { scadenze: mapped };
     },
-
-    /**
-     * v4.55: il cliente segna (o annulla) il pagamento di una scadenza.
-     * Con pagata=true il server ferma TUTTE le notifiche di quella scadenza
-     * (cron, banner web, campanella) e registra chi/quando; lo studio riceve
-     * la push "Scadenza pagata". L'app poi ri-regola i promemoria locali.
-     */
-    async paga(
-      filePath: string,
-      pagata: boolean,
-    ): Promise<{ ok: boolean; pagata: boolean; pagataDa?: string | null; pagataIl?: string | null }> {
-      return apiFetch('/api/documenti/scadenza/paga', {
-        method: 'POST',
-        body: JSON.stringify({ filePath, pagata }),
-      });
-    },
   },
 
   ricerca: {

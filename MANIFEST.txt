@@ -1,0 +1,10 @@
+PACCHETTO: seconda sveglia promemoria scadenze (GitHub Actions)
+CONTENUTO: .github/workflows/scadenze-daily.yml
+DOVE VA: dentro il repo mobile C:\dev\portale-pfc-rn (espandi lo zip lì dentro)
+COSA FA: ogni giorno alle 08:05 ora italiana (e su richiesta manuale dal tab
+Actions) bussa al portale a /api/scadenze/check con il secret CRON_SECRET.
+Il portale risponde ok:true se il controllo e' andato a buon fine.
+ANTIDOPPIONI: la sveglia Vercel delle 08:00 consegna tutto; questa sveglia
+trova gia' tutto consegnato e non invia nessun messaggio doppio.
+REQUISITO: secret CRON_SECRET su GitHub (Settings > Secrets and variables >
+Actions) con lo stesso valore della variabile CRON_SECRET su Vercel.

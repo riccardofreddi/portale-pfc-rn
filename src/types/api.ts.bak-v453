@@ -24,22 +24,6 @@ export interface FileItem {
   lastModified: Date | null;
   stato?: StatoFile;
   isPreferito?: boolean;
-  /** v4.55: scadenza impostata dallo studio su questo documento (se esiste).
-   * Arriva da /api/documenti/list insieme al resto della riga. */
-  scadenza?: ScadenzaDocumento | null;
-}
-
-/** v4.55: la scadenza di un documento, vista dal cliente. */
-export interface ScadenzaDocumento {
-  id: string;
-  titolo: string;
-  /** Data ISO di scadenza (mezzanotte UTC del giorno, = 02:00 ora italiana). */
-  dataScadenza: string;
-  anticipoGiorni: number;
-  pagata: boolean;
-  /** v4.60 del server: chi ha segnato il pagamento e quando (se presente). */
-  pagataDa?: string | null;
-  pagataIl?: string | null;
 }
 
 export interface Cartella {

@@ -108,6 +108,7 @@ function moduliNativiPresenti(): boolean {
 
 let gestorePronto = false;
 let permessoChiesto = false;
+let categoriaPronta = false;
 
 /** Carica il modulo solo se i pezzi nativi ci sono tutti; null altrimenti. */
 async function caricaModulo(): Promise<ModuloNotifiche | null> {
@@ -181,6 +182,36 @@ export async function preparaNotifiche(): Promise<boolean> {
       description: 'Nuovi documenti, messaggi e scadenze dello studio',
       importance: Notifications.AndroidImportance.HIGH,
     });
+
+    // v4.54: categoria degli avvisi CON PULSANTI, come sulla web app
+    // ("Apri" e "Segna come letto"). La categoria si registra UNA volta:
+    // le notifiche la citano con categoryIdentifier (mostraAvvisoLocale)
+    // e Android disegna i due pulsanti sotto il testo dell'avviso.
+    // Il tocco del corpo dell'avviso resta quello di sempre: apre l'app
+    // sul documento/messaggio giusto (deep-link di sulToccoNotifica).
+    if (!categoriaPronta) {
+      try {
+        await Notifications.setNotificationCategoryAsync('pfc-avviso', [
+          {
+            identifier: 'apri',
+            buttonTitle: 'Apri',
+            options: { opensAppToForeground: true },
+          },
+          {
+            identifier: 'segna_lette',
+            buttonTitle: 'Segna come letto',
+            // NON porta l'app davanti: l'avviso locale nasce solo a app
+            // APERTA, quindi l'azione arriva al listener in silenzio (l'app
+            // e' gia' in mano al cliente). Il lavoro vero lo fa push.ts.
+            options: { opensAppToForeground: false },
+          },
+        ]);
+        categoriaPronta = true;
+      } catch {
+        // Categoria non disponibile: le notifiche restano senza pulsanti,
+        // tutto il resto funziona come prima (tocco = deep-link).
+      }
+    }
     return true;
   } catch {
     // Dev client senza i moduli nativi (ricostruzione non ancora fatta).
@@ -226,7 +257,15 @@ export async function mostraAvvisoLocale(
     const Notifications = await caricaModulo();
     if (!Notifications) return false;
     await Notifications.scheduleNotificationAsync({
-      content: { title: titolo, body: corpo, data: dati ?? {} },
+      // v4.54: categoryIdentifier aggancia la categoria "pfc-avviso"
+      // (i pulsanti "Apri" e "Segna come letto"). Se la categoria non
+      // fosse registrata, Android semplicemente non disegna i pulsanti.
+      content: {
+        title: titolo,
+        body: corpo,
+        data: dati ?? {},
+        categoryIdentifier: 'pfc-avviso',
+      },
       // v4.2: SUBITO. La libreria non permette il canale nelle richieste
       // immediate, ma le manda nel suo canale di riserva che e' gia'
       // IMPORTANCE_HIGH (popup, vibrazione, badge: verificato nel sorgente
@@ -249,7 +288,10 @@ export async function mostraAvvisoLocale(
  * (pezzi nativi mancanti) non ascolta nulla e non rompe niente.
  */
 export function sulToccoNotifica(
-  cb: (dati: Record<string, unknown>) => void,
+  // v4.54: cb riceve anche azione (identificativo del PULSANTE toccato:
+  // 'apri', 'segna_lette', o il default del tocco sul corpo) e l'id della
+  // notifica (per toglierla dalla barra di stato, es. dopo "Segna come letto").
+  cb: (dati: Record<string, unknown>, azione?: string, notifId?: string) => void,
 ): () => void {
   let stacca: (() => void) | null = null;
   caricaModulo()
@@ -258,7 +300,11 @@ export function sulToccoNotifica(
       const sub = Notifications.addNotificationResponseReceivedListener(
         (response) => {
           const dati = response.notification.request.content.data ?? {};
-          cb(dati as Record<string, unknown>);
+          cb(
+            dati as Record<string, unknown>,
+            response.actionIdentifier,
+            response.notification.request.identifier,
+          );
         },
       );
       stacca = () => sub.remove();
@@ -268,7 +314,11 @@ export function sulToccoNotifica(
         .then((response) => {
           if (!response) return;
           const dati = response.notification.request.content.data ?? {};
-          cb(dati as Record<string, unknown>);
+          cb(
+            dati as Record<string, unknown>,
+            response.actionIdentifier,
+            response.notification.request.identifier,
+          );
         })
         .catch(() => {});
     })
@@ -276,4 +326,22 @@ export function sulToccoNotifica(
   return () => {
     if (stacca) stacca();
   };
+}
+
+/**
+ * v4.54: toglie dalla barra di stato la notifica con questo id. Serve al
+ * pulsante "Segna come letto": la notifica sparisce subito, come sul web
+ * (dove il service worker la chiude dopo l'azione). Silenziosa: se le
+ * notifiche non sono attive non fa nulla e non rompe niente.
+ */
+export async function togliNotifica(id: string): Promise<boolean> {
+  try {
+    if (!id) return false;
+    const Notifications = await caricaModulo();
+    if (!Notifications) return false;
+    await Notifications.dismissNotificationAsync(id);
+    return true;
+  } catch {
+    return false;
+  }
 }

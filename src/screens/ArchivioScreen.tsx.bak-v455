@@ -1,13 +1,9 @@
 /**
  * Schermata Archivio — grafica replicata dall'app Android v4 (v4.18).
  *
- * Novità v4.56 (etichetta più chiara):
- * - La targhetta della scadenza diventa "⏰ SCADENZA gg/mm" (prima
- *   era "⏰ SCADE gg/mm"). Nessun'altra modifica.
- *
  * Novità v4.55 (la scadenza si vede e si paga dall'archivio):
  * - La riga del documento con una scadenza impostata dallo studio mostra
- *   la targhetta: "⏰ SCADENZA gg/mm" (ambra se nel periodo di preavviso,
+ *   la targhetta: "⏰ SCADE gg/mm" (ambra se nel periodo di preavviso,
  *   neutra oltre), "⏰ SCADE OGGI" / "⏰ SCADUTA gg/mm" (rosso) e
  *   "✓ PAGATA" (verde). I giorni si calcolano come sul server.
  * - Nuova azione rapida sulla riga: la spunta (accanto a stellina e
@@ -563,7 +559,7 @@ function etichettaScadenza(s: ScadenzaDocumento): { label: string; variant: 'dan
     return { label: '⏰ SCADE OGGI', variant: 'danger' };
   }
   return {
-    label: `⏰ SCADENZA ${dataTxt}`,
+    label: `⏰ SCADE ${dataTxt}`,
     variant: giorni <= s.anticipoGiorni ? 'warning' : 'neutral',
   };
 }

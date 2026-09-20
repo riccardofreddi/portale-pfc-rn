@@ -1,47 +1,6 @@
 /**
  * Schermata Messaggi.
  *
- * v4.50 — il "Nuovo" decide il titolare, non il rientro nella tab:
- * - la fotografia dei NUOVI NON si azzera piu' uscendo e rientrando nella
- *   tab (prima il titolare: "sono dovuto andare in una altra tab e rientrare
- *   per vedere che era letto"): la targhetta "Nuovo" e la pillola oro con
- *   il contatore restano finche' l'utente non preme la pillola oro
- *   "Segna tutti letti";
- * - "quando rispondi togli nuovo": caricata la risposta, la targhetta
- *   "Nuovo" sparisce da quella scheda (vince il verde "Documento Inviato")
- *   ed esce dal contatore della pillola oro;
- * - igiene della fotografia a ogni caricamento: escono da chi e' stato
- *   risposto o archiviato, cosi' il contatore non conta mai messaggi
- *   gia' chiusi;
- * - Logica INTATTA: segna-letti automatico all'ingresso (il pallino rosso
- *   del tab si spegne sempre, come da v4.5), archiviazione, push, refresh.
- *
- * v4.49 — la tab prende la firma dell'app e i pulsanti si VEDONO (richieste
- * del titolare: "deve essere sempre visibile carica la risposta e archivio
- * perché non si capisce che bisogna cliccare sopra il messaggio" + "quando è
- * nuovo è troppo scuro" + "sarebbe opportuno una piccola intestazione come
- * in cassetto e registro attività"):
- * - INTESTAZIONE piccola come nelle altre schede: hero blu notte con
- *   gradiente a 3 fermate (stesso del Cassetto, Archivio e Registro),
- *   scatola icona oro con la bolla di chat, scritta oro "MESSAGGI" e
- *   titolo bianco "Posta riservata" (idea del titolare, al posto di
- *   "Comunicazioni dallo Studio" che duplicava la striscia oro della home);
- *   costruito ESATTAMENTE come l'hero del Cassetto: disegno esatto senza
- *   sbordi e nessuna animazione sulla scheda (la lezione della riga
- *   nera dell'Archivio, applicata prima che nasca un problema);
- * - messaggio NUOVO meno SCURO: il tondo dell'icona da navy PIENO
- *   (quasi nero) va a TINTA navy soft con la lettera navy — la stessa
- *   lingua delle icone verde/ambra. La distinzione nuovo/letto resta
- *   netta: fondo della scheda tinto, titolo in grassetto, pillola
- *   rossa "Nuovo", lettera navy contro lettera oro dei letti;
- * - "Carica la risposta" e "Archivia/Ripristina" sono SEMPRE visibili
- *   sotto ogni messaggio (prima si scoprivano solo al tocco): niente
- *   più azioni nascoste. Il tocco sulla testata ora serve solo ad
- *   aprire/chiudere il testo; l'iconcina archivia in alto a destra esce
- *   (doppione: il pulsante sotto è sempre lì);
- * - Logica INTATTA: caricamento, fotografia NUOVI, segna-letti,
- *   archiviazione, upload risposta, push, pull-to-refresh.
- *
  * v4.11 — grafica replicata dall'app Android v4 (MessaggiScreen.kt):
  * - Schede "Messaggi Attivi / Archiviati" in stile TabRow: indicatore
  *   navy da 3px sotto la scheda attiva e bollino rosso dei non letti.
@@ -160,7 +119,6 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import Constants from 'expo-constants';
 import { Ionicons } from '@expo/vector-icons';
-import Svg, { Defs, Rect, LinearGradient, Stop } from 'react-native-svg';
 import DocumentPicker, { types } from 'react-native-document-picker';
 import { EmptyState } from '@/components/EmptyState';
 import { SkeletonList } from '@/components/Skeleton';
@@ -172,20 +130,12 @@ import { useAppStore } from '@/store/auth';
 import type { Messaggio } from '@/types/api';
 import { shadow, spacing, typography, useColors, type ThemeColors } from '@/theme';
 
-// v4.49: colori firma del brand per l'hero dell'intestazione (validi in
-// entrambi i temi, come nel Cassetto, Archivio e Registro: stesso hero =
-// chiaramente la stessa app).
-const NAVY_NOTTE = '#0A1128';
-const NAVY_PRIMARIO = '#003566';
-const ORO = '#D4AF37';
-const ORO_CHIARO = '#F7E7B4';
-
-// v4.52: sigillo dell'INTERFACCIA (parte JS): cambia a ogni release e viaggia
-// col codice, non col build. Nella tacca si legge "v1.43.0 - js455": se vedi
-// js455 il codice nuovo sta girando davvero; se leggi js453 il Metro sta
+// v4.47: sigillo dell'INTERFACCIA (parte JS): cambia a ogni release e viaggia
+// col codice, non col build. Nella tacca si legge "v1.43.0 - js447": se vedi
+// js447 il codice nuovo sta girando davvero; se leggi js446 il Metro sta
 // servendo ancora il codice di prima (ricarica con r) o la build non si e'
 // aggiornata.
-const CODICE_INTERFACCIA = 456;
+const CODICE_INTERFACCIA = 447;
 
 type Tab = 'attivi' | 'archiviati';
 
@@ -368,10 +318,6 @@ export default function MessaggiScreen() {
   const [uploadingId, setUploadingId] = useState<string | null>(null);
   // v4.24: la "fotografia" dei NUOVI presa all'apertura della tab (come la
   // Bacheca): il segna-letti automatico non spegne piu' le novita' a schermo.
-  // v4.50: la fotografia NON si azzera piu' rientrando nella tab (la
-  // schermata e' una tab screen e resta montata: lo stato sopravvive al
-  // cambio tab). Il "Nuovo" si spegne SOLO con la pillola oro oppure
-  // rispondendo al messaggio: decide il titolare, non il rientro.
   const [nuoviIds, setNuoviIds] = useState<string[]>([]);
 
   const load = useCallback(
@@ -390,18 +336,10 @@ export default function MessaggiScreen() {
         // v4.24: chi e' non letto entra nella fotografia dei NUOVI
         // (merge: un messaggio appena arrivato mentre guardi la tab
         // si aggiunge a quelli fotografati all'apertura).
-        // v4.50: igiene della fotografia: chi nel frattempo e' stato
-        // risposto (haRisposta) o archiviato ESCE dalla fotografia, cosi'
-        // il "Nuovo" e il contatore della pillola oro non contano mai
-        // messaggi gia' chiusi.
         const nuoviAdesso = res.messaggi.filter((m) => !m.letto && !m.archiviato);
-        const ancoraValidi = new Set(
-          res.messaggi.filter((m) => !m.archiviato && !m.haRisposta).map((m) => m.id),
-        );
-        setNuoviIds((prev) => {
-          const uniti = new Set([...prev, ...nuoviAdesso.map((m) => m.id)]);
-          return Array.from(uniti).filter((id) => ancoraValidi.has(id));
-        });
+        if (nuoviAdesso.length > 0) {
+          setNuoviIds((prev) => Array.from(new Set([...prev, ...nuoviAdesso.map((m) => m.id)])));
+        }
       } catch (err) {
         toast.error('Errore caricamento', err instanceof Error ? err.message : 'Errore caricamento messaggi');
       } finally {
@@ -433,11 +371,11 @@ export default function MessaggiScreen() {
   // (li sta guardando apposta) => niente rosso che resta appeso.
   useEffect(() => {
     if (clienteTab !== 'messaggi') return;
-    // v4.24: prima carichiamo (cosi' vediamo chi era non letto), POI
-    // segniamo tutto letto: il pallino rosso del tab si pulisce.
-    // v4.50: la fotografia dei NUOVI NON viene piu' azzerata qui: uscire e
-    // rientrare nella tab non spegne piu' il "Nuovo". La targhetta si spegne
-    // SOLO con la pillola oro "Segna tutti letti" o rispondendo al messaggio.
+    // v4.24: nuova fotografia a ogni apertura della tab (come la Bacheca):
+    // prima carichiamo (cosi' vediamo chi era non letto), POI segniamo
+    // tutto letto: il pallino rosso del tab si pulisce, ma i "Nuovo"
+    // restano a schermo finche' l'utente non li chiude con la pillola oro.
+    setNuoviIds([]);
     (async () => {
       await load();
       await segnaLettiSilenzioso();
@@ -531,10 +469,6 @@ export default function MessaggiScreen() {
       fd.append('msgId', msg.id);
       await api.risposte.upload(fd);
       setMessaggi((prev) => prev.map((m) => (m.id === msg.id ? { ...m, haRisposta: true } : m)));
-      // v4.50: "quando rispondi togli nuovo": risposto = la targhetta
-      // "Nuovo" sparisce da quella scheda ed esce dal contatore
-      // della pillola oro (vince il verde "Documento Inviato").
-      setNuoviIds((prev) => prev.filter((id) => id !== msg.id));
       toast.success('File inviato con successo');
     } catch (err) {
       if (DocumentPicker.isCancel(err)) return;
@@ -552,12 +486,8 @@ export default function MessaggiScreen() {
     //   navy   = nuovo, da leggere
     //   ambra  = richiesta documento da sistemare (prima c'era la nuvola)
     //   oro    = letto e archiviato nella memoria
-    // v4.49: il NUOVO non e' piu' un tondo navy PIENO (il titolare: "quando
-    // e' nuovo e' troppo scuro"): tinta navy soft + lettera navy, la stessa
-    // lingua soft di verde/ambra. Resta ben distinto dal letto (oro) e
-    // reggono la segnalazione fondo tinto + titolo grassetto + pill rossa.
     if (msg.haRisposta) return { icon: 'checkmark-circle', color: colors.success, bg: `${colors.success}26` };
-    if (eNuovo) return { icon: 'mail-unread-outline', color: colors.primary, bg: `${colors.primary}1A` };
+    if (eNuovo) return { icon: 'mail-unread-outline', color: '#FFFFFF', bg: colors.primary };
     // v4.27: richiesta documento = busta AMBRA (via la nuvola)
     if (msg.richiedeUpload) return { icon: 'mail-unread-outline', color: colors.warning, bg: `${colors.warning}26` };
     // v4.25: i messaggi letti prendono la tinta ORO della Bacheca (era grigio)
@@ -566,36 +496,6 @@ export default function MessaggiScreen() {
 
   return (
     <SafeAreaView style={styles.safe} edges={['top']}>
-      {/* v4.49: intestazione piccola come nel Cassetto e nel Registro attività
-       * (richiesta del titolare): STESSA costruzione dell'hero del Cassetto —
-       * gradiente a 3 fermate, disegno esatto senza sbordi, NESSUNA animazione
-       * sulla scheda (la lezione della riga nera dell'Archivio). Scritta oro
-       * "MESSAGGI" e titolo "Posta riservata" scelto dal titolare (via il
-       * doppione con "Comunicazioni dello Studio" della home). */}
-      <View style={styles.heroWrap}>
-        <View style={styles.heroCard}>
-          <Svg style={StyleSheet.absoluteFill}>
-            <Defs>
-              <LinearGradient id="messaggiHero" x1="0" y1="0" x2="1" y2="0">
-                <Stop offset="0" stopColor={NAVY_NOTTE} />
-                <Stop offset="0.5" stopColor={NAVY_PRIMARIO} />
-                <Stop offset="1" stopColor={NAVY_NOTTE} />
-              </LinearGradient>
-            </Defs>
-            <Rect width="100%" height="100%" fill="url(#messaggiHero)" />
-          </Svg>
-          <View style={styles.heroInner}>
-            <View style={styles.heroIconBox}>
-              <Ionicons name="chatbubble-ellipses-outline" size={24} color={ORO} />
-            </View>
-            <View style={styles.heroTexts}>
-              <Text style={styles.heroOverline}>MESSAGGI</Text>
-              <Text style={styles.heroTitle}>Posta riservata</Text>
-            </View>
-          </View>
-        </View>
-      </View>
-
       {/* v4.25: schede Attivi/Archiviati a segment control a pillola
           (stesso linguaggio dei chip degli anni nell'Archivio v4.12) */}
       <View style={styles.tabsWrap}>
@@ -680,12 +580,9 @@ export default function MessaggiScreen() {
         renderItem={({ item: msg, index }) => {
           const expanded = expandedId === msg.id;
           // v4.24: "Nuovo" = non letto ORA oppure era nella fotografia
-          // (il segna-letti automatico non spegne la segnalazione finche'
-          // l'utente non la chiude).
-          // v4.50: chi ha gia' una risposta non puo' essere "Nuovo" anche se
-          // resta in fotografia (doppio stato): vince il verde "inviato".
-          const eNuovo =
-            !msg.archiviato && !msg.haRisposta && (!msg.letto || nuoviIds.includes(msg.id));
+          // presa all'apertura della tab (il segna-letti automatico
+          // non spegne la segnalazione finche' l'utente non la chiude).
+          const eNuovo = !msg.archiviato && (!msg.letto || nuoviIds.includes(msg.id));
           const ic = iconaStato(msg, eNuovo);
           // v4.26: il corpo mostrato non ripete il titolo (via il doppione)
           const corpoMostrato = pulisciCorpo(msg.corpo, msg.titolo);
@@ -693,8 +590,7 @@ export default function MessaggiScreen() {
             <Entrata delay={Math.min(60 + index * 50, 400)}>
               <View style={[styles.msgCard, eNuovo && styles.msgCardUnread]}>
                 <View style={styles.msgInner}>
-                  {/* Testata: icona stato + STUDIO PFC + titolo + data (v4.40);
-                   * v4.49: il tocco ora serve SOLO ad aprire/chiudere il testo */}
+                  {/* Testata: icona stato + STUDIO PFC + titolo + data (v4.40) + archivia */}
                   <Pressable
                     onPress={() => {
                       haptics.tap();
@@ -719,11 +615,7 @@ export default function MessaggiScreen() {
                     </View>
                     <View style={styles.headerActions}>
                       {/* v4.28: freccina che indica l'apertura (il tocco sulla
-                       * testata apre il testo sotto): giu' = chiusa, su = aperta.
-                       * v4.49: l'iconcina archivia esce dalla capsula (era il
-                       * doppione del pulsante "Archivia" che ora sta SEMPRE
-                       * visibile sotto ogni messaggio): la capsula resta con la
-                       * sola freccia e il titolo respira. */}
+                       * testata apre il testo sotto): giu' = chiusa, su = aperta */}
                       <View style={styles.chevWrap}>
                         <Ionicons
                           name={expanded ? 'chevron-up' : 'chevron-down'}
@@ -731,6 +623,17 @@ export default function MessaggiScreen() {
                           color={colors.textTertiary}
                         />
                       </View>
+                      <Pressable
+                        onPress={() => (msg.archiviato ? handleDearchivia(msg.id) : handleArchivia(msg.id))}
+                        style={({ pressed }) => [styles.iconAction, pressed && { opacity: 0.6 }]}
+                        accessibilityLabel={msg.archiviato ? 'Ripristina messaggio' : 'Archivia messaggio'}
+                      >
+                        <Ionicons
+                          name={msg.archiviato ? 'arrow-undo-outline' : 'archive-outline'}
+                          size={18}
+                          color={colors.textSecondary}
+                        />
+                      </Pressable>
                     </View>
                   </Pressable>
 
@@ -760,9 +663,7 @@ export default function MessaggiScreen() {
                    * niente piu' corpo sempre visibile tagliato a 4 righe con il
                    * "Leggi tutto" che allunga la scheda in posto. La scheda
                    * chiusa resta compatta; aperta mostra TUTTO il messaggio.
-                   * v4.19: i siti internet nel testo sono cliccabili (linkify).
-                   * v4.49: dentro il blocco restano SOLO testo e allegato —
-                   * le azioni escono e si vedono sempre, sotto. */}
+                   * v4.19: i siti internet nel testo sono cliccabili (linkify). */}
                   {expanded && (
                     <>
                       {/* v4.36: se il corpo pulito e' VUOTO (era identico al
@@ -785,50 +686,43 @@ export default function MessaggiScreen() {
                           </Text>
                         </View>
                       ) : null}
+
+                      {/* Azioni: invio file + archivia/ripristina */}
+                      <View style={styles.actionsWrap}>
+                        {msg.richiedeUpload && !msg.haRisposta && (
+                          <Pressable
+                            onPress={() => handleUpload(msg)}
+                            disabled={uploadingId === msg.id}
+                            style={({ pressed }) => [
+                              styles.uploadBtn,
+                              pressed && styles.btnPressed,
+                              uploadingId === msg.id && styles.btnDisabled,
+                            ]}
+                            accessibilityLabel="Carica la risposta"
+                          >
+                            <Ionicons name="cloud-upload-outline" size={18} color={colors.textInverse} />
+                            <Text style={styles.uploadBtnText}>
+                              {uploadingId === msg.id ? 'Invio in corso…' : 'Carica la risposta'}
+                            </Text>
+                          </Pressable>
+                        )}
+                        <Pressable
+                          onPress={() => (tab === 'attivi' ? handleArchivia(msg.id) : handleDearchivia(msg.id))}
+                          style={({ pressed }) => [styles.outlineBtn, pressed && styles.btnPressed]}
+                          accessibilityLabel={tab === 'attivi' ? 'Archivia messaggio' : 'Ripristina messaggio'}
+                        >
+                          <Ionicons
+                            name={tab === 'attivi' ? 'archive-outline' : 'arrow-undo-outline'}
+                            size={15}
+                            color={colors.textSecondary}
+                          />
+                          <Text style={styles.outlineBtnText}>
+                            {tab === 'attivi' ? 'Archivia' : 'Ripristina'}
+                          </Text>
+                        </Pressable>
+                      </View>
                     </>
                   )}
-
-                  {/* v4.49: AZIONI SEMPRE VISIBILI (richiesta del titolare:
-                   * "deve essere sempre visibile carica la risposta e archivio
-                   * perché non si capisce che bisogna cliccare sopra il
-                   * messaggio"). Prima stavano dentro il blocco del tocco e
-                   * si scoprivano solo aprendo la scheda. Logica invariata:
-                   * "Carica la risposta" compare solo sulle richieste
-                   * documento senza risposta; "Archivia/Ripristina" segue il
-                   * tab attivo. */}
-                  <View style={styles.actionsWrap}>
-                    {msg.richiedeUpload && !msg.haRisposta && (
-                      <Pressable
-                        onPress={() => handleUpload(msg)}
-                        disabled={uploadingId === msg.id}
-                        style={({ pressed }) => [
-                          styles.uploadBtn,
-                          pressed && styles.btnPressed,
-                          uploadingId === msg.id && styles.btnDisabled,
-                        ]}
-                        accessibilityLabel="Carica la risposta"
-                      >
-                        <Ionicons name="cloud-upload-outline" size={18} color={colors.textInverse} />
-                        <Text style={styles.uploadBtnText}>
-                          {uploadingId === msg.id ? 'Invio in corso…' : 'Carica la risposta'}
-                        </Text>
-                      </Pressable>
-                    )}
-                    <Pressable
-                      onPress={() => (tab === 'attivi' ? handleArchivia(msg.id) : handleDearchivia(msg.id))}
-                      style={({ pressed }) => [styles.outlineBtn, pressed && styles.btnPressed]}
-                      accessibilityLabel={tab === 'attivi' ? 'Archivia messaggio' : 'Ripristina messaggio'}
-                    >
-                      <Ionicons
-                        name={tab === 'attivi' ? 'archive-outline' : 'arrow-undo-outline'}
-                        size={15}
-                        color={colors.textSecondary}
-                      />
-                      <Text style={styles.outlineBtnText}>
-                        {tab === 'attivi' ? 'Archivia' : 'Ripristina'}
-                      </Text>
-                    </Pressable>
-                  </View>
                 </View>
               </View>
             </Entrata>
@@ -887,19 +781,6 @@ const makeStyles = (colors: ThemeColors) =>
     // v4.29: tacca di versione: piccola, discreta, sempre veritiera (letta dalla config)
     versioneTag: { textAlign: 'center', fontSize: 11, color: colors.textTertiary, paddingBottom: spacing.xs, letterSpacing: 0.3 },
 
-    // v4.49 — Hero dell'intestazione: STESSA firma di Cassetto (vaultHero),
-    // Archivio (heroNavy) e Registro attività (heroCard): angoli 22, bordo
-    // oro 0.4, fondo blu notte, gradiente a 3 fermate, scatola icona oro.
-    // Stessa costruzione del Cassetto: disegno ESATTO senza sbordi e nessuna
-    // animazione sulla scheda (lezione della riga nera dell'Archivio).
-    heroWrap: { paddingHorizontal: spacing.lg, paddingTop: spacing.md },
-    heroCard: { borderRadius: 22, overflow: 'hidden', borderWidth: 1, borderColor: 'rgba(212, 175, 55, 0.4)', backgroundColor: NAVY_NOTTE, ...shadow.md },
-    heroInner: { flexDirection: 'row', alignItems: 'center', gap: 14, padding: 18 },
-    heroIconBox: { width: 48, height: 48, borderRadius: 14, backgroundColor: 'rgba(212, 175, 55, 0.15)', borderWidth: 1, borderColor: 'rgba(212, 175, 55, 0.5)', alignItems: 'center', justifyContent: 'center' },
-    heroTexts: { flex: 1 },
-    heroOverline: { color: ORO_CHIARO, fontWeight: '900', fontSize: 10, letterSpacing: 0.8 },
-    heroTitle: { color: '#FFFFFF', fontWeight: '700', fontSize: 16, marginTop: 2 },
-
     // Card messaggio (v4.11, stile MessaggioCard dell'app v4)
     // v4.28: VIA l'ombra (era shadow.md): l'elevation Android unita
     // all'animazione d'ingresso disegnava il contorno grigio storto che
@@ -923,9 +804,7 @@ const makeStyles = (colors: ThemeColors) =>
     msgDate: { ...typography.caption, color: colors.textTertiary, marginTop: 1 },
     msgTitle: { ...typography.body, color: colors.textPrimary, fontWeight: '500', fontSize: 15.5 },
     msgTitleUnread: { fontWeight: '800' },
-    // v4.49: l'iconAction (archivia nella capsula) e' STATO RIMOSSO: il
-    // pulsante "Archivia/Ripristina" ora sta sempre visibile sotto ogni
-    // messaggio e la capsula in alto porta solo la freccia d'apertura.
+    iconAction: { width: 32, height: 32, borderRadius: 10, alignItems: 'center', justifyContent: 'center' },
     // v4.28: freccina d'apertura accanto all'archivio
     // v4.40: le due icone in una capsula morbida = UN gruppo netto e
     // staccato dal testo; marginTop 4 la centra contro l'icona tonda da

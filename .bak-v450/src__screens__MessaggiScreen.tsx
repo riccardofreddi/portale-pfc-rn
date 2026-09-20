@@ -1,21 +1,6 @@
 /**
  * Schermata Messaggi.
  *
- * v4.50 — il "Nuovo" decide il titolare, non il rientro nella tab:
- * - la fotografia dei NUOVI NON si azzera piu' uscendo e rientrando nella
- *   tab (prima il titolare: "sono dovuto andare in una altra tab e rientrare
- *   per vedere che era letto"): la targhetta "Nuovo" e la pillola oro con
- *   il contatore restano finche' l'utente non preme la pillola oro
- *   "Segna tutti letti";
- * - "quando rispondi togli nuovo": caricata la risposta, la targhetta
- *   "Nuovo" sparisce da quella scheda (vince il verde "Documento Inviato")
- *   ed esce dal contatore della pillola oro;
- * - igiene della fotografia a ogni caricamento: escono da chi e' stato
- *   risposto o archiviato, cosi' il contatore non conta mai messaggi
- *   gia' chiusi;
- * - Logica INTATTA: segna-letti automatico all'ingresso (il pallino rosso
- *   del tab si spegne sempre, come da v4.5), archiviazione, push, refresh.
- *
  * v4.49 — la tab prende la firma dell'app e i pulsanti si VEDONO (richieste
  * del titolare: "deve essere sempre visibile carica la risposta e archivio
  * perché non si capisce che bisogna cliccare sopra il messaggio" + "quando è
@@ -180,12 +165,12 @@ const NAVY_PRIMARIO = '#003566';
 const ORO = '#D4AF37';
 const ORO_CHIARO = '#F7E7B4';
 
-// v4.52: sigillo dell'INTERFACCIA (parte JS): cambia a ogni release e viaggia
-// col codice, non col build. Nella tacca si legge "v1.43.0 - js455": se vedi
-// js455 il codice nuovo sta girando davvero; se leggi js453 il Metro sta
+// v4.49: sigillo dell'INTERFACCIA (parte JS): cambia a ogni release e viaggia
+// col codice, non col build. Nella tacca si legge "v1.43.0 - js449": se vedi
+// js449 il codice nuovo sta girando davvero; se leggi js448 il Metro sta
 // servendo ancora il codice di prima (ricarica con r) o la build non si e'
 // aggiornata.
-const CODICE_INTERFACCIA = 456;
+const CODICE_INTERFACCIA = 449;
 
 type Tab = 'attivi' | 'archiviati';
 
@@ -368,10 +353,6 @@ export default function MessaggiScreen() {
   const [uploadingId, setUploadingId] = useState<string | null>(null);
   // v4.24: la "fotografia" dei NUOVI presa all'apertura della tab (come la
   // Bacheca): il segna-letti automatico non spegne piu' le novita' a schermo.
-  // v4.50: la fotografia NON si azzera piu' rientrando nella tab (la
-  // schermata e' una tab screen e resta montata: lo stato sopravvive al
-  // cambio tab). Il "Nuovo" si spegne SOLO con la pillola oro oppure
-  // rispondendo al messaggio: decide il titolare, non il rientro.
   const [nuoviIds, setNuoviIds] = useState<string[]>([]);
 
   const load = useCallback(
@@ -390,18 +371,10 @@ export default function MessaggiScreen() {
         // v4.24: chi e' non letto entra nella fotografia dei NUOVI
         // (merge: un messaggio appena arrivato mentre guardi la tab
         // si aggiunge a quelli fotografati all'apertura).
-        // v4.50: igiene della fotografia: chi nel frattempo e' stato
-        // risposto (haRisposta) o archiviato ESCE dalla fotografia, cosi'
-        // il "Nuovo" e il contatore della pillola oro non contano mai
-        // messaggi gia' chiusi.
         const nuoviAdesso = res.messaggi.filter((m) => !m.letto && !m.archiviato);
-        const ancoraValidi = new Set(
-          res.messaggi.filter((m) => !m.archiviato && !m.haRisposta).map((m) => m.id),
-        );
-        setNuoviIds((prev) => {
-          const uniti = new Set([...prev, ...nuoviAdesso.map((m) => m.id)]);
-          return Array.from(uniti).filter((id) => ancoraValidi.has(id));
-        });
+        if (nuoviAdesso.length > 0) {
+          setNuoviIds((prev) => Array.from(new Set([...prev, ...nuoviAdesso.map((m) => m.id)])));
+        }
       } catch (err) {
         toast.error('Errore caricamento', err instanceof Error ? err.message : 'Errore caricamento messaggi');
       } finally {
@@ -433,11 +406,11 @@ export default function MessaggiScreen() {
   // (li sta guardando apposta) => niente rosso che resta appeso.
   useEffect(() => {
     if (clienteTab !== 'messaggi') return;
-    // v4.24: prima carichiamo (cosi' vediamo chi era non letto), POI
-    // segniamo tutto letto: il pallino rosso del tab si pulisce.
-    // v4.50: la fotografia dei NUOVI NON viene piu' azzerata qui: uscire e
-    // rientrare nella tab non spegne piu' il "Nuovo". La targhetta si spegne
-    // SOLO con la pillola oro "Segna tutti letti" o rispondendo al messaggio.
+    // v4.24: nuova fotografia a ogni apertura della tab (come la Bacheca):
+    // prima carichiamo (cosi' vediamo chi era non letto), POI segniamo
+    // tutto letto: il pallino rosso del tab si pulisce, ma i "Nuovo"
+    // restano a schermo finche' l'utente non li chiude con la pillola oro.
+    setNuoviIds([]);
     (async () => {
       await load();
       await segnaLettiSilenzioso();
@@ -531,10 +504,6 @@ export default function MessaggiScreen() {
       fd.append('msgId', msg.id);
       await api.risposte.upload(fd);
       setMessaggi((prev) => prev.map((m) => (m.id === msg.id ? { ...m, haRisposta: true } : m)));
-      // v4.50: "quando rispondi togli nuovo": risposto = la targhetta
-      // "Nuovo" sparisce da quella scheda ed esce dal contatore
-      // della pillola oro (vince il verde "Documento Inviato").
-      setNuoviIds((prev) => prev.filter((id) => id !== msg.id));
       toast.success('File inviato con successo');
     } catch (err) {
       if (DocumentPicker.isCancel(err)) return;
@@ -680,12 +649,9 @@ export default function MessaggiScreen() {
         renderItem={({ item: msg, index }) => {
           const expanded = expandedId === msg.id;
           // v4.24: "Nuovo" = non letto ORA oppure era nella fotografia
-          // (il segna-letti automatico non spegne la segnalazione finche'
-          // l'utente non la chiude).
-          // v4.50: chi ha gia' una risposta non puo' essere "Nuovo" anche se
-          // resta in fotografia (doppio stato): vince il verde "inviato".
-          const eNuovo =
-            !msg.archiviato && !msg.haRisposta && (!msg.letto || nuoviIds.includes(msg.id));
+          // presa all'apertura della tab (il segna-letti automatico
+          // non spegne la segnalazione finche' l'utente non la chiude).
+          const eNuovo = !msg.archiviato && (!msg.letto || nuoviIds.includes(msg.id));
           const ic = iconaStato(msg, eNuovo);
           // v4.26: il corpo mostrato non ripete il titolo (via il doppione)
           const corpoMostrato = pulisciCorpo(msg.corpo, msg.titolo);
