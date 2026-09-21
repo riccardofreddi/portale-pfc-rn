@@ -1,6 +1,74 @@
 /**
  * Schermata Archivio — grafica replicata dall'app Android v4 (v4.18).
  *
+ * Novità v4.63 (PAGATO sale nella riga dello stato — richiesta del
+ * titolare dopo la v4.62 sul telefono: "se segno pagato deve comparire
+ * pagato affianco a nuovo, visto scaricato, altrimenti c'è troppo
+ * spazio inutile"):
+ * - Scadenza pagata: la pillola verde "✓ PAGATO" NON sta più sola a
+ *   destra nella riga di sotto (riga mezzo vuota): sale nella riga
+ *   dello stato, subito dopo ● NUOVO / VISTO / ✓ SCARICATO.
+ * - La card pagata torna compatta: nome + una riga sola con stato e
+ *   PAGATO; la riga della scadenza sparisce del tutto.
+ * - "✓ PAGATO" resta un pulsante: toccalo per riattivare le notifiche
+ *   (conferma di sempre): tornano "⏰ SCADENZA" e "✓ SEGNA PAGATO".
+ * - Da pagare: identico alla v4.62 (⏰ SCADENZA a sinistra, ✓ SEGNA
+ *   PAGATO all'estrema destra). Ricerca, preferiti, selezione e
+ *   dettaglio: esattamente come prima.
+ *
+ * Novità v4.62 (righe badge separate — richiesta del titolare dopo la
+ * v4.61 vista sul telefono: "tutto troppo vicino e non si capisce bene"):
+ * - La riga badge unica è diventata DUE righe volontarie: sopra la riga
+ *   dello stato (● NUOVO / VISTO / ✓ SCARICATO + ★ PREFERITO), sotto la
+ *   riga della scadenza con "⏰ SCADENZA gg/mm" a sinistra e la pill
+ *   "✓ SEGNA PAGATO" spinta all'estrema destra (informazioni a sinistra,
+ *   azione a destra: si capisce subito chi è il pulsante).
+ * - Niente più a-capo a caso dentro la riga badge: ogni riga ha al
+ *   massimo due elementi e respira.
+ * - Scadenza pagata: pillola verde "✓ PAGATO" sola a destra (toccala per
+ *   riattivare le notifiche, conferma di sempre). File senza scadenza:
+ *   solo riga stato; senza stato né scadenza: nessuna riga extra.
+ * - Ricerca, preferiti, selezione, dettaglio: esattamente come prima.
+ *
+ * Novità v4.61 (SEGNA PAGATO affianco alla scadenza — richiesta del
+ * titolare dopo l'anteprima):
+ * - La riga del documento è una COLONNA: sopra icona + nome + azioni
+ *   (stellina e scarica come nei file senza scadenza: il cerchietto
+ *   ambra/verde della v4.60 è stato tolto), sotto la riga badge che ora
+ *   è a tutta larghezza (prima stava dentro la colonna del nome e le
+ *   targhette dovevano stare in ~170px).
+ * - Nella riga badge la pill "✓ SEGNA PAGATO" sta AFFIANCO a
+ *   "⏰ SCADENZA gg/mm", come chiesto: stessa conferma di sempre, ferma
+ *   le notifiche di quella scadenza. Quando paghi la pill diventa verde
+ *   piena "✓ PAGATO" al posto del badge "✓ PAGATA" e la tocchi per
+ *   riattivare le notifiche.
+ * - Il nome guadagna i pixel del cerchietto tolto: "F24_16032026 (1).pdf"
+ *   torna su una riga sola, niente più "f" orfana a capo.
+ * - File senza scadenza, ricerca, preferiti e modalità selezione:
+ *   esattamente come prima.
+ *
+ * Novità v4.60 (pulsante PAGATO compatto — v4.59 rifiutata dal titolare):
+ * - VIA la scritta "SEGNA PAGATO" nella riga: la targhetta era troppo
+ *   larga, stringeva il nome del file e impilava tutto in verticale.
+ * - Il pulsante torna COMPATTO come gli altri tasti (stesso ingombro di
+ *   stellina e scarica): cerchio PIENO ambra con spunta bianca = da
+ *   pagare, cerchio PIENO verde con spunta bianca = pagata. Si vede
+ *   subito che è un pulsante, ma la riga resta bassa e orizzontale.
+ * - Le PAROLE restano dove non rompono la riga: la targhetta sotto il
+ *   nome mostra "⏰ SCADENZA gg/mm" e, quando paghi, diventa verde
+ *   "✓ PAGATA". Stessa conferma di sempre, stessi effetti (ferma le
+ *   notifiche della scadenza, riga aggiornata subito).
+ *
+ * Novità v4.59 (l'archivio si legge meglio — richieste del titolare):
+ * - Il nome del file NON è più tagliato a una riga: lista, ricerca e
+ *   pannello preferiti lo mostrano su DUE righe; nel pannello dettaglio
+ *   il nome non ha più limite: si legge sempre tutto.
+ * - VIA la data di caricamento dal sottotitolo della riga (la v4.15 la
+ *   aveva introdotta): resta solo la dimensione ("245 KB").
+ * - (Il punto 3 della v4.59, la targhetta "SEGNA PAGATO", è stato
+ *   sostituito dalla v4.60: tornava la riga in verticale.) I file senza
+ *   scadenza restano esattamente come prima (stellina + scarica).
+ *
  * Novità v4.56 (etichetta più chiara):
  * - La targhetta della scadenza diventa "⏰ SCADENZA gg/mm" (prima
  *   era "⏰ SCADE gg/mm"). Nessun'altra modifica.
@@ -393,7 +461,6 @@ import { toast } from '@/components/Toaster';
 import { haptics } from '@/lib/haptics';
 import { api } from '@/api/client';
 import { useAppStore } from '@/store/auth';
-import { formatDate } from '@/lib/utils';
 import {
   scaricaInDownload,
   scaricaInCacheConRiparazione,
@@ -412,20 +479,6 @@ const NAVY_NOTTE = '#0A1128';
 const NAVY_PRIMARIO = '#003566';
 const ORO = '#D4AF37';
 const ORO_CHIARO = '#F7E7B4';
-
-/** Giorno d'ingresso di un documento in parole povere (v4.15):
- * "Oggi", "Ieri", per i più vecchi la data esatta ("12 set 2026"). */
-function giornoIngresso(d: Date | string | null): string {
-  if (!d) return '';
-  const data = typeof d === 'string' ? new Date(d) : d;
-  if (isNaN(data.getTime())) return '';
-  const oggi = new Date();
-  if (data.toDateString() === oggi.toDateString()) return 'Oggi';
-  const ieri = new Date(oggi);
-  ieri.setDate(oggi.getDate() - 1);
-  if (data.toDateString() === ieri.toDateString()) return 'Ieri';
-  return formatDate(data);
-}
 
 /** Spezza il nome evidenziando (in accento) le parti che corrispondono alla query. */
 function evidenzia(nome: string, query: string, matchStyle: { color: string; fontWeight: '700' }): React.ReactNode[] {
@@ -647,7 +700,7 @@ function DettaglioFileModal({
           <View style={styles.detailHead}>
             <FileIcon filename={file.nome} size={56} />
             <View style={styles.detailHeadText}>
-              <Text style={styles.detailName} numberOfLines={3}>
+              <Text style={styles.detailName}>
                 {file.nome}
               </Text>
               {(badge || file.isPreferito) && (
@@ -857,7 +910,7 @@ function PreferitiModal({
               >
                 <FileIcon filename={r.nome} size={44} />
                 <View style={styles.rowText}>
-                  <Text style={styles.fileName} numberOfLines={1}>
+                  <Text style={styles.fileName} numberOfLines={2}>
                     {r.nome}
                   </Text>
                   <Text style={styles.rowSubtitle} numberOfLines={1}>
@@ -1603,7 +1656,7 @@ export default function ArchivioScreen() {
                     <Card style={[styles.fileRow, pressed && styles.rowPressed]}>
                       <FileIcon filename={item.nome} size={44} />
                       <View style={styles.rowText}>
-                        <Text style={styles.fileName} numberOfLines={1}>
+                        <Text style={styles.fileName} numberOfLines={2}>
                           {evidenzia(item.nome, q, styles.matchText)}
                         </Text>
                         <Text style={styles.rowSubtitle} numberOfLines={1}>
@@ -1884,7 +1937,22 @@ export default function ArchivioScreen() {
             const isSelected = selected.has(f.key);
             const stato = f.stato ? STATO_BADGE[f.stato] : null;
             // v4.55: targhetta scadenza calcolata una volta per render
-            const scadBadge = f.scadenza ? etichettaScadenza(f.scadenza) : null;
+            // v4.59: scadenza copiata in una const (narrow nelle callback)
+            const scad = f.scadenza;
+            const scadBadge = scad ? etichettaScadenza(scad) : null;
+            // v4.62: DUE righe volontarie al posto dell'unica riga badge
+            // che andava a capo a caso (richiesta del titolare): riga
+            // STATO sopra (● NUOVO / VISTO / ✓ SCARICATO + ★ PREFERITO,
+            // e da v4.63 anche la pill verde PAGATO quando la scadenza
+            // e' pagata), riga SCADENZA sotto finche' c'e' da pagare.
+            // v4.63: scadenza pagata -> PAGATO sale nella riga stato e la
+            // riga scadenza sparisce (la pillola sola a destra lasciava
+            // "troppo spazio inutile"). Ogni riga si monta solo se ha
+            // qualcosa da mostrare (niente righe fantasma vuote).
+            const haStatoRow = Boolean(
+              (stato && f.stato !== 'preferito') || f.isPreferito || (scad && scad.pagata),
+            );
+            const haScadRow = Boolean(scad && !scad.pagata);
             return (
               <Pressable
                 onPress={() => {
@@ -1905,76 +1973,117 @@ export default function ArchivioScreen() {
               >
                 {({ pressed }) => (
                   <Card
-                    style={[styles.fileRow, pressed && styles.rowPressed, selectMode && isSelected && styles.rowSelected]}
+                    style={[styles.fileRowCol, pressed && styles.rowPressed, selectMode && isSelected && styles.rowSelected]}
                   >
-                    {selectMode ? (
-                      <View style={styles.checkboxWrap}>
-                        <View style={[styles.checkbox, isSelected && styles.checkboxChecked]}>
-                          {isSelected && <Text style={styles.checkboxText}>✓</Text>}
+                    {/* v4.61: la riga del documento e' una COLONNA. Sopra,
+                        fileMainRow: icona + nome + azioni (stellina e
+                        scarica; il cerchietto pagato della v4.60 e' sceso
+                        nella riga badge). Sotto: la riga badge e' uscita
+                        dalla colonna del nome ed e' a tutta larghezza,
+                        cosi' "SEGNA PAGATO" sta AFFIANCO alla scadenza
+                        (richiesta del titolare) e il nome guadagna i
+                        pixel del cerchietto tolto. */}
+                    <View style={styles.fileMainRow}>
+                      {selectMode ? (
+                        <View style={styles.checkboxWrap}>
+                          <View style={[styles.checkbox, isSelected && styles.checkboxChecked]}>
+                            {isSelected && <Text style={styles.checkboxText}>✓</Text>}
+                          </View>
                         </View>
+                      ) : (
+                        <FileIcon filename={f.nome} size={44} />
+                      )}
+                      <View style={styles.rowText}>
+                        <Text style={styles.fileName} numberOfLines={2}>
+                          {f.nome}
+                        </Text>
+                        {f.sizeStr ? (
+                          <Text style={styles.rowSubtitle} numberOfLines={1}>
+                            {f.sizeStr}
+                          </Text>
+                        ) : null}
                       </View>
-                    ) : (
-                      <FileIcon filename={f.nome} size={44} />
-                    )}
-                    <View style={styles.rowText}>
-                      <Text style={styles.fileName} numberOfLines={1}>
-                        {f.nome}
-                      </Text>
-                      <Text style={styles.rowSubtitle} numberOfLines={1}>
-                        {f.sizeStr}
-                        {f.lastModified ? `  ·  ${giornoIngresso(f.lastModified)}` : ''}
-                      </Text>
-                      {!selectMode && (
-                        <View style={styles.fileBadgeRow}>
-                          {stato && f.stato !== 'preferito' && (
-                            <Badge label={stato.label} variant={stato.variant} />
-                          )}
-                          {f.isPreferito && <Badge label="★ PREFERITO" variant="accent" />}
-                          {/* v4.55: la scadenza impostata dallo studio, sempre leggibile */}
-                          {scadBadge && <Badge label={scadBadge.label} variant={scadBadge.variant} />}
+                      {!selectMode ? (
+                        <View style={styles.quickActions} pointerEvents="box-none">
+                          {/* v4.61: il pulsante PAGATO e' sceso nella riga
+                              badge, affianco alla scadenza: qui restano
+                              stellina e scarica, come nei file senza
+                              scadenza. */}
+                          <Pressable
+                            onPress={() => handleTogglePreferito(f)}
+                            style={styles.quickBtn}
+                            accessibilityLabel="Preferito"
+                          >
+                            <Ionicons
+                              name={f.isPreferito ? 'star' : 'star-outline'}
+                              size={19}
+                              color={f.isPreferito ? colors.accentDark : colors.textSecondary}
+                            />
+                          </Pressable>
+                          <Pressable
+                            onPress={() => handleDownload(f)}
+                            style={styles.quickBtn}
+                            accessibilityLabel="Scarica"
+                          >
+                            <Ionicons name="download-outline" size={19} color={colors.textSecondary} />
+                          </Pressable>
+                        </View>
+                      ) : (
+                        <View style={styles.chevronCircle}>
+                          <Ionicons name="chevron-forward" size={17} color={colors.textSecondary} />
                         </View>
                       )}
                     </View>
-                    {!selectMode ? (
-                      <View style={styles.quickActions} pointerEvents="box-none">
-                        <Pressable
-                          onPress={() => handleTogglePreferito(f)}
-                          style={styles.quickBtn}
-                          accessibilityLabel="Preferito"
-                        >
-                          <Ionicons
-                            name={f.isPreferito ? 'star' : 'star-outline'}
-                            size={19}
-                            color={f.isPreferito ? colors.accentDark : colors.textSecondary}
-                          />
-                        </Pressable>
-                        <Pressable
-                          onPress={() => handleDownload(f)}
-                          style={styles.quickBtn}
-                          accessibilityLabel="Scarica"
-                        >
-                          <Ionicons name="download-outline" size={19} color={colors.textSecondary} />
-                        </Pressable>
-                        {/* v4.55: pulsante PAGATO - ferma le notifiche della scadenza.
-                            Spunta vuota = da pagare; spunta piena verde = pagata
-                            (premerla di nuovo riattiva le notifiche, con conferma). */}
-                        {f.scadenza && !selectMode && (
+                    {!selectMode && haStatoRow && (
+                      <View style={styles.fileStatoRow}>
+                        {stato && f.stato !== 'preferito' && (
+                          <Badge label={stato.label} variant={stato.variant} />
+                        )}
+                        {/* v4.63: scadenza pagata -> la pillola verde "PAGATO"
+                            sale QUI, affianco a NUOVO/VISTO/SCARICATO (il
+                            titolare: "altrimenti c'e' troppo spazio inutile"
+                            nella riga di sotto). Resta un pulsante: la tocchi
+                            per riattivare le notifiche, conferma di sempre. */}
+                        {scad && scad.pagata && (
                           <Pressable
                             onPress={() => chiediConfermaScadenza(f)}
-                            style={styles.quickBtn}
-                            accessibilityLabel={f.scadenza.pagata ? 'Scadenza pagata: premi per riattivare le notifiche' : 'Segna come pagata'}
+                            hitSlop={8}
+                            style={({ pressed }) => [styles.pagaPill, styles.pagaPillDone, pressed && { opacity: 0.6 }]}
+                            accessibilityLabel="Scadenza pagata: premi per riattivare le notifiche"
                           >
-                            <Ionicons
-                              name={f.scadenza.pagata ? 'checkmark-circle' : 'checkmark-circle-outline'}
-                              size={20}
-                              color={f.scadenza.pagata ? colors.success : colors.textSecondary}
-                            />
+                            <Ionicons name="checkmark" size={13} color="#FFFFFF" />
+                            <Text style={styles.pagaPillTextDone}>PAGATO</Text>
                           </Pressable>
                         )}
+                        {f.isPreferito && <Badge label="★ PREFERITO" variant="accent" />}
                       </View>
-                    ) : (
-                      <View style={styles.chevronCircle}>
-                        <Ionicons name="chevron-forward" size={17} color={colors.textSecondary} />
+                    )}
+                    {!selectMode && haScadRow && (
+                      <View style={styles.fileScadRow}>
+                        {/* v4.62: riga scadenza SEPARATA (richiesta del titolare):
+                            "⏰ SCADENZA" resta a sinistra, la pill "SEGNA PAGATO"
+                            (ambra) viene spinta all'estrema destra dallo spacer:
+                            informazioni a sinistra, azione a destra. Stessa
+                            conferma di sempre, ferma le notifiche di quella
+                            scadenza. v4.63: quando paghi la pill verde "PAGATO"
+                            sale nella riga dello stato (affianco a NUOVO/VISTO/
+                            SCARICATO) e questa riga sparisce del tutto: la
+                            pillola sola a destra lasciava troppo spazio vuoto. */}
+                        {scad && !scad.pagata && scadBadge && (
+                          <Badge label={scadBadge.label} variant={scadBadge.variant} />
+                        )}
+                        {scad && !scad.pagata && <View style={styles.fileScadSpacer} />}
+                        {scad && !scad.pagata && (
+                          <Pressable
+                            onPress={() => chiediConfermaScadenza(f)}
+                            hitSlop={8}
+                            style={({ pressed }) => [styles.pagaPill, styles.pagaPillTodo, pressed && { opacity: 0.6 }]}
+                            accessibilityLabel="Segna come pagata"
+                          >
+                            <Ionicons name="checkmark" size={13} color={colors.warning} />
+                            <Text style={styles.pagaPillTextTodo}>SEGNA PAGATO</Text>
+                          </Pressable>
+                        )}
                       </View>
                     )}
                   </Card>
@@ -2217,10 +2326,35 @@ const makeStyles = (colors: ThemeColors) =>
     folderMetaRow: { flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 4 },
     chevronCircle: { width: 32, height: 32, borderRadius: 16, backgroundColor: colors.surfaceAlt, alignItems: 'center', justifyContent: 'center' },
     fileRow: { flexDirection: 'row', alignItems: 'center', gap: 12, minHeight: 72, borderRadius: 18, paddingHorizontal: 14, paddingVertical: 12 },
+    // v4.61: la riga file della LISTA diventa una COLONNA: sopra
+    // fileMainRow (icona + nome + azioni, identico a prima), sotto la
+    // riga badge a tutta larghezza dove "SEGNA PAGATO" sta affianco alla
+    // scadenza. La ricerca continua a usare fileRow (riga singola).
+    fileRowCol: { flexDirection: 'column', alignItems: 'stretch', minHeight: 72, borderRadius: 18, paddingHorizontal: 14, paddingVertical: 12 },
+    fileMainRow: { flexDirection: 'row', alignItems: 'center', gap: 12 },
     fileName: { fontSize: 14.5, fontWeight: '600', color: colors.textPrimary },
-    fileBadgeRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginTop: 5 },
+    // v4.62: DUE righe badge separate (richiesta del titolare): STATO
+    // sopra (nuovo/visto/scaricato/preferito), SCADENZA sotto con la
+    // pill SEGNA PAGATO spinta all'estrema destra dallo spacer
+    // (informazioni a sinistra, azione a destra). v4.63: quando la
+    // scadenza e' pagata la pill verde PAGATO sale nella riga STATO
+    // (affianco allo stato, richiesta del titolare) e la riga scadenza
+    // non si monta piu': niente spazio inutile.
+    fileStatoRow: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', gap: 6, marginTop: 6 },
+    fileScadRow: { flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 6 },
+    fileScadSpacer: { flex: 1 },
     quickActions: { flexDirection: 'row', alignItems: 'center', gap: 2 },
     quickBtn: { width: 36, height: 36, borderRadius: 10, alignItems: 'center', justifyContent: 'center' },
+    // v4.61: pill PAGATO nella riga badge, stesse misure del Badge
+    // (20px, testo 10.5/800, bordo sottile): ambra = da pagare, quando
+    // paghi diventa verde piena "PAGATO" e la tocchi per riattivare le
+    // notifiche (con la conferma di sempre). Il cerchietto ambra/verde
+    // in alto a destra (v4.60) e' stato tolto.
+    pagaPill: { flexDirection: 'row', alignItems: 'center', gap: 3, borderRadius: 8, paddingHorizontal: 8, paddingVertical: 2, minHeight: 20, borderWidth: 0.5 },
+    pagaPillTodo: { backgroundColor: colors.warningSoft, borderColor: colors.warning },
+    pagaPillTextTodo: { fontSize: 10.5, fontWeight: '800', letterSpacing: 0.3, color: colors.warning },
+    pagaPillDone: { backgroundColor: colors.success, borderColor: colors.success },
+    pagaPillTextDone: { fontSize: 10.5, fontWeight: '800', letterSpacing: 0.3, color: '#FFFFFF' },
     btnPressedOpacity: { opacity: 0.75 },
 
     // Intestazione sezione anni
