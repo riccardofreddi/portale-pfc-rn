@@ -41,6 +41,17 @@
  * Sicurezza: identica al resto delle notifiche (gate v3.4: se i 12 pezzi
  * nativi non ci sono, non si carica niente e non compare nessun errore;
  * nessuna chiamata lancia eccezioni non gestite).
+ *
+ * v4.57 — CONTRODOPPIONI. Questa sincronizzazione gira al login e a OGNI
+ * ritorno sull'app: se le 08:30 del giorno di scadenza erano gia' passate,
+ * l'avviso "SUBITO" veniva ripetuto a ogni sync (fino a 1 ogni 30 minuti,
+ * per tutto il giorno: il doppione reale del 21/9/2026). Da oggi ogni
+ * avviso per il giorno X viene erogato UNA SOLA VOLTA: quando programmiamo
+ * la sveglia delle 08:30 (o mandiamo l'avviso immediato) lasciamo un
+ * SEGNALE su AsyncStorage; le sync successive dello stesso giorno vedono
+ * il segno e si fermano. Il segno resta sul telefono: ogni dispositivo
+ * controlla se stesso, che e' esattamente cio' che serve (la sveglia e'
+ * locale a ogni telefono).
  */
 
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -53,6 +64,15 @@ import { partiFilePath } from '@/lib/deeplink';
 
 /** Prefisso dell'identificativo dei promemoria scadenze (per cancellarli). */
 const PREFISSO_ID = 'pfc-scad-';
+
+/**
+ * v4.57 — Segnale "avviso gia' erogato" su AsyncStorage. Chiave = prefisso
+ * + id scadenza, valore = giorno (YYYY-MM-DD locale) per cui la sveglia
+ * delle 08:30 e' stata programmata oppure l'avviso immediato e' gia' stato
+ * mandato. E' il controdoppione: le sync successive dello stesso giorno
+ * trovano il segno e non ripetono l'avviso.
+ */
+const PREFISSO_ARMATO = '@pfc/prom-scad-armato/';
 
 /**
  * v4.12 — Interruttore dei promemoria (l'interuttore nelle Impostazioni).
@@ -126,6 +146,13 @@ function urlDaFilePath(filePath: string): string | undefined {
 function dataDaIso(iso: string): Date | null {
   const d = new Date(iso);
   return isNaN(d.getTime()) ? null : d;
+}
+
+/** v4.57 — Giorno locale "YYYY-MM-DD" di una Date (chiave del segnale). */
+function giornoIso(d: Date): string {
+  const mese = String(d.getMonth() + 1).padStart(2, '0');
+  const giorno = String(d.getDate()).padStart(2, '0');
+  return `${d.getFullYear()}-${mese}-${giorno}`;
 }
 
 /**
@@ -202,6 +229,9 @@ export async function aggiornaPromemoriaScadenze(): Promise<number> {
         data: dati,
       };
       const identifier = PREFISSO_ID + scadenza.id;
+      // v4.57: chiave del segnale anti-doppione per QUESTA scadenza.
+      const chiaveArmato = PREFISSO_ARMATO + scadenza.id;
+      const giorno = giornoIso(scade);
 
       if (quando.getTime() > adesso.getTime()) {
         // Caso normale: promemoria programmato alle 08:30 del giorno
@@ -221,18 +251,56 @@ export async function aggiornaPromemoriaScadenze(): Promise<number> {
             repeats: false,
           },
         });
+        // v4.57: segnala "sveglia armata per questo giorno": le prossime
+        // sync di oggi non dovranno ripetere nessun avviso.
+        await AsyncStorage.setItem(chiaveArmato, giorno).catch(() => {});
         numero++;
       } else {
-        // Il momento e' gia' passato ma la scadenza e' ancora valida
-        // (il server non la darebbe piu' a lista dopo mezzanotte):
-        // avviso SUBITO, che e' meglio di niente.
+        // v4.57 — Il momento e' gia' passato ma la scadenza e' ancora
+        // valida (il server non la darebbe piu' a lista dopo mezzanotte).
+        // AVVISO IMMEDIATO UNA SOLA VOLTA: se il segnale dice che per
+        // questo giorno abbiamo gia' programmato la sveglia (o gia' mandato
+        // l'avviso immediato), ci fermiamo. Prima di questo controllo ogni
+        // ritorno sull'app dopo le 08:30 ripeteva l'avviso: era il doppione
+        // del pomeriggio.
+        const giaArmato = await AsyncStorage.getItem(chiaveArmato).catch(
+          () => null,
+        );
+        if (giaArmato === giorno) {
+          console.log(
+            '[SCADENZE-LOCALI] avviso gia erogato oggi per',
+            scadenza.titolo,
+            ': salto',
+          );
+          continue;
+        }
         await Notifications.scheduleNotificationAsync({
           identifier,
           content: contenuto,
           trigger: null,
         });
+        await AsyncStorage.setItem(chiaveArmato, giorno).catch(() => {});
         numero++;
       }
+    }
+
+    // v4.57 — Pulizia dei segnali vecchi: le scadenze pagate o passate non
+    // sono piu' nella lista del server, i loro segnali non servono piu'.
+    try {
+      const validi = new Set(
+        scadenze
+          .filter((s) => !s.pagata && dataDaIso(s.dataScadenza))
+          .map((s) => s.id),
+      );
+      const tutte = await AsyncStorage.getAllKeys();
+      const daTogliere = tutte.filter(
+        (k) =>
+          k.startsWith(PREFISSO_ARMATO) &&
+          !validi.has(k.slice(PREFISSO_ARMATO.length)),
+      );
+      if (daTogliere.length > 0) await AsyncStorage.multiRemove(daTogliere);
+    } catch {
+      // Storage indisponibile: la pulizia riprovera' alla prossima sync.
     }
 
     console.log('[SCADENZE-LOCALI] promemoria schedulati:', numero);

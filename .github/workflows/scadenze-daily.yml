@@ -2,6 +2,8 @@ name: Promemoria scadenze (seconda sveglia)
 on:
   schedule:
     - cron: '5 6 * * *'   # 06:05 UTC = 08:05 ora italiana
+    - cron: '35 6 * * *'  # 06:35 UTC = 08:35 ora italiana (2a chance: GitHub a volte lascia la prima in coda per ore)
+    - cron: '55 6 * * *'  # 06:55 UTC = 08:55 ora italiana (3a chance)
   workflow_dispatch: {}   # permette la prova manuale dal tab Actions
 jobs:
   scadenze-check:
