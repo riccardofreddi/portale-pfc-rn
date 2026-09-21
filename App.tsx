@@ -16,6 +16,7 @@ import { api } from '@/api/client';
 import { useAppStore } from '@/store/auth';
 import { riRegistraPushSilenziosa, setupPushListeners } from '@/lib/push';
 import { aggiornaPromemoriaScadenze } from '@/lib/scadenze-locali';
+import { preparaNotifiche } from '@/lib/notifiche';
 import { AppNavigator } from '@/navigation/AppNavigator';
 import { Toaster } from '@/components/Toaster';
 import { ThemeProvider } from '@/theme/ThemeContext';
@@ -31,6 +32,10 @@ export default function App() {
   // Bootstrap: verifica sessione persistente
   useEffect(() => {
     async function bootstrap() {
+      // v4.58: creo SUBITO i canali Android (tra cui pfc-alerts-v2) cosi'
+      // anche la prima push del server, arrivata quando l'app e' appena
+      // stata chiusa, suona con il canale giusto (alta importanza).
+      void preparaNotifiche();
       try {
         const me = await api.auth.me();
         if (me.user && me.user.role === 'client') {
