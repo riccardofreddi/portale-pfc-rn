@@ -1,5 +1,7 @@
 ﻿/**
  * Splash screen mostrato durante il bootstrap iniziale.
+ * Novita' v4.64: titolo "Accesso Portale" (prima "Portale PFC"); logo PF invariato,
+ * ora allineato alla nuova icona app "Portale Studio".
  */
 import React from 'react';
 import { ActivityIndicator, StyleSheet, Text, View } from 'react-native';
@@ -15,7 +17,7 @@ export function SplashScreen() {
         <View style={styles.logo}>
           <Text style={styles.logoText}>PF</Text>
         </View>
-        <Text style={styles.title}>Portale PFC</Text>
+        <Text style={styles.title}>Accesso Portale</Text>
         <Text style={styles.subtitle}>Caricamento...</Text>
         <ActivityIndicator
           size="large"

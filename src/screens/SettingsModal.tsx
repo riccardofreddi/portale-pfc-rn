@@ -158,7 +158,7 @@ export function SettingsModal() {
     haptics.tap();
     confirmDialog({
       title: 'Conferma disconnessione',
-      message: 'Sei sicuro di voler uscire dal Portale PFC?',
+      message: 'Sei sicuro di voler uscire dal Portale Studio?',
       confirmText: 'Esci',
       cancelText: 'Annulla',
       destructive: true,

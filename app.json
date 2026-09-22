@@ -1,10 +1,10 @@
 {
   "name": "PortalePFCRN",
-  "displayName": "Portale PFC",
+  "displayName": "Portale Studio",
   "expo": {
-    "name": "Portale PFC",
+    "name": "Portale Studio",
     "slug": "portale-pfc",
-    "version": "1.63.0",
+    "version": "1.64.0",
     "orientation": "portrait",
     "userInterfaceStyle": "automatic",
     "android": {
