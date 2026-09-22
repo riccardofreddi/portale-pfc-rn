@@ -9,9 +9,15 @@
  * (il logo non tocca mai la barra dell'orologio), "Accesso Archivio"
  * una volta sola, occhio mostra/nascondi sul campo password, tolta la
  * dicitura di sicurezza duplicata in fondo a schermo.
+ *
+ * v4.65: al posto del monogramma disegnato in CSS (anello oro + cerchio blu)
+ * c'e' il VERO logo PF dorato, stessa grafica dell'icona app "Rilievo";
+ * sotto al logo un solo titolo: "Accesso Portale" (prima c'erano
+ * "PORTALE" + "Accesso Archivio"). Il resto della schermata e' identico.
  */
 import React, { useState } from 'react';
 import {
+  Image,
   KeyboardAvoidingView,
   Platform,
   Pressable,
@@ -31,11 +37,14 @@ import { api } from '@/api/client';
 import { useAppStore } from '@/store/auth';
 import { registerPushForCurrentUser } from '@/lib/push';
 import { shadow, spacing, typography, useColors, type ThemeColors } from '@/theme';
+// v4.65: il logo PF dorato e' un PNG vero (stessa grafica dell'icona app):
+// cosi' la schermata di login mostra ESATTAMENTE quello che il titolare vede
+// sull'icona del telefono.
+import LOGO_PF from '@/assets/pf-logo.png';
 
 // Colori firma del brand (validi in entrambi i temi, come nell'app v4)
 const NAVY_NOTTE = '#0A1128';
 const NAVY_PRIMARIO = '#003566';
-const ORO = '#D4AF37';
 const ORO_CHIARO = '#F7E7B4';
 
 export default function LoginScreen() {
@@ -113,14 +122,9 @@ export default function LoginScreen() {
           keyboardShouldPersistTaps="handled"
         >
           <View style={styles.hero}>
-            {/* Monogramma PF: anello oro + cerchio blu notte */}
-            <View style={styles.logoRing}>
-              <View style={styles.logoInner}>
-                <Text style={styles.logoText}>PF</Text>
-              </View>
-            </View>
-            <Text style={styles.title}>PORTALE</Text>
-            <Text style={styles.subtitle}>Accesso Archivio</Text>
+            {/* v4.65: vero logo PF dorato (grafica icona app "Rilievo") */}
+            <Image source={LOGO_PF} style={styles.logo} />
+            <Text style={styles.title}>Accesso Portale</Text>
           </View>
 
           <View style={styles.formCard}>
@@ -214,41 +218,18 @@ const makeStyles = (colors: ThemeColors) =>
       alignItems: 'center',
       marginBottom: spacing.xxl,
     },
-    logoRing: {
+    // v4.65: il logo e' il PNG dorato (angoli arrotondati gia' nell'immagine)
+    logo: {
       width: 96,
       height: 96,
-      borderRadius: 48,
-      backgroundColor: ORO,
-      padding: 3,
-      alignItems: 'center',
-      justifyContent: 'center',
       marginBottom: spacing.lg,
-    },
-    logoInner: {
-      flex: 1,
-      alignSelf: 'stretch',
-      borderRadius: 45,
-      backgroundColor: NAVY_NOTTE,
-      alignItems: 'center',
-      justifyContent: 'center',
-    },
-    logoText: {
-      ...typography.h1,
-      color: ORO_CHIARO,
-      fontWeight: '800',
-      letterSpacing: 2,
     },
     title: {
       ...typography.h2,
       color: colors.textPrimary,
       fontWeight: '800',
-      letterSpacing: 2.5,
+      letterSpacing: 0.5,
       marginBottom: spacing.xs,
-    },
-    subtitle: {
-      ...typography.body,
-      color: ORO,
-      fontWeight: '600',
     },
     formCard: {
       backgroundColor: colors.surface,

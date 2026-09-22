@@ -12,20 +12,24 @@
  * - Barra con ombra sottile, come la Surface con elevation dell'app v4.
  *
  * v4.11: la logica store (notifiche, pannello impostazioni) è IDENTICA.
+ *
+ * v4.65: il monogramma disegnato a mano (anello sfumato blu + PF oro) viene
+ * sostituito dal VERO logo PF dorato, stessa grafica dell'icona app
+ * "Rilievo": brand uguale su icona, login e barra superiore.
  */
 import React from 'react';
-import { Pressable, StyleSheet, Text, View } from 'react-native';
+import { Image, Pressable, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import Svg, { Defs, Rect, LinearGradient, Stop } from 'react-native-svg';
 import { useAppStore } from '@/store/auth';
 import { getInitials } from '@/lib/utils';
 import { useColors, type ThemeColors } from '@/theme';
+// v4.65: il logo PF dorato e' il PNG vero (stessa grafica dell'icona app)
+import LOGO_PF from '@/assets/pf-logo.png';
 
 // Colori firma del brand (validi in entrambi i temi, come nell'app v4)
 const NAVY_NOTTE = '#0A1128';
-const NAVY_PRIMARIO = '#003566';
-const ZAFFIRO = '#1282A2';
 const ORO = '#D4AF37';
 const ORO_CHIARO = '#F7E7B4';
 const ORO_SCURO = '#996515';
@@ -51,21 +55,8 @@ export function TopBar() {
       <View style={styles.container}>
         {/* Gruppo brand: monogramma PF + titolo/sottotitolo */}
         <View style={styles.brand}>
-          <View style={styles.logoOuter}>
-            <Svg style={StyleSheet.absoluteFill}>
-              <Defs>
-                <LinearGradient id="pfMonoRing" x1="0" y1="0" x2="1" y2="1">
-                  <Stop offset="0" stopColor={NAVY_NOTTE} />
-                  <Stop offset="0.5" stopColor={NAVY_PRIMARIO} />
-                  <Stop offset="1" stopColor={ZAFFIRO} />
-                </LinearGradient>
-              </Defs>
-              <Rect width="100%" height="100%" fill="url(#pfMonoRing)" />
-            </Svg>
-            <View style={styles.logoInner}>
-              <Text style={styles.logoText}>PF</Text>
-            </View>
-          </View>
+          {/* v4.65: vero logo PF dorato (grafica icona app "Rilievo") */}
+          <Image source={LOGO_PF} style={styles.logoImg} />
           <View style={styles.brandText}>
             <Text style={styles.brandName}>Portale</Text>
             <Text style={styles.brandSubtitle} numberOfLines={1}>
@@ -147,25 +138,10 @@ const makeStyles = (colors: ThemeColors) =>
       gap: 14,
       flexShrink: 1,
     },
-    logoOuter: {
+    // v4.65: il logo e' il PNG dorato (angoli arrotondati gia' nell'immagine)
+    logoImg: {
       width: 44,
       height: 44,
-      borderRadius: 14,
-      overflow: 'hidden',
-    },
-    logoInner: {
-      flex: 1,
-      margin: 1.5,
-      borderRadius: 12.5,
-      backgroundColor: NAVY_NOTTE,
-      alignItems: 'center',
-      justifyContent: 'center',
-    },
-    logoText: {
-      color: ORO,
-      fontWeight: '900',
-      fontSize: 15,
-      letterSpacing: 1,
     },
     brandText: {
       flexShrink: 1,
