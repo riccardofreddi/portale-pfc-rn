@@ -59,7 +59,9 @@ export type AppStackParamList = {
   // notifica): e' il parametro usato da navigationRef.navigate per passare
   // davvero da una tab all'altra.
   MainTabs: { screen: keyof MainTabsParamList } | undefined;
-  PdfPreview: { key: string; nome: string };
+  // v4.72: lastModified = versione del file per la cache dell'anteprima
+  // (file ricaricato con la stessa chiave => l'anteprima riscarica il nuovo).
+  PdfPreview: { key: string; nome: string; lastModified?: number | string | null };
   // v4.1: rimossa la voce "Profile" — quella schermata non è mai esistita
   // nel navigatore e il pulsante che ci saltava generava l'errore
   // "The action 'NAVIGATE' with payload {name: 'Profile'}..." in console.
@@ -128,6 +130,9 @@ function MainTabsScreen() {
       navigation.navigate('PdfPreview', {
         key: previewFile.key,
         nome: previewFile.nome,
+        lastModified: previewFile.lastModified
+          ? new Date(previewFile.lastModified).getTime()
+          : null,
       });
     }
   }, [previewFile, navigation]);

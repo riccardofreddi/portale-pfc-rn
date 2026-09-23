@@ -1368,7 +1368,13 @@ export default function ArchivioScreen() {
       let percorso: string | null = null;
       try {
         // v4.16: anche qui riparazione automatica se il file è stato spostato
-        const { percorso: locale } = await scaricaInCacheConRiparazione(file.key, file.nome);
+        // v4.72: lastModified come versione => cache sempre fresca se il file
+        // è stato ricaricato con la stessa chiave.
+        const { percorso: locale } = await scaricaInCacheConRiparazione(
+          file.key,
+          file.nome,
+          file.lastModified ? new Date(file.lastModified).getTime() : null,
+        );
         percorso = locale;
       } catch (err) {
         toast.error('Condivisione', err instanceof Error ? err.message : 'Impossibile scaricare');
@@ -1510,6 +1516,7 @@ export default function ArchivioScreen() {
       const { percorso: percorsoLocale } = await scaricaInCacheConRiparazione(
         file.key,
         file.nome,
+        file.lastModified ? new Date(file.lastModified).getTime() : null,
       );
       const aperto = await apriConApp(percorsoLocale, file.nome);
       if (aperto) {

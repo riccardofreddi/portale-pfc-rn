@@ -142,17 +142,48 @@ export async function scaricaInDownload(
 }
 
 /**
- * Copia il file in cache (nome stabile: se gia' presente non lo riscarica).
+ * Copia il file in cache per l'anteprima.
+ *
+ * v4.72 - FIX "l'anteprima mi apre sempre il vecchio file": prima la copia
+ * locale si chiamava solo pfc_<key> e veniva riusata PER SEMPRE se esisteva.
+ * Ma il Cassetto riusa la STESSA chiave per lo stesso tipo nello stesso anno
+ * (es. iban_2026.pdf: cancelli e ricarichi = chiave identica), quindi dopo
+ * un Elimina + nuovo caricamento l'anteprima continuava a mostrare il file
+ * VECCHIO benché il server avesse gia' il nuovo (e "Scarica" invece era
+ * sempre giusto, perché scarica fresco ogni volta). Ora la copia in cache
+ * porta nella parte finale del nome la VERSIONE del file (il suo
+ * lastModified, che cambia a ogni ricaricamento): file nuovo = nome cache
+ * nuovo = riscaricato fresco. Le vecchie copie restano in cache ma non
+ * vengono più usate (nessun rischio, nessuna pulizia necessaria).
  * Usa l'URL di anteprima, che segna anche il documento come "visto".
  */
-export async function scaricaInCache(key: string): Promise<string> {
+export async function scaricaInCache(
+  key: string,
+  versione?: string | number | null,
+): Promise<string> {
   const cookie = await api.documenti.sessionCookieHeader();
-  const nomeCache = `pfc_${key}`.replace(/[^a-zA-Z0-9._-]/g, '_');
+  const suffisso = versione !== undefined && versione !== null ? `_${versione}` : '';
+  const nomeCache = `pfc_${key}${suffisso}`.replace(/[^a-zA-Z0-9._-]/g, '_');
   const path = `${ReactNativeBlobUtil.fs.dirs.CacheDir}/${nomeCache}`;
   const giaPresente = await ReactNativeBlobUtil.fs.exists(path).catch(() => false);
   if (giaPresente) return path;
   const url = api.documenti.previewUrl(key);
   return fetchConControllo(url, cookie, path);
+}
+
+/**
+ * v4.72: scarica un file di TESTO dal server e ne ritorna il contenuto.
+ * Serve alla scheda IBAN scritto a mano (che ora vive sul server come un
+ * piccolo file .txt, esattamente come gli altri documenti del Cassetto):
+ * stessa sessione, stessi controlli HTTP, stessa cache a versioni di
+ * scaricaInCache (la rilettura dopo una modifica e' sempre fresca).
+ */
+export async function scaricaTesto(
+  key: string,
+  versione?: string | number | null,
+): Promise<string> {
+  const percorso = await scaricaInCache(key, versione);
+  return ReactNativeBlobUtil.fs.readFile(percorso, 'utf8');
 }
 
 /* ============================================================
@@ -285,10 +316,13 @@ export async function riparaChiaveMorta(
  * QUELLO. Ritorna anche la chiave effettivamente usata, se c'e' stata
  * una riparazione e il suo grado (per dire all'utente cosa e' stato
  * aperto). Se il file e' sparito ovunque l'errore e' CHIARO e porta
- * i flag (smarrito/eraPreferito) per la schermata di aiuto. */
+ * i flag (smarrito/eraPreferito) per la schermata di aiuto.
+ * v4.72: `versione` (lastModified del file) rende la cache sempre fresca
+ * quando il file viene ricaricato con la stessa chiave (Cassetto). */
 export async function scaricaInCacheConRiparazione(
   key: string,
   nome: string,
+  versione?: string | number | null,
 ): Promise<{
   percorso: string;
   key: string;
@@ -296,7 +330,7 @@ export async function scaricaInCacheConRiparazione(
   tipoRiparazione?: 'stessa' | 'esatta' | 'simile';
 }> {
   try {
-    const percorso = await scaricaInCache(key);
+    const percorso = await scaricaInCache(key, versione);
     return { percorso, key, riparato: false };
   } catch (err) {
     const msg = err instanceof Error ? err.message : '';
@@ -318,11 +352,11 @@ export async function scaricaInCacheConRiparazione(
     if (esito.tipo === 'stessa') {
       // Grado 1: il file e' ANCORA al suo posto, il 404 era momentaneo:
       // si riprova la stessa chiave, senza toccare la stellina.
-      const percorso = await scaricaInCache(key);
+      const percorso = await scaricaInCache(key, versione);
       return { percorso, key, riparato: false, tipoRiparazione: 'stessa' };
     }
     // Gradi 2-3: il file vive altrove (o con nome un po' diverso).
-    const percorso = await scaricaInCache(esito.chiave);
+    const percorso = await scaricaInCache(esito.chiave, versione);
     return {
       percorso,
       key: esito.chiave,

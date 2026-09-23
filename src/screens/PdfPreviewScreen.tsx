@@ -47,14 +47,18 @@ import { condividiDocumento } from '@/lib/condividi';
 import { spacing, typography, useColors, type ThemeColors } from '@/theme';
 
 interface Props {
-  route: { params: { key: string; nome: string } };
+  // v4.72: lastModified (versione del file) arriva dalla lista del server e
+  // serve da chiave di cache: se il file viene ricaricato con la STESSA chiave
+  // (Cassetto: iban_2026.pdf cancellato e ricaricato), l'anteprima deve
+  // riscaricare il contenuto nuovo invece di riusare la vecchia copia locale.
+  route: { params: { key: string; nome: string; lastModified?: number | string | null } };
 }
 
 export default function PdfPreviewScreen({ route }: Props) {
   const colors = useColors();
   const styles = makeStyles(colors);
 
-  const { key, nome } = route.params;
+  const { key, nome, lastModified } = route.params;
   const navigation = useNavigation();
   const setPreviewFile = useAppStore((s) => s.setPreviewFile);
   const [fileUri, setFileUri] = useState<string | null>(null);
@@ -84,7 +88,7 @@ export default function PdfPreviewScreen({ route }: Props) {
       // v4.17: scaricaInCacheConRiparazione cura da sola il caso
       // "file spostato/rinominato" a gradi (riprova, stesso nome,
       // nome simile) e ripara anche la stellina.
-      const esito = await scaricaInCacheConRiparazione(key, nome);
+      const esito = await scaricaInCacheConRiparazione(key, nome, lastModified);
       setChiaveAttiva(esito.key);
       setPercorsoLocale(esito.percorso);
       setFileUri(`file://${esito.percorso}`);
@@ -110,7 +114,7 @@ export default function PdfPreviewScreen({ route }: Props) {
       }
       setError(e instanceof Error ? e.message : 'Impossibile aprire il file');
     }
-  }, [key, nome]);
+  }, [key, nome, lastModified]);
 
   // v4.17: apre la ricerca dell'archivio col nome del file già scritto:
   // se lo studio l'ha rinominato, il cliente vede DOVE vive ora.

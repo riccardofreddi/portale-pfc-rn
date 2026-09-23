@@ -181,11 +181,11 @@ const ORO = '#D4AF37';
 const ORO_CHIARO = '#F7E7B4';
 
 // v4.52: sigillo dell'INTERFACCIA (parte JS): cambia a ogni release e viaggia
-// col codice, non col build. Nella tacca si legge "v1.65.0 - js465": se vedi
-// js465 il codice nuovo sta girando davvero; se leggi js464 il Metro sta
+// col codice, non col build. Nella tacca si legge "v1.74.0 - js474": se vedi
+// js474 il codice nuovo sta girando davvero; se leggi js473 il Metro sta
 // servendo ancora il codice di prima (ricarica con r) o la build non si e'
 // aggiornata.
-const CODICE_INTERFACCIA = 465;
+const CODICE_INTERFACCIA = 474;
 
 type Tab = 'attivi' | 'archiviati';
 

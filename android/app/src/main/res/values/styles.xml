@@ -4,6 +4,11 @@
     <style name="AppTheme" parent="Theme.AppCompat.DayNight.NoActionBar">
         <!-- Customize your theme here. -->
         <item name="android:editTextBackground">@drawable/rn_edit_text_material</item>
+        <!-- v4.71 (lezione v4.70): su Android 15 (targetSdk 35) il sistema
+             impone edge-to-edge e la tastiera smette di ridimensionare la
+             finestra: i campi dentro i pannelli restavano coperti. Questo
+             flag ripristina il comportamento classico della finestra. -->
+        <item name="android:windowOptOutEdgeToEdgeEnforcement">true</item>
     </style>
 
 </resources>
