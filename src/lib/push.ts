@@ -40,7 +40,7 @@ import { DeviceEventEmitter, Platform } from 'react-native';
 import { api } from '@/api/client';
 import { parseDeepLink, type DeepLinkTarget } from '@/lib/deeplink';
 import { mostraAvvisoLocale, sulToccoNotifica, togliNotifica } from '@/lib/notifiche';
-import { promemoriaAttivi } from '@/lib/scadenze-locali';
+import { promemoriaAttivi, segnaSvegliaVistaDaNotifica } from '@/lib/scadenze-locali';
 import { toast } from '@/components/Toaster';
 
 /**
@@ -56,7 +56,10 @@ function targetDaDati(
 ): DeepLinkTarget | null {
   const target = parseDeepLink(typeof url === 'string' ? url : undefined);
   if (!target) return null;
-  if (tipo === 'scadenza') target.origineScadenza = true;
+  // v4.76: anche la push dedicata "Scade OGGI" del server (v4.75b) porta
+  // tipo 'scadenza_oggi': prima solo 'scadenza' veniva riconosciuto e il
+  // tocco su quella push apriva la cartella senza risolvere il file.
+  if (tipo === 'scadenza' || tipo === 'scadenza_oggi') target.origineScadenza = true;
   return target;
 }
 
@@ -310,6 +313,11 @@ export function setupPushListeners(
   // l'avviso dalla barra di stato. Il pulsante "Apri" invece fa la
   // stessa cosa del tocco sul corpo: naviga al contenuto giusto.
   const staccaTocco = sulToccoNotifica((dati, azione, notifId) => {
+    // v4.76: il tocco su una sveglia scadenze e' la prova che l'utente l'ha
+    // vista: segna EROGATO cosi' la sync non ripete l'avviso (serve da quando
+    // il server consegna la scadenza in lista per tutto il giorno stesso).
+    // Silenzioso e filtrato: identifier non pfc-scad-* = non fa nulla.
+    void segnaSvegliaVistaDaNotifica(notifId);
     if (azione === 'segna_lette') {
       api.notifiche
         .segnaLette()

@@ -124,6 +124,34 @@ export async function promemoriaAttivi(): Promise<boolean> {
   return cacheAttivo;
 }
 
+/**
+ * v4.76 - L'utente ha VISTO la sveglia: l'ha toccata (apertura dal vassoio).
+ * Riceve l'IDENTIFICATIVO della notifica ("pfc-scad-<id scadenza>"): se e'
+ * davvero una sveglia scadenze, copia il segnale ARMATO sul segnale EROGATO
+ * e la sincronizzazione successiva del giorno di scadenza non ripete
+ * l'avviso. Serve da quando la lista scadenze del server include la
+ * scadenza per tutto il giorno stesso (v4.76 lato backend): senza questo
+ * segno, chi tocca la sveglia e apre l'app riceve subito l'avviso di
+ * recupero = doppione. Il valore copiato e' quello di ARMATO (il giorno
+ * della scadenza calcolato alla programmazione), cosi' coincide esattamente
+ * con il confronto fatto dalla sync. Veloce e locale: nessuna chiamata di
+ * rete, nessuna gara con la sync di avvio.
+ */
+export async function segnaSvegliaVistaDaNotifica(
+  notificaId: string | undefined,
+): Promise<void> {
+  try {
+    if (!notificaId || !notificaId.startsWith(PREFISSO_ID)) return;
+    const scadenzaId = notificaId.slice(PREFISSO_ID.length);
+    const armato = await AsyncStorage.getItem(PREFISSO_ARMATO + scadenzaId);
+    if (armato) {
+      await AsyncStorage.setItem(PREFISSO_EROGATO + scadenzaId, armato);
+    }
+  } catch {
+    // storage indisponibile: al peggio la sync ripetera' l'avviso una volta
+  }
+}
+
 /** Salva l'interruttore e applicalo SUBITO (la prossima sincronizzazione esegue). */
 export async function setPromemoriaAttivi(attivo: boolean): Promise<void> {
   cacheAttivo = attivo;
