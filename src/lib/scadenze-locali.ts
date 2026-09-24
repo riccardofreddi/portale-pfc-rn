@@ -52,6 +52,22 @@
  * il segno e si fermano. Il segno resta sul telefono: ogni dispositivo
  * controlla se stesso, che e' esattamente cio' che serve (la sveglia e'
  * locale a ogni telefono).
+ *
+ * v4.75 — IL BUCO CHIUSO (caso reale del 24/9/2026). Il segnale v4.57 era
+ * un pezzo unico: "sveglia programmata" e "avviso erogato" erano la STESSA
+ * cosa. Ma Android puo' PERDERE la sveglia in risparmio batteria (Doze):
+ * alle 8:30 non arriva nulla, e quando l'utente apre l'app la sync vede
+ * "sveglia programmata" e tace: silenzio totale per tutto il giorno, senza
+ * nessuna via di recupero. Da oggi i due stati sono SEPARATI:
+ *   - ARMATO  = la sveglia delle 08:30 e' stata programmata (speriamo);
+ *   - EROGATO = l'utente ha AVUTO l'avviso (sveglia visibile nel vassoio
+ *     oppure avviso immediato mandato adesso).
+ * Solo EROGATO blocca. Se l'app si apre dopo le 08:30 e il segnale dice
+ * ARMATO ma non EROGATO, guardiamo il VASSOIO: se la notifica della sveglia
+ * e' li' (l'allarme e' scattato) la lasciamo stare e segnamo erogato; se
+ * NON c'e' (allarme perso) l'avviso esce SUBITO, una volta sola. Il buco
+ * del 24/9 non potra' piu' ripetersi: a app aperta non esiste piu' nessun
+ * percorso che finisce in silenzio.
  */
 
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -71,8 +87,21 @@ const PREFISSO_ID = 'pfc-scad-';
  * delle 08:30 e' stata programmata oppure l'avviso immediato e' gia' stato
  * mandato. E' il controdoppione: le sync successive dello stesso giorno
  * trovano il segno e non ripetono l'avviso.
+ *
+ * v4.75: ora questo segnale ha significato SOLO "sveglia programmata"
+ * (ARMATO). Il vero blocco anti-doppione e' PREFISSO_EROGATO, che resta
+ * scritto solo quando l'utente ha AVUTO l'avviso.
  */
 const PREFISSO_ARMATO = '@pfc/prom-scad-armato/';
+
+/**
+ * v4.75 — Segnale "avviso AVUTO dall'utente" su AsyncStorage. Valore =
+ * giorno (YYYY-MM-DD locale) in cui l'avviso e' stato erogato (sveglia
+ * trovata nel vassoio oppure avviso immediato mandato). E' l'unico stato
+ * che blocca le sync successive: massimo UN avviso al giorno per scadenza,
+ * ma mai piu' silenzio dopo un allarme perso.
+ */
+const PREFISSO_EROGATO = '@pfc/prom-scad-erogato/';
 
 /**
  * v4.12 — Interruttore dei promemoria (l'interuttore nelle Impostazioni).
@@ -229,8 +258,9 @@ export async function aggiornaPromemoriaScadenze(): Promise<number> {
         data: dati,
       };
       const identifier = PREFISSO_ID + scadenza.id;
-      // v4.57: chiave del segnale anti-doppione per QUESTA scadenza.
+      // v4.57/v4.75: chiavi dei segnali anti-doppione per QUESTA scadenza.
       const chiaveArmato = PREFISSO_ARMATO + scadenza.id;
+      const chiaveErogato = PREFISSO_EROGATO + scadenza.id;
       const giorno = giornoIso(scade);
 
       if (quando.getTime() > adesso.getTime()) {
@@ -251,22 +281,33 @@ export async function aggiornaPromemoriaScadenze(): Promise<number> {
             repeats: false,
           },
         });
-        // v4.57: segnala "sveglia armata per questo giorno": le prossime
-        // sync di oggi non dovranno ripetere nessun avviso.
-        await AsyncStorage.setItem(chiaveArmato, giorno).catch(() => {});
-        numero++;
-      } else {
-        // v4.57 — Il momento e' gia' passato ma la scadenza e' ancora
-        // valida (il server non la darebbe piu' a lista dopo mezzanotte).
-        // AVVISO IMMEDIATO UNA SOLA VOLTA: se il segnale dice che per
-        // questo giorno abbiamo gia' programmato la sveglia (o gia' mandato
-        // l'avviso immediato), ci fermiamo. Prima di questo controllo ogni
-        // ritorno sull'app dopo le 08:30 ripeteva l'avviso: era il doppione
-        // del pomeriggio.
-        const giaArmato = await AsyncStorage.getItem(chiaveArmato).catch(
+        // v4.57: segnala "sveglia armata per questo giorno".
+        // v4.75: questo segnale NON e' piu' un blocco: se la sveglia verra'
+        // persa, la rete di sicurezza del ramo qui sotto la ripara. Armiamo
+        // solo se l'avviso non e' gia' stato EROGATO oggi (difensivo).
+        const giaErogato = await AsyncStorage.getItem(chiaveErogato).catch(
           () => null,
         );
-        if (giaArmato === giorno) {
+        if (giaErogato !== giorno) {
+          await AsyncStorage.setItem(chiaveArmato, giorno).catch(() => {});
+        }
+        numero++;
+      } else {
+        // v4.75 — IL BUCO CHIUSO. Il momento e' gia' passato ma la scadenza
+        // e' ancora valida (il server non la darebbe piu' a lista dopo
+        // mezzanotte). Prima: un solo segnale per "programmato" ed "erogato",
+        // quindi una sveglia PERSA silenziava anche l'avviso di recupero.
+        // Ora:
+        //   1. avviso gia' EROGATO oggi -> vero doppione, ci fermiamo;
+        //   2. sveglia ARMATA e notifica ancora NEL VASSOIO -> l'allarme ha
+        //      scattato e l'utente ce l'ha davanti: nessun nuovo avviso,
+        //      segna erogato;
+        //   3. altrimenti (allarme perso, o nessun segno) -> avviso
+        //      immediato SUBITO, una volta sola, e segna erogato.
+        const giaErogato = await AsyncStorage.getItem(chiaveErogato).catch(
+          () => null,
+        );
+        if (giaErogato === giorno) {
           console.log(
             '[SCADENZE-LOCALI] avviso gia erogato oggi per',
             scadenza.titolo,
@@ -274,18 +315,51 @@ export async function aggiornaPromemoriaScadenze(): Promise<number> {
           );
           continue;
         }
+
+        // Il vassoio dice se la sveglia e' SCATTATA (notifica presente).
+        // API mancante o errore = non sappiamo: comportamento sicuro,
+        // l'avviso immediato esce comunque (mai piu' il silenzio totale).
+        let svegliaNelVassoio = false;
+        try {
+          if (
+            Notifications.getPresentedNotificationsAsync &&
+            typeof Notifications.getPresentedNotificationsAsync === 'function'
+          ) {
+            const presentate = await Notifications.getPresentedNotificationsAsync();
+            svegliaNelVassoio = presentate.some(
+              (n: { request?: { identifier?: string } }) =>
+                n?.request?.identifier === identifier,
+            );
+          }
+        } catch {
+          // Vassoio non leggibile: prosegui con l'avviso immediato.
+        }
+
+        if (svegliaNelVassoio) {
+          // L'allarme e' scattato: l'avviso e' gia' davanti all'utente.
+          await AsyncStorage.setItem(chiaveErogato, giorno).catch(() => {});
+          console.log(
+            '[SCADENZE-LOCALI] sveglia scattata nel vassoio per',
+            scadenza.titolo,
+            ': nessun doppione',
+          );
+          continue;
+        }
+
+        // Allarme perso (o mai armato): avviso immediato SUBITO.
         await Notifications.scheduleNotificationAsync({
           identifier,
           content: contenuto,
           trigger: null,
         });
-        await AsyncStorage.setItem(chiaveArmato, giorno).catch(() => {});
+        await AsyncStorage.setItem(chiaveErogato, giorno).catch(() => {});
         numero++;
       }
     }
 
     // v4.57 — Pulizia dei segnali vecchi: le scadenze pagate o passate non
     // sono piu' nella lista del server, i loro segnali non servono piu'.
+    // v4.75: la pulizia ora copre ENTRAMBI i segnali (armato + erogato).
     try {
       const validi = new Set(
         scadenze
@@ -293,11 +367,15 @@ export async function aggiornaPromemoriaScadenze(): Promise<number> {
           .map((s) => s.id),
       );
       const tutte = await AsyncStorage.getAllKeys();
-      const daTogliere = tutte.filter(
-        (k) =>
-          k.startsWith(PREFISSO_ARMATO) &&
-          !validi.has(k.slice(PREFISSO_ARMATO.length)),
-      );
+      const daTogliere = tutte.filter((k) => {
+        const id =
+          k.startsWith(PREFISSO_ARMATO)
+            ? k.slice(PREFISSO_ARMATO.length)
+            : k.startsWith(PREFISSO_EROGATO)
+              ? k.slice(PREFISSO_EROGATO.length)
+              : null;
+        return id !== null && !validi.has(id);
+      });
       if (daTogliere.length > 0) await AsyncStorage.multiRemove(daTogliere);
     } catch {
       // Storage indisponibile: la pulizia riprovera' alla prossima sync.
