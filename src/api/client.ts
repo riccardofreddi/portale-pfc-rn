@@ -327,7 +327,10 @@ export const api = {
         // (Documenti/.../file.pdf): in schermo mostriamo solo il titolo (che
         // ha gia' "cosa scade e quando"), il percorso resta in "detail" per
         // il deep-link alla cartella + documento.
-        const corpo = tipo === 'scadenza' ? undefined : String(n.detail ?? '');
+        const corpo =
+          tipo === 'scadenza' || tipo === 'scadenza_oggi'
+            ? undefined
+            : String(n.detail ?? '');
         return {
           id: String(n.id ?? ''),
           tipo,

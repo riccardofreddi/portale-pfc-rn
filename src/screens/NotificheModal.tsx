@@ -44,6 +44,7 @@ function getNotifConfig(
     avviso: { icon: '⚠', color: colors.warning, bg: colors.warningSoft },
     richiesta_upload: { icon: '⬆', color: '#7C3AED', bg: '#F3E8FF' },
     scadenza: { icon: '⏰', color: colors.danger, bg: colors.dangerSoft },
+    scadenza_oggi: { icon: '⏰', color: colors.danger, bg: colors.dangerSoft },
     upload_confermato: { icon: '✓', color: colors.success, bg: colors.successSoft },
   };
 }
@@ -152,7 +153,7 @@ export function NotificheModal() {
       if (n.year) return { tab: 'archivio', anno: n.year, cartella: n.folder };
       return { tab: 'archivio' };
     }
-    if (tipo === 'scadenza') {
+    if (tipo === 'scadenza' || tipo === 'scadenza_oggi') {
       // v4.6: apri il documento in scadenza (cartella + file).
       if (n.detail) {
         const parti = partiFilePath(n.detail);

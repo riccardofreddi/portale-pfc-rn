@@ -105,6 +105,7 @@ export type TipoNotifica =
   | 'avviso'
   | 'richiesta_upload'
   | 'scadenza'
+  | 'scadenza_oggi'
   | 'upload_confermato';
 
 export interface Notifica {

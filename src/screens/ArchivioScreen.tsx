@@ -1802,7 +1802,7 @@ export default function ArchivioScreen() {
                     </View>
                     <View>
                       <Text style={styles.heroNavyTitle}>Archivio {anno}</Text>
-                      <Text style={styles.heroNavySub}>Tutti i documenti archiviati per l'anno</Text>
+                      <Text style={styles.heroNavySub}>Tutti i documenti archiviati per anno</Text>
                       <Text style={styles.heroNavyDesc}>
                         Consulta e scarica i documenti fiscali e societari organizzati per cartella.
                       </Text>
