@@ -1587,7 +1587,7 @@ export default function ArchivioScreen() {
         console.error('[Archivio] bulk preferiti error:', f.nome, err);
       }
     }
-    toast.success('Preferiti aggiornati', `${count} file modificati`);
+    toast.success('Preferiti aggiornati', count === 1 ? '1 file modificato' : `${count} file modificati`);
     load(true);
     loadPreferiti();
     clearSelection();
@@ -1921,7 +1921,7 @@ export default function ArchivioScreen() {
                           </Text>
                           <View style={styles.folderMetaRow}>
                             <Text style={styles.rowSubtitle}>
-                              {item.count != null ? `${item.count} documenti` : 'Cartella'}
+                              {item.count != null ? (item.count === 1 ? '1 documento' : `${item.count} documenti`) : 'Cartella'}
                             </Text>
                             {item.nuovi ? (
                               <Badge
