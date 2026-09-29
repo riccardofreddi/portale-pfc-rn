@@ -1,6 +1,17 @@
 /**
  * Schermata Archivio — grafica replicata dall'app Android v4 (v4.18).
  *
+ * Novità v4.81 (richiesta del titolare: "documenti nuovi (5) in giallo
+ * devono aprire i documenti nuovi; solo quel pulsante; il resto
+ * dell'app deve rimanere uguale"):
+ * - La pillola oro "Documenti Nuovi (n)" APRE I DOCUMENTI NUOVI
+ *   dell'anno: tutti insieme in un'unica lista, qualunque cartella li
+ *   contenga. NESSUNA anteprima si apre da sola: ogni documento si
+ *   tocca come sempre (dettaglio con Apri / Scarica / Condividi).
+ * - La linguetta verde "Solo nuovi (n) ✕", un secondo tocco sulla
+ *   pillola o il tasto indietro riportano alle cartelle di sempre.
+ * - Cartelle, card, badge, ricerca, preferiti e selezione: INTATTI.
+ *
  * Novità v4.63 (PAGATO sale nella riga dello stato — richiesta del
  * titolare dopo la v4.62 sul telefono: "se segno pagato deve comparire
  * pagato affianco a nuovo, visto scaricato, altrimenti c'è troppo
@@ -980,6 +991,55 @@ export default function ArchivioScreen() {
   const [detailFile, setDetailFile] = useState<FileItem | null>(null);
   const [detailPercorso, setDetailPercorso] = useState<string | undefined>(undefined);
 
+  // v4.81: vista "Documenti Nuovi" aperta dalla pillola oro (richiesta
+  // del titolare: QUEL pulsante apre i documenti nuovi, tutti insieme;
+  // il resto dell'app resta identico). null = vista spenta (cartelle di
+  // sempre); array = lista piatta dei documenti nuovi di TUTTE le
+  // cartelle dell'anno. Nessuna anteprima automatica: ogni documento
+  // si tocca e apre il dettaglio di sempre (Apri / Scarica / Condividi).
+  const [nuoviLista, setNuoviLista] = useState<FileItem[] | null>(null);
+  const [caricoNuovi, setCaricoNuovi] = useState(false);
+  const nuoviSeq = useRef(0);
+
+  // v4.81: la pillola carica in parallelo i file di tutte le cartelle
+  // dell'anno (le stesse chiamate che l'app fa entrando cartella per
+  // cartella) e tiene solo i NUOVI. Un errore chiude la vista e torna
+  // alle cartelle, con il toast di errore di sempre.
+  async function apriVistaNuovi() {
+    if (!user) return;
+    haptics.tap();
+    const seq = ++nuoviSeq.current;
+    setCaricoNuovi(true);
+    setNuoviLista([]);
+    try {
+      const risposte = await Promise.all(
+        cartelle.map((c) =>
+          api.documenti.list({ username: user.username, anno: anno ?? undefined, cartella: c.nome }),
+        ),
+      );
+      if (seq !== nuoviSeq.current) return;
+      const tutti: FileItem[] = [];
+      for (const r of risposte) {
+        for (const f of r.files ?? []) tutti.push(f);
+      }
+      setNuoviLista(tutti.filter((f) => f.stato === 'nuovo'));
+    } catch (err) {
+      if (seq !== nuoviSeq.current) return;
+      setNuoviLista(null);
+      toast.error('Errore caricamento', err instanceof Error ? err.message : 'Errore sconosciuto');
+    } finally {
+      if (seq === nuoviSeq.current) setCaricoNuovi(false);
+    }
+  }
+
+  // v4.81: chiude la vista e torna alle cartelle di sempre.
+  function chiudiVistaNuovi() {
+    haptics.tap();
+    nuoviSeq.current += 1;
+    setCaricoNuovi(false);
+    setNuoviLista(null);
+  }
+
   const [selectMode, setSelectMode] = useState(false);
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const selectedFiles = files.filter((f) => selected.has(f.key));
@@ -1031,6 +1091,12 @@ export default function ArchivioScreen() {
     // passa subito alle cartelle, come nell'app v4.
     if (step === 'anno') return [];
     if (step === 'cartella') {
+      // v4.81: vista "Documenti Nuovi" aperta dalla pillola: al posto
+      // delle cartelle, TUTTI i documenti nuovi dell'anno in un'unica
+      // lista piatta (stesse righe dei file, stessi gesti di sempre).
+      if (nuoviLista) {
+        return nuoviLista.map((file) => ({ kind: 'file', file }) as ItemArchivio);
+      }
       return cartelle.map((c) => ({
         kind: 'cartella',
         nome: c.nome,
@@ -1061,7 +1127,7 @@ export default function ArchivioScreen() {
     const preferiti = diretti.filter((f) => f.isPreferito);
     const altri = diretti.filter((f) => !f.isPreferito);
     return [...preferiti.map(fileRow), ...righeSotto, ...altri.map(fileRow)];
-  }, [step, cartelle, files]);
+  }, [step, cartelle, files, nuoviLista]);
 
   const nFileDiretti = items.filter((i) => i.kind === 'file').length;
 
@@ -1256,6 +1322,8 @@ export default function ArchivioScreen() {
     };
     setFiles((prev) => prev.map(applica));
     setDetailFile((prev) => (prev ? applica(prev) : prev));
+    // v4.81: la stessa regola aggiorna la lista "Documenti Nuovi".
+    setNuoviLista((prev) => (prev ? prev.map(applica) : prev));
   }
 
   async function handleTogglePreferito(file: FileItem) {
@@ -1273,6 +1341,16 @@ export default function ArchivioScreen() {
       setDetailFile((prev) =>
         prev && prev.key === file.key
           ? { ...prev, isPreferito: res.isPreferito, stato: res.isPreferito ? 'preferito' : 'visto' }
+          : prev,
+      );
+      // v4.81: aggiorna anche la lista "Documenti Nuovi", se aperta.
+      setNuoviLista((prev) =>
+        prev
+          ? prev.map((f) =>
+              f.key === file.key
+                ? { ...f, isPreferito: res.isPreferito, stato: res.isPreferito ? 'preferito' : 'visto' }
+                : f,
+            )
           : prev,
       );
       // v4.15: aggiorna SUBITO il contatore del pulsante "I miei preferiti".
@@ -1314,6 +1392,8 @@ export default function ArchivioScreen() {
           : f;
       setFiles((prev) => prev.map(applica));
       setDetailFile((prev) => (prev ? applica(prev) : prev));
+      // v4.81: aggiorna anche la lista "Documenti Nuovi", se aperta.
+      setNuoviLista((prev) => (prev ? prev.map(applica) : prev));
       toast.success(
         pagata ? 'Segnata come pagata: le notifiche si fermano' : 'Pagamento annullato: le notifiche riprendono',
       );
@@ -1459,6 +1539,8 @@ export default function ArchivioScreen() {
    * gli anni si cambiano solo dai chip, come nell'app v4). */
   function tornaSu() {
     haptics.tap();
+    // v4.81: risalendo si esce dalla vista "Documenti Nuovi".
+    setNuoviLista(null);
     if (cartella && cartella.includes('/')) {
       setCartella(cartella.slice(0, cartella.lastIndexOf('/')));
     } else {
@@ -1486,6 +1568,12 @@ export default function ArchivioScreen() {
       }
       if (step === 'file') {
         tornaSu();
+        return true;
+      }
+      // v4.81: alla radice dell'anno il tasto indietro chiude prima la
+      // vista "Documenti Nuovi" (un secondo tocco esce, come sempre).
+      if (nuoviLista !== null) {
+        chiudiVistaNuovi();
         return true;
       }
       // v4.12: alla radice (anno aperto, nessuna cartella) il tasto indietro
@@ -1808,8 +1896,10 @@ export default function ArchivioScreen() {
                       </Text>
                     </View>
                     {(() => {
-                      // Pillola oro "Documenti Nuovi" (come nell'app v4):
-                      // apre la prima cartella che ha documenti nuovi.
+                      // v4.81: Pillola oro "Documenti Nuovi": apre I DOCUMENTI NUOVI
+                      // dell'anno, tutti insieme in un'unica lista (richiesta
+                      // del titolare); un secondo tocco torna alle cartelle.
+                      // Nessuna anteprima si apre da sola.
                       const totalNuovi = cartelle.reduce(
                         (somma, c) => somma + (campoNumero(c, 'nuovi', 'nNuovi') ?? 0),
                         0,
@@ -1820,11 +1910,13 @@ export default function ArchivioScreen() {
                       return (
                         <Pressable
                           onPress={() => {
-                            haptics.tap();
-                            setCartella(targetCartella.nome);
+                            // v4.81: apre la vista dei documenti nuovi;
+                            // se e gia aperta (o sta caricando) la richiude.
+                            if (nuoviLista !== null || caricoNuovi) chiudiVistaNuovi();
+                            else apriVistaNuovi();
                           }}
                           style={({ pressed }) => [styles.pillGold, pressed && styles.btnPressedOpacity]}
-                          accessibilityLabel="Apri cartella con documenti nuovi"
+                          accessibilityLabel="Mostra i documenti nuovi dell'anno"
                         >
                           <Ionicons name="sparkles" size={15} color={NAVY_NOTTE} />
                           <Text style={styles.pillGoldText}>Documenti Nuovi ({totalNuovi})</Text>
@@ -1845,6 +1937,26 @@ export default function ArchivioScreen() {
                   <Text style={styles.searchBarText}>Cerca per nome, data o tipo...</Text>
                 </ScalablePress>
               </Entrata>
+              {/* v4.81: linguetta della vista "Documenti Nuovi" (solo alla
+               * radice dell'anno): la ✕ riporta alle cartelle di sempre. */}
+              {step === 'cartella' && nuoviLista !== null && !caricoNuovi && (
+                <Entrata delay={90}>
+                  <Pressable
+                    onPress={() => {
+                      haptics.tap();
+                      chiudiVistaNuovi();
+                    }}
+                    style={styles.filtroNuoviChip}
+                    accessibilityLabel="Torna alle cartelle dell'anno"
+                  >
+                    <Ionicons name="sparkles" size={13} color={colors.success} />
+                    <Text style={styles.filtroNuoviChipText}>
+                      Solo nuovi ({nuoviLista.length})
+                    </Text>
+                    <Ionicons name="close" size={13} color={colors.success} />
+                  </Pressable>
+                </Entrata>
+              )}
               {/* v4.48: "I miei preferiti" sotto la ricerca, con la STESSA
                * pillola oro di "Documenti Nuovi" (stessa grandezza e
                * grafica, per ordine del titolare). Apre il pannello
@@ -1877,7 +1989,9 @@ export default function ArchivioScreen() {
                         haptics.tap();
                         // v4.12: cambiare anno riporta sempre alla radice
                         // dell'anno scelto (mai dentro una cartella vecchia).
+                        // v4.81: e chiude la vista "Documenti Nuovi".
                         setCartella(null);
+                        setNuoviLista(null);
                         setAnno(a);
                       }}
                       style={[styles.chip, a === anno && styles.chipSelected]}
@@ -1971,7 +2085,11 @@ export default function ArchivioScreen() {
                   }
                 }}
                 onLongPress={() => {
-                  if (!selectMode) {
+                  // v4.81: la selezione multipla resta com'era, ma non
+                  // parte dalla lista "Documenti Nuovi" (li il download
+                  // multiplo userebbe i file della cartella, non quelli
+                  // della vista). Dalla lista file di sempre: invariato.
+                  if (!selectMode && step === 'file') {
                     haptics.impact();
                     setSelectMode(true);
                     setSelected(new Set([f.key]));
@@ -2110,6 +2228,21 @@ export default function ArchivioScreen() {
               <View style={styles.skeletonInList}>
                 <SkeletonList count={5} height={76} />
               </View>
+            ) : caricoNuovi ? (
+              /* v4.81: i documenti nuovi dell'anno stanno arrivando (una
+               * chiamata per cartella, in parallelo): scheletro. */
+              <View style={styles.skeletonInList}>
+                <SkeletonList count={5} height={76} />
+              </View>
+            ) : nuoviLista && nuoviLista.length === 0 ? (
+              /* v4.81: la pillola prometteva dei nuovi ma nel frattempo
+               * sono finiti (visti dal dettaglio o da una notifica):
+               * messaggio dedicato, mai un falso "Nessuna cartella". */
+              <EmptyState
+                icon={<Ionicons name="sparkles-outline" size={36} color={colors.primary} />}
+                title="Nessun documento nuovo"
+                subtitle={'Tocca la ✕ della linguetta "Solo nuovi" per tornare alle cartelle'}
+              />
             ) : (
               <EmptyState
                 icon={<Ionicons name="folder-open-outline" size={36} color={colors.primary} />}
@@ -2291,6 +2424,10 @@ const makeStyles = (colors: ThemeColors) =>
     // "Documenti Nuovi" approvata (v4.11/v4.39): zero differenze.
     pillGold: { flexDirection: 'row', alignItems: 'center', gap: 6, alignSelf: 'flex-start', backgroundColor: ORO, borderRadius: 999, paddingHorizontal: 14, paddingVertical: 7, marginTop: 2 },
     pillGoldText: { color: NAVY_NOTTE, fontSize: 12, fontWeight: '700' },
+    // v4.81: linguetta verde della vista "Documenti Nuovi" — stessa forma
+    // della pillola oro, verde come i badge "n nuovi" delle cartelle.
+    filtroNuoviChip: { flexDirection: 'row', alignItems: 'center', gap: 6, alignSelf: 'flex-start', backgroundColor: colors.successSoft, borderWidth: 1, borderColor: colors.success, borderRadius: 999, paddingHorizontal: 14, paddingVertical: 7, marginTop: 2 },
+    filtroNuoviChipText: { color: colors.success, fontSize: 12, fontWeight: '700' },
 
     // v4.15 — Pannello "I miei preferiti"
     favWrap: { paddingHorizontal: spacing.xl, paddingTop: spacing.xs, gap: spacing.md },
