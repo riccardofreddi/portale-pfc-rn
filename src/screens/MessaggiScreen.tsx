@@ -1,6 +1,18 @@
 /**
  * Schermata Messaggi.
  *
+ * v4.82 - IL MESSAGGIO SI LEGGE SEMPRE INTERO (richiesta del titolare:
+ * "deve comparire sempre il messaggio intero. deve essere semplice per
+ * il cliente. lo deve sempre leggere intero senza cliccare nulla"):
+ * - VIA il taglio del titolo a due righe: il titolo si vede per intero;
+ * - VIA il tocco per aprire: testo e allegato sono SEMPRE visibili,
+ *   per intero, subito sotto la testata;
+ * - VIA la freccia apri/chiudi: la testata non e' piu' un bottone,
+ *   solo un'intestazione; il messaggio non si apre al tocco perche'
+ *   si legge gia' tutto;
+ * - Logica INTATTA: caricamento, fotografia NUOVI, segna-letti,
+ *   archiviazione, upload risposta, push, pull-to-refresh.
+ *
  * v4.50 — il "Nuovo" decide il titolare, non il rientro nella tab:
  * - la fotografia dei NUOVI NON si azzera piu' uscendo e rientrando nella
  *   tab (prima il titolare: "sono dovuto andare in una altra tab e rientrare
@@ -185,7 +197,7 @@ const ORO_CHIARO = '#F7E7B4';
 // js474 il codice nuovo sta girando davvero; se leggi js473 il Metro sta
 // servendo ancora il codice di prima (ricarica con r) o la build non si e'
 // aggiornata.
-const CODICE_INTERFACCIA = 481;
+const CODICE_INTERFACCIA = 482;
 
 type Tab = 'attivi' | 'archiviati';
 
@@ -364,7 +376,6 @@ export default function MessaggiScreen() {
   const [messaggi, setMessaggi] = useState<Messaggio[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
-  const [expandedId, setExpandedId] = useState<string | null>(null);
   const [uploadingId, setUploadingId] = useState<string | null>(null);
   // v4.24: la "fotografia" dei NUOVI presa all'apertura della tab (come la
   // Bacheca): il segna-letti automatico non spegne piu' le novita' a schermo.
@@ -678,7 +689,6 @@ export default function MessaggiScreen() {
           ) : null
         }
         renderItem={({ item: msg, index }) => {
-          const expanded = expandedId === msg.id;
           // v4.24: "Nuovo" = non letto ORA oppure era nella fotografia
           // (il segna-letti automatico non spegne la segnalazione finche'
           // l'utente non la chiude).
@@ -693,22 +703,16 @@ export default function MessaggiScreen() {
             <Entrata delay={Math.min(60 + index * 50, 400)}>
               <View style={[styles.msgCard, eNuovo && styles.msgCardUnread]}>
                 <View style={styles.msgInner}>
-                  {/* Testata: icona stato + STUDIO PFC + titolo + data (v4.40);
-                   * v4.49: il tocco ora serve SOLO ad aprire/chiudere il testo */}
-                  <Pressable
-                    onPress={() => {
-                      haptics.tap();
-                      setExpandedId(expanded ? null : msg.id);
-                    }}
-                    style={styles.msgHeader}
-                    accessibilityLabel="Apri o chiudi il messaggio"
-                  >
+                  {/* Testata: icona stato + STUDIO PFC + titolo + data (v4.40).
+                   * v4.82: solo intestazione, NIENTE tocco: il testo si
+                   * legge per intero sotto la testata, senza cliccare nulla. */}
+                  <View style={styles.msgHeader}>
                     <View style={[styles.msgIcon, { backgroundColor: ic.bg }]}>
                       <Ionicons name={ic.icon} size={20} color={ic.color} />
                     </View>
                     <View style={styles.msgHeaderText}>
                       <Text style={styles.msgStudio}>STUDIO PFC</Text>
-                      <Text style={[styles.msgTitle, eNuovo && styles.msgTitleUnread]} numberOfLines={2}>
+                      <Text style={[styles.msgTitle, eNuovo && styles.msgTitleUnread]}>
                         {msg.titolo}
                       </Text>
                       {/* v4.40: la data sta da sola, sotto il titolo: tutta
@@ -717,22 +721,7 @@ export default function MessaggiScreen() {
                        * sull'archivio). */}
                       <Text style={styles.msgDate}>{dataGentile(msg.dataInvio)}</Text>
                     </View>
-                    <View style={styles.headerActions}>
-                      {/* v4.28: freccina che indica l'apertura (il tocco sulla
-                       * testata apre il testo sotto): giu' = chiusa, su = aperta.
-                       * v4.49: l'iconcina archivia esce dalla capsula (era il
-                       * doppione del pulsante "Archivia" che ora sta SEMPRE
-                       * visibile sotto ogni messaggio): la capsula resta con la
-                       * sola freccia e il titolo respira. */}
-                      <View style={styles.chevWrap}>
-                        <Ionicons
-                          name={expanded ? 'chevron-up' : 'chevron-down'}
-                          size={16}
-                          color={colors.textTertiary}
-                        />
-                      </View>
-                    </View>
-                  </Pressable>
+                  </View>
 
                   {/* Pillole di stato (come i badge dell'app v4) */}
                   <View style={styles.badgeRow}>
@@ -756,37 +745,28 @@ export default function MessaggiScreen() {
                     )}
                   </View>
 
-                  {/* v4.28: al TOCCO la scheda apre SOTTO il testo, per intero:
-                   * niente piu' corpo sempre visibile tagliato a 4 righe con il
-                   * "Leggi tutto" che allunga la scheda in posto. La scheda
-                   * chiusa resta compatta; aperta mostra TUTTO il messaggio.
-                   * v4.19: i siti internet nel testo sono cliccabili (linkify).
-                   * v4.49: dentro il blocco restano SOLO testo e allegato —
-                   * le azioni escono e si vedono sempre, sotto. */}
-                  {expanded && (
-                    <>
-                      {/* v4.36: se il corpo pulito e' VUOTO (era identico al
-                       * titolo) il box non si mostra proprio: niente riga
-                       * ripetuta sotto la testata. */}
-                      {corpoMostrato.trim().length > 0 && (
-                        <View style={styles.corpoBox}>
-                          <Text style={styles.corpo}>
-                            {spezzaLink(corpoMostrato, styles.corpoLink)}
-                          </Text>
-                        </View>
-                      )}
-
-                      {/* Allegato dello studio, se presente */}
-                      {msg.allegatoNome ? (
-                        <View style={styles.allegatoBox}>
-                          <Ionicons name="attach" size={15} color={colors.accentDark} />
-                          <Text style={styles.allegatoText} numberOfLines={1}>
-                            Allegato dallo Studio: {msg.allegatoNome}
-                          </Text>
-                        </View>
-                      ) : null}
-                    </>
+                  {/* v4.82: il testo del messaggio e l'allegato sono SEMPRE
+                   * visibili per intero, senza toccare nulla (richiesta del
+                   * titolare: "deve comparire sempre il messaggio intero...
+                   * lo deve sempre leggere intero senza cliccare nulla").
+                   * v4.19: i siti internet nel testo sono cliccabili (linkify). */}
+                  {corpoMostrato.trim().length > 0 && (
+                    <View style={styles.corpoBox}>
+                      <Text style={styles.corpo}>
+                        {spezzaLink(corpoMostrato, styles.corpoLink)}
+                      </Text>
+                    </View>
                   )}
+
+                  {/* Allegato dello studio, se presente */}
+                  {msg.allegatoNome ? (
+                    <View style={styles.allegatoBox}>
+                      <Ionicons name="attach" size={15} color={colors.accentDark} />
+                      <Text style={styles.allegatoText}>
+                        Allegato dallo Studio: {msg.allegatoNome}
+                      </Text>
+                    </View>
+                  ) : null}
 
                   {/* v4.49: AZIONI SEMPRE VISIBILI (richiesta del titolare:
                    * "deve essere sempre visibile carica la risposta e archivio
@@ -923,15 +903,9 @@ const makeStyles = (colors: ThemeColors) =>
     msgDate: { ...typography.caption, color: colors.textTertiary, marginTop: 1 },
     msgTitle: { ...typography.body, color: colors.textPrimary, fontWeight: '500', fontSize: 15.5 },
     msgTitleUnread: { fontWeight: '800' },
-    // v4.49: l'iconAction (archivia nella capsula) e' STATO RIMOSSO: il
-    // pulsante "Archivia/Ripristina" ora sta sempre visibile sotto ogni
-    // messaggio e la capsula in alto porta solo la freccia d'apertura.
-    // v4.28: freccina d'apertura accanto all'archivio
-    // v4.40: le due icone in una capsula morbida = UN gruppo netto e
-    // staccato dal testo; marginTop 4 la centra contro l'icona tonda da
-    // 40; flexShrink 0: mai schiacciate dal testo.
-    headerActions: { flexDirection: 'row', alignItems: 'center', gap: 2, backgroundColor: colors.surfaceAlt, borderRadius: 999, paddingHorizontal: 3, height: 32, marginTop: 4, flexShrink: 0 },
-    chevWrap: { width: 26, height: 32, alignItems: 'center', justifyContent: 'center' },
+    // v4.82: via la capsula con la freccia in alto a destra: la testata
+    // e' solo intestazione, il messaggio si legge SEMPRE per intero
+    // senza toccare nulla.
     badgeRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
     pill: { flexDirection: 'row', alignItems: 'center', gap: 4, borderRadius: 999, paddingHorizontal: 8, paddingVertical: 3 },
     pillText: { fontSize: 11, fontWeight: '700' },
