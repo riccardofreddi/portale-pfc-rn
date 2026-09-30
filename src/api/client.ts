@@ -267,6 +267,20 @@ export const api = {
     },
   },
 
+  sistema: {
+    /**
+     * v4.83: stato manutenzione dello studio (API pubblica: non serve il
+     * login per chiederla). E' lo stesso interruttore che il titolare
+     * accende dall'admin del sito: se e' attivo, l'app mostra a tutto
+     * schermo "App in manutenzione" (i clienti esenti non vengono toccati).
+     */
+    async manutenzione(): Promise<{ attivo: boolean }> {
+      return apiFetch<{ attivo: boolean }>('/api/sistema/manutenzione', {
+        auth: false,
+      });
+    },
+  },
+
   risposte: {
     async upload(formData: FormData): Promise<{ ok: boolean; key: string; nome: string }> {
       return apiFetch<{ ok: boolean; key: string; nome: string }>(

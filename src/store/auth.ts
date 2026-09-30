@@ -58,6 +58,10 @@ interface AppState {
   settingsOpen: boolean;
   setSettingsOpen: (b: boolean) => void;
 
+  // === v4.83: rivedere la guida introduttiva (card GUIDA in Impostazioni) ===
+  introRipassoOpen: boolean;
+  setIntroRipassoOpen: (b: boolean) => void;
+
   // === Deep-link pendente ===
   pendingDeepLink: DeepLinkTarget | null;
   setPendingDeepLink: (t: DeepLinkTarget | null) => void;
@@ -84,6 +88,7 @@ export const useAppStore = create<AppState>((set) => ({
           nMessaggiNonLetti: 0,
           showNotifPanel: false,
           settingsOpen: false,
+          introRipassoOpen: false,
           clienteTab: 'archivio',
           // v4.7: NON cancellare il deep-link pendente. Quando l'app parte
           // da una notifica toccata a telefono chiuso, il tap arriva PRIMA
@@ -129,6 +134,12 @@ export const useAppStore = create<AppState>((set) => ({
   settingsOpen: false,
   setSettingsOpen: (b) => set({ settingsOpen: b }),
 
+  // v4.83: il ripasso della intro (dalla card GUIDA di Impostazioni) e'
+  // gestito da AppNavigator, che apre OnboardingScreen SOPRA a tutto
+  // senza smontare l'app: al termine il cliente riprende da dov'era.
+  introRipassoOpen: false,
+  setIntroRipassoOpen: (b) => set({ introRipassoOpen: b }),
+
   // Deep-link
   pendingDeepLink: null,
   setPendingDeepLink: (t) => set({ pendingDeepLink: t }),
@@ -146,6 +157,7 @@ export const useAppStore = create<AppState>((set) => ({
       nMessaggiNonLetti: 0,
       showNotifPanel: false,
       settingsOpen: false,
+      introRipassoOpen: false,
       pendingDeepLink: null,
       clienteTab: 'archivio',
     }),

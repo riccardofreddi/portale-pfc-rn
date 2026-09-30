@@ -1,4 +1,4 @@
-﻿/**
+/**
  * Navigazione principale.
  *
  * - AuthStack (Login) quando non autenticato
@@ -21,10 +21,40 @@
  * "sei gia' nella tab = letto" funzionano anche quando cambi tab a mano).
  *
  * Tema: tutta la UI (tab bar inclusa) segue il tema corrente (chiaro/scuro/sistema).
+ *
+ * v4.83 - DUE NOVITA' (richieste del titolare), aggiustate con la v4.84:
+ * 1. RIPASSO DELLA INTRO: in Impostazioni c'e' la card GUIDA con il
+ *    pulsante "Rivedi la guida introduttiva". Lo store (introRipassoOpen)
+ *    fa da ponte: qui l'intro della prima volta (OnboardingScreen) si
+ *    apre in una Modal nativa a tutto schermo (v4.84: l'app dietro resta
+ *    coperta e non risponde a tocchi); alla fine il cliente riprende
+ *    esattamente da dove era, senza smontare l'app.
+ * 2. APP IN MANUTENZIONE: mentre il cliente usa l'app, chiediamo al
+ *    server (subito, poi ogni 10 secondi e a ogni riapertura dell'app)
+ *    se lo studio ha attivato la manutenzione dall'admin. Se attiva e il
+ *    cliente NON e' esente, compare la Modal nativa "App in manutenzione"
+ *    (v4.84): tutto schermo, blocca ogni tocco, il tasto indietro non la
+ *    chiude, e il messaggio e' professionale (niente riferimenti a chi
+ *    la spegne). FIX ESENTE v4.84: il flag esente nello store risale al
+ *    login, quindi quando la manutenzione e' attiva l'app lo riverifica
+ *    col server a ogni controllo (api.auth.me): "Esente" cliccato a app
+ *    aperta (o tolto) vale entro 10 secondi, in entrambe le direzioni.
+ *    Appena lo studio la spegne l'app riprende da sola: nessun login,
+ *    nessun bottone. Se la rete manca NON blocchiamo per errore: la
+ *    schermata compare solo con conferma del server.
+ *    FIX RICARICA v4.85: quella riverifica NON tocca piu' lo store. La
+ *    v4.84 riscriveva l'oggetto user nello store a ogni controllo
+ *    (setUser) e le schermate che dipendono da user (es. Archivio, con
+ *    il suo effetto di caricamento su [user]) ricaricavano ogni 10
+ *    secondi: si vedeva solo sui clienti esenti, perche' per gli altri
+ *    la schermata di manutenzione copre tutto. Ora il flag fresco serve
+ *    SOLO a decidere, qui dentro: zero scritture nello store, zero
+ *    ricariche; l'app resta ferma e silenziosa finche' qualcosa cambia
+ *    davvero (e se resta uguale, React non ridisegna nulla).
  */
 
 import React, { useEffect, useState } from 'react';
-import { StatusBar, StyleSheet, Text, View } from 'react-native';
+import { AppState, Modal, StatusBar, StyleSheet, Text, View } from 'react-native';
 // StyleSheet è usato da tabBadgeStyles (badge rosso statico)
 import {
   NavigationContainer,
@@ -44,6 +74,8 @@ import { NotificheModal } from '@/screens/NotificheModal';
 import { SettingsModal } from '@/screens/SettingsModal';
 import { SplashScreen } from '@/screens/SplashScreen';
 import OnboardingScreen, { isOnboardingDone } from '@/screens/OnboardingScreen';
+// v4.83: SafeAreaView per la schermata "App in manutenzione"
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { TopBar } from '@/components/TopBar';
 // v4.19: banner AVVISI PUBBLICI dello studio, sempre visibile su tutte le
 // tab (come il banner giallo del sito, che sta sopra il contenuto delle tab)
@@ -53,6 +85,8 @@ import { api } from '@/api/client';
 import { haptics } from '@/lib/haptics';
 import { scegliScadenza, schermataVisibile } from '@/lib/deeplink';
 import { useColors, useTheme } from '@/theme';
+// v4.83: token di stile per la schermata "App in manutenzione"
+import { spacing, typography, type ThemeColors } from '@/theme';
 
 export type AppStackParamList = {
   // v4.7: MainTabs puo' ricevere il nome della tab da mostrare (deep-link da
@@ -434,6 +468,89 @@ const tabBadgeStyles = StyleSheet.create({
   },
 });
 
+// v4.83: contenitore radice che avvolge il navigatore + i nuovi overlay
+// (ripasso intro e schermata manutenzione) senza toccare il layout.
+// v4.84: gli overlay non sono piu' View dopo il navigatore (cosi'
+// l'app restava visibile e scorrevole accanto): sono Modal native,
+// che coprono tutto lo schermo e bloccano ogni tocco dietro.
+const appRootStyles = StyleSheet.create({
+  root: { flex: 1 },
+});
+
+/**
+ * v4.83: schermata "App in manutenzione". Compare quando lo studio
+ * attiva la manutenzione dall'admin (e il cliente non e' esente) e
+ * sparisce da sola quando lo studio la spegne: nessun bottone, nessun
+ * login. v4.84: e' una Modal NATIVA (non una View accanto al
+ * navigatore): a tutto schermo vero (status bar inclusa), blocca ogni
+ * tocco sull'app dietro, il tasto indietro non la chiude. Messaggio
+ * professionale, senza riferimenti a chi la spegne.
+ */
+function ManutenzioneModal() {
+  const colors = useColors();
+  const { effective } = useTheme();
+  const styles = makeStylesManutenzione(colors);
+  return (
+    <Modal
+      visible
+      animationType="fade"
+      statusBarTranslucent
+      onRequestClose={() => {
+        // v4.84: il tasto indietro NON chiude la manutenzione.
+      }}
+    >
+      <StatusBar
+        barStyle={effective === 'dark' ? 'light-content' : 'dark-content'}
+        backgroundColor={colors.background}
+      />
+      <SafeAreaView style={styles.safe} edges={['top', 'bottom']}>
+        <View style={styles.wrap}>
+          <View style={styles.iconWrap}>
+            <Ionicons name="construct" size={54} color={colors.warning} />
+          </View>
+          <Text style={styles.title}>App in manutenzione</Text>
+          <Text style={styles.text}>
+            L'app è temporaneamente non disponibile per manutenzione. Ci scusiamo per il disagio e ti invitiamo a riprovare più tardi.
+          </Text>
+        </View>
+      </SafeAreaView>
+    </Modal>
+  );
+}
+
+const makeStylesManutenzione = (colors: ThemeColors) =>
+  StyleSheet.create({
+    safe: { flex: 1, backgroundColor: colors.background },
+    wrap: {
+      flex: 1,
+      alignItems: 'center',
+      justifyContent: 'center',
+      padding: spacing.xxl,
+      gap: spacing.lg,
+    },
+    iconWrap: {
+      width: 120,
+      height: 120,
+      borderRadius: 60,
+      backgroundColor: colors.warningSoft,
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
+    title: {
+      ...typography.h2,
+      color: colors.textPrimary,
+      fontWeight: '700',
+      textAlign: 'center',
+    },
+    text: {
+      ...typography.body,
+      color: colors.textSecondary,
+      textAlign: 'center',
+      lineHeight: 24,
+      maxWidth: 320,
+    },
+  });
+
 export function AppNavigator() {
   const colors = useColors();
   const { effective } = useTheme();
@@ -441,6 +558,94 @@ export function AppNavigator() {
   const user = useAppStore((s) => s.user);
   const loadingUser = useAppStore((s) => s.loadingUser);
   const [showOnboarding, setShowOnboarding] = useState(false);
+
+  // v4.83: ripasso della intro aperto dalla card GUIDA di Impostazioni.
+  const introRipassoOpen = useAppStore((s) => s.introRipassoOpen);
+  const setIntroRipassoOpen = useAppStore((s) => s.setIntroRipassoOpen);
+
+  // v4.83: APP IN MANUTENZIONE (vedi commento in testa al file).
+  const [manutenzione, setManutenzione] = useState(false);
+
+  // v4.84 FIX ESENTE: il flag esente nello store e' quello del login. Se
+  // il titolare clicca "Esente" (o lo toglie) MENTRE l'app e' aperta, lo
+  // snapshot locale resta vecchio e la schermata sbaglia. Quindi non ci
+  // fidiamo piu' dello snapshot per decidere: dipendiamo solo dallo
+  // username (valore primitivo e stabile: il ciclo non riparte) e,
+  // quando il server conferma la manutenzione, richiediamo il flag
+  // esente FRESCO con api.auth.me().
+  // v4.85 FIX RICARICA: quel flag fresco serve SOLO alla decisione qui
+  // sotto: NON scriviamo piu' lo store (vedi commento in testa al file).
+  const username = user?.username ?? null;
+
+  useEffect(() => {
+    if (!username) {
+      setManutenzione(false);
+      return;
+    }
+    let vivo = true;
+    async function controlla() {
+      try {
+        const res = await api.sistema.manutenzione();
+        if (!vivo) {
+          return;
+        }
+        if (res.attivo !== true) {
+          // Manutenzione spenta (o mai accesa): nessuna schermata.
+          setManutenzione(false);
+          return;
+        }
+        // Manutenzione ATTIVA (conferma del server). FIX ESENTE: chiediamo
+        // al server il flag esente di ADESSO: lo snapshot nello store
+        // risale al login e con "Esente" cliccato a app aperta saremmo
+        // rimasti col valore vecchio.
+        // v4.85 FIX RICARICA: il flag fresco lo usiamo SOLO per decidere,
+        // qui dentro: NESSUN setUser. Riscrivere l'oggetto user ogni 10
+        // secondi rifaceva partire i caricamenti delle schermate che
+        // dipendono da user (es. Archivio): era la "ricarica" che si
+        // vedeva sui clienti esenti. Letto e basta: se non cambia nulla,
+        // non cambia nulla ANCHE a schermo.
+        let esenteAdesso = false;
+        try {
+          const me = await api.auth.me();
+          if (!vivo) {
+            return;
+          }
+          esenteAdesso = me.user?.exemptMaintenance === true;
+        } catch {
+          // /auth/me irraggiungibile ma manutenzione confermata: fidati
+          // dello snapshot locale (se dice esente, non blocchiamo).
+          esenteAdesso =
+            useAppStore.getState().user?.exemptMaintenance === true;
+        }
+        if (esenteAdesso) {
+          // Esente confermato dal server: la manutenzione non lo tocca
+          // (o smette di toccarlo entro questo giro).
+          setManutenzione(false);
+        } else {
+          // Cliente non esente (o sessione non piu' valida): schermata
+          // a tutto schermo.
+          setManutenzione(true);
+        }
+      } catch {
+        // Rete giu' o server irraggiungibile: resta com'e'. La schermata
+        // compare solo con conferma del server, mai per errore.
+      }
+    }
+    controlla();
+    // v4.84: ogni 10 secondi (prima 60): la manutenzione e' una fase di
+    // urgenza, il cliente non deve poter continuare a usare l'app.
+    const t = setInterval(controlla, 10000);
+    const sub = AppState.addEventListener('change', (st) => {
+      if (st === 'active') {
+        controlla();
+      }
+    });
+    return () => {
+      vivo = false;
+      clearInterval(t);
+      sub.remove();
+    };
+  }, [username]);
 
   useEffect(() => {
     if (!loadingUser && !user) {
@@ -472,6 +677,7 @@ export function AppNavigator() {
   }
 
   return (
+    <View style={appRootStyles.root}>
     <NavigationContainer
       ref={navigationRef}
       // v4.7: mirror "navigatore -> store". A ogni cambio di navigazione
@@ -505,5 +711,33 @@ export function AppNavigator() {
         </AuthStack.Navigator>
       )}
     </NavigationContainer>
+
+      {/* v4.83: RIPASSO della intro (da Impostazioni): si apre in una
+       * Modal nativa a tutto schermo (v4.84), sopra a tutto, senza
+       * smontare l'app; alla fine il cliente riprende da dove era. Se
+       * c'e' la manutenzione, quella ha la precedenza. */}
+      {introRipassoOpen && user && !manutenzione ? (
+        <Modal
+          visible
+          animationType="fade"
+          statusBarTranslucent
+          onRequestClose={() => {
+            // v4.84: il tasto indietro non chiude la guida: si chiude
+            // solo col bottone finale dell'introduzione.
+          }}
+        >
+          <StatusBar
+            barStyle={effective === 'dark' ? 'light-content' : 'dark-content'}
+            backgroundColor={colors.background}
+          />
+          <OnboardingScreen onDone={() => setIntroRipassoOpen(false)} />
+        </Modal>
+      ) : null}
+
+      {/* v4.83: APP IN MANUTENZIONE — Modal nativa sopra a tutto (anche
+       * alle altre modali). L'app controlla da sola lo stato e riprende
+       * da sola quando lo studio spegne la manutenzione. */}
+      {manutenzione ? <ManutenzioneModal /> : null}
+    </View>
   );
 }

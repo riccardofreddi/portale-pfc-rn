@@ -28,6 +28,12 @@
  *
  * Tocco di stile come la v4 Android (SettingsBottomSheet): pannello
  * corto, card pulite, zero pulsanti tecnici.
+ *
+ * Novita' v4.83 (richiesta del titolare: "il cliente deve poter rivedere
+ * la intro quando si dimentica di come funziona"): card GUIDA con il
+ * pulsante "Rivedi la guida introduttiva". Riapre l'intro della prima
+ * volta (OnboardingScreen) SOPRA a tutto, senza smontare l'app: alla
+ * fine il cliente riprende esattamente da dove era.
  */
 import React, { useEffect, useState } from 'react';
 import {
@@ -81,6 +87,8 @@ export function SettingsModal() {
   const visible = useAppStore((s) => s.settingsOpen);
   const setVisible = useAppStore((s) => s.setSettingsOpen);
   const setUser = useAppStore((s) => s.setUser);
+  // v4.83: apre il ripasso della intro (lo mostra AppNavigator sopra a tutto)
+  const setIntroRipassoOpen = useAppStore((s) => s.setIntroRipassoOpen);
 
   const user = useAppStore((s) => s.user);
 
@@ -134,6 +142,15 @@ export function SettingsModal() {
         'Non arriveranno più avvisi su questo telefono.',
       );
     }
+  }
+
+  // v4.83: riapre la guida introduttiva (la intro della prima volta),
+  // chiudendo prima il pannello. Al termine il cliente riprende da dove
+  // era: nessun login, nessun dato toccato.
+  function apriGuidaIntro() {
+    haptics.tap();
+    setVisible(false);
+    setIntroRipassoOpen(true);
   }
 
   async function handleLogout() {
@@ -296,6 +313,29 @@ export function SettingsModal() {
           </Text>
         </View>
 
+        {/* --- Card GUIDA (v4.83: rivedere l'introduzione) --- */}
+        <View style={styles.card}>
+          <Text style={styles.sectionLabel}>GUIDA</Text>
+          <Pressable
+            onPress={apriGuidaIntro}
+            style={({ pressed }) => [styles.guidaRow, pressed && styles.guidaRowPressed]}
+            accessibilityRole="button"
+            accessibilityLabel="Rivedi la guida introduttiva"
+          >
+            <View style={styles.switchIconBox}>
+              <Ionicons name="school-outline" size={18} color={colors.primary} />
+            </View>
+            <View style={styles.switchText}>
+              <Text style={styles.switchTitle}>Rivedi la guida introduttiva</Text>
+              <Text style={styles.switchSub}>Come funziona l'app, in tre schermate</Text>
+            </View>
+            <Ionicons name="chevron-forward" size={18} color={colors.textTertiary} />
+          </Pressable>
+          <Text style={styles.helpText}>
+            E' la stessa guida che hai visto alla prima apertura dell'app.
+          </Text>
+        </View>
+
         {/* --- Esci dall'account (con conferma) --- */}
         <Pressable
           onPress={chiediConfermaLogout}
@@ -392,6 +432,20 @@ const makeStyles = (colors: ThemeColors) =>
     themeLabelActive: { color: colors.accentDark },
 
     helpText: { ...typography.caption, color: colors.textTertiary, lineHeight: 16 },
+
+    // v4.83 — Guida (riga tappabile per rivedere la intro)
+    guidaRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 12,
+      minHeight: 56,
+      borderRadius: 12,
+      backgroundColor: colors.surface,
+      borderWidth: 1,
+      borderColor: colors.border,
+      paddingHorizontal: spacing.md,
+    },
+    guidaRowPressed: { opacity: 0.8, transform: [{ scale: 0.99 }] },
 
     // Esci
     logoutBtn: {
