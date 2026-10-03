@@ -5,9 +5,18 @@
  * e scrive la versione nel body come "**Versione:** X.Y.Z".
  * L'app confronta quella versione con la propria e, se esce una
  * nuova build, propone di aprire la pagina delle release su GitHub.
+ *
+ * v4.86 - AGGIORNAMENTO GUIDATO: se esce una versione piu' recente
+ * dell'app, all'avvio compare il dialog non chiudibile con il solo
+ * bottone "Aggiorna ora" (apre il download dell'APK nel browser).
+ * Il confronto resta qui dentro: al cliente non viene mostrato
+ * nessun numero di versione. Se il controllo fallisce (rete assente,
+ * GitHub irraggiungibile) non succede nulla: si riprova al prossimo
+ * avvio.
  */
 import { Linking } from 'react-native';
 import Constants from 'expo-constants';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 
 export const GITHUB_REPO = 'riccardofreddi/portale-pfc-rn';
 
@@ -81,4 +90,64 @@ export async function checkForUpdates(): Promise<UpdateCheckResult> {
 /** Apre la pagina delle release su GitHub (browser di sistema). */
 export function openReleasesPage(url?: string): void {
   void Linking.openURL(url ?? RELEASES_PAGE_URL);
+}
+
+// ==== v4.86: aggiornamento guidato ==================================
+
+/** Download diretto dell'APK dell'ultima release (URL stabile del tag). */
+const APK_URL = `https://github.com/${GITHUB_REPO}/releases/download/latest-apk/app-release.apk`;
+
+/** Apre il download diretto dell'APK (browser di sistema, poi install). */
+export function apriDownloadAggiornamento(): void {
+  void Linking.openURL(APK_URL);
+}
+
+// Cache del controllo (anti-martello sulla API di GitHub): se abbiamo
+// gia' controllato negli ultimi 10 minuti riusiamo il risultato, cosi'
+// riaperture ravvicinate dell'app non fanno richieste a ripetizione.
+const CACHE_KEY = 'pfc-update-check-v1';
+const CACHE_MS = 10 * 60 * 1000;
+
+interface CacheControllo {
+  t: number;
+  disponibile: boolean;
+}
+
+/**
+ * Controllo all'avvio (v4.86): true se su GitHub esiste una versione
+ * piu' recente della propria. Con cache di 10 minuti contro richieste
+ * ravvicinate. Silenzioso: qualsiasi errore (rete assente, GitHub
+ * giu', storage illeggibile) vale false e non rompe nulla; si riprova
+ * al prossimo avvio.
+ */
+export async function aggiornamentoDisponibileAllAvvio(): Promise<boolean> {
+  try {
+    const raw = await AsyncStorage.getItem(CACHE_KEY);
+    if (raw) {
+      const cache = JSON.parse(raw) as Partial<CacheControllo> | null;
+      if (
+        cache &&
+        typeof cache.t === 'number' &&
+        typeof cache.disponibile === 'boolean' &&
+        Date.now() - cache.t < CACHE_MS
+      ) {
+        return cache.disponibile;
+      }
+    }
+  } catch {
+    // cache illeggibile: prosegui col controllo di rete
+  }
+  try {
+    const res = await checkForUpdates();
+    const disponibile = res.status === 'available';
+    try {
+      const cache: CacheControllo = { t: Date.now(), disponibile };
+      await AsyncStorage.setItem(CACHE_KEY, JSON.stringify(cache));
+    } catch {
+      // storage indisponibile: non blocca il risultato
+    }
+    return disponibile;
+  } catch {
+    return false;
+  }
 }

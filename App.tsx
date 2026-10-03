@@ -1,4 +1,4 @@
-﻿/**
+/**
  * Root App component.
  *
  * 1. Bootstrap: check sessione persistente (cookie salvato in AsyncStorage)
@@ -9,7 +9,7 @@
  * 6. v4.5: i badge si aggiornano SUBITO quando arriva una push (a app
  *    aperta) e quando si torna sull'app, senza aspettare il polling
  */
-import React, { useEffect, useRef } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { AppState, DeviceEventEmitter } from 'react-native';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { api } from '@/api/client';
@@ -20,6 +20,8 @@ import { preparaNotifiche } from '@/lib/notifiche';
 import { AppNavigator } from '@/navigation/AppNavigator';
 import { Toaster } from '@/components/Toaster';
 import { ThemeProvider } from '@/theme/ThemeContext';
+import { aggiornamentoDisponibileAllAvvio } from '@/lib/updates';
+import { AggiornamentoModal } from '@/screens/AggiornamentoModal';
 
 export default function App() {
   const setUser = useAppStore((s) => s.setUser);
@@ -185,11 +187,39 @@ export default function App() {
     return () => sub.remove();
   }, [user]);
 
+  // v4.86: aggiornamento guidato. A ogni avvio (con utente collegato,
+  // dopo una piccola pausa per non fare rumore col resto del bootstrap)
+  // l'app chiede a GitHub Releases se esiste una versione piu' recente:
+  // se c'e', compare il dialog non chiudibile che porta al download
+  // dell'APK. Qualsiasi errore resta silenzioso: nessun dialog e si
+  // riprova al prossimo avvio. Il controllo non parte dal login: solo
+  // con la sessione ripristinata (l'aggiornamento resta fuori dal login).
+  const [aggiornamentoOpen, setAggiornamentoOpen] = useState(false);
+  useEffect(() => {
+    if (!user) return;
+    let cancellato = false;
+    const timer = setTimeout(() => {
+      void (async () => {
+        try {
+          const daFare = await aggiornamentoDisponibileAllAvvio();
+          if (!cancellato && daFare) setAggiornamentoOpen(true);
+        } catch {
+          // silenzio: si riprova al prossimo avvio
+        }
+      })();
+    }, 8_000);
+    return () => {
+      cancellato = true;
+      clearTimeout(timer);
+    };
+  }, [user]);
+
   return (
     <SafeAreaProvider>
       <ThemeProvider>
         <AppNavigator />
         <Toaster />
+        <AggiornamentoModal visible={aggiornamentoOpen} />
       </ThemeProvider>
     </SafeAreaProvider>
   );
