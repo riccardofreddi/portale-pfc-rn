@@ -51,6 +51,7 @@ import { confirmDialog } from '@/components/ConfirmDialog';
 import { toast } from '@/components/Toaster';
 import { haptics } from '@/lib/haptics';
 import { api } from '@/api/client';
+import { APP_VERSION, CODICE_INTERFACCIA } from '@/lib/updates';
 import { useAppStore } from '@/store/auth';
 import {
   pushState,
@@ -345,6 +346,14 @@ export function SettingsModal() {
           <Ionicons name="log-out-outline" size={18} color={colors.danger} />
           <Text style={styles.logoutText}>Esci dall'account</Text>
         </Pressable>
+
+        {/* v4.89: tacca di versione spostata qui da MessaggiScreen
+         * (richiesta del titolare): sotto "Esci dall'account" si vede a
+         * colpo d'occhio quale build gira davvero, senza appesantire la
+         * lista dei messaggi. Il numero arriva da updates.ts (fonte unica). */}
+        <Text style={styles.versioneTag}>
+          v{APP_VERSION} · js{CODICE_INTERFACCIA}
+        </Text>
       </ScrollView>
     </Modal>
   );
@@ -354,6 +363,10 @@ const makeStyles = (colors: ThemeColors) =>
   StyleSheet.create({
     content: { padding: spacing.xl, paddingTop: spacing.md, gap: spacing.lg, paddingBottom: spacing.xxxl },
     title: { ...typography.h4, color: colors.textPrimary, fontWeight: '700' },
+
+    // v4.89: tacca di versione sotto "Esci dall'account" (stesso stile di
+    // quella che era in MessaggiScreen): piccola, discreta, veritiera.
+    versioneTag: { textAlign: 'center', fontSize: 11, color: colors.textTertiary, paddingBottom: spacing.xs, letterSpacing: 0.3 },
 
     // v4.12 — card in stile v4: fondo soft, raggio 18, bordo sottile
     card: {
