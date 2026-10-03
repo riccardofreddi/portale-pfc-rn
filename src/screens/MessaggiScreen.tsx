@@ -197,7 +197,7 @@ const ORO_CHIARO = '#F7E7B4';
 // js474 il codice nuovo sta girando davvero; se leggi js473 il Metro sta
 // servendo ancora il codice di prima (ricarica con r) o la build non si e'
 // aggiornata.
-const CODICE_INTERFACCIA = 486;
+const CODICE_INTERFACCIA = 487;
 
 type Tab = 'attivi' | 'archiviati';
 

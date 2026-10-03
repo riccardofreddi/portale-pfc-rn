@@ -1,4 +1,4 @@
-﻿/**
+/**
  * Schermata Onboarding — mostrata alla prima apertura.
  */
 import React, { useRef, useState } from 'react';
@@ -47,7 +47,7 @@ function getSlides(colors: ThemeColors): Slide[] {
       emoji: '🔒',
       title: 'Sicuro e privato',
       description:
-        'I tuoi dati sono protetti. Sblocco rapido con Face ID o impronta. Documenti disponibili anche offline.',
+        'I tuoi dati sono protetti. Utilizza le tue credenziali o il riconoscimento facciale o impronta per lo sblocco rapido.',
       bg: colors.successSoft,
     },
   ];

@@ -53,8 +53,8 @@
  *    davvero (e se resta uguale, React non ridisegna nulla).
  */
 
-import React, { useEffect, useState } from 'react';
-import { AppState, Modal, StatusBar, StyleSheet, Text, View } from 'react-native';
+import React, { useEffect, useRef, useState } from 'react';
+import { AppState, DeviceEventEmitter, Modal, StatusBar, StyleSheet, Text, View } from 'react-native';
 // StyleSheet è usato da tabBadgeStyles (badge rosso statico)
 import {
   NavigationContainer,
@@ -83,6 +83,9 @@ import { AvvisiBanner } from '@/components/AvvisiBanner';
 import { useAppStore, type ClienteTab } from '@/store/auth';
 import { api } from '@/api/client';
 import { haptics } from '@/lib/haptics';
+// v4.87: cancelletto biometrico (impronta o volto), tutto sul telefono
+import LockScreen from '@/screens/LockScreen';
+import { sensorePronto } from '@/lib/biometria';
 import { scegliScadenza, schermataVisibile } from '@/lib/deeplink';
 import { useColors, useTheme } from '@/theme';
 // v4.83: token di stile per la schermata "App in manutenzione"
@@ -559,6 +562,14 @@ export function AppNavigator() {
   const loadingUser = useAppStore((s) => s.loadingUser);
   const [showOnboarding, setShowOnboarding] = useState(false);
 
+  // v4.87: CANCELLETTO BIOmetrico. bloccata = l'app vuole la biometria;
+  // verificaFatta = la verifica del sensore e' conclusa (finche' non e'
+  // conclusa, con sessione presente si mostra solo la splash: niente
+  // contenuti sensibili prima di sapere se l'app si deve chiudere).
+  const [bloccata, setBloccata] = useState(false);
+  const [verificaFatta, setVerificaFatta] = useState(false);
+  const primoControlloBlocco = useRef(false);
+
   // v4.83: ripasso della intro aperto dalla card GUIDA di Impostazioni.
   const introRipassoOpen = useAppStore((s) => s.introRipassoOpen);
   const setIntroRipassoOpen = useAppStore((s) => s.setIntroRipassoOpen);
@@ -655,11 +666,88 @@ export function AppNavigator() {
     }
   }, [loadingUser, user]);
 
+  // v4.87: verifica del sensore UNA volta per avvio, solo quando il
+  // bootstrap ripristina la sessione. Un login fatto a mano NON ri-chiede
+  // la biometria: la password l'utente l'ha appena digitata. Telefono
+  // senza biometria configurata: verifica subito falsa, l'app si apre
+  // come sempre (mai richieste).
+  useEffect(() => {
+    if (loadingUser || primoControlloBlocco.current) {
+      return;
+    }
+    primoControlloBlocco.current = true;
+    if (!user) {
+      setVerificaFatta(true);
+      return;
+    }
+    let vivo = true;
+    void (async () => {
+      const pronto = await sensorePronto();
+      if (vivo) {
+        setBloccata(pronto);
+        setVerificaFatta(true);
+      }
+    })();
+    return () => {
+      vivo = false;
+    };
+  }, [loadingUser, user]);
+
+  // v4.87: RI-BLOCCO. App.tsx emette l'evento quando l'app torna in
+  // primo piano dopo almeno 60 secondi in background (o schermo
+  // bloccato): con sessione e biometria l'app si richiude e ri-chiede
+  // impronta o volto. Senza biometria la verifica risponde false e
+  // nessuno si accorge di nulla.
+  useEffect(() => {
+    const sub = DeviceEventEmitter.addListener('pfc-app-rilock', () => {
+      void (async () => {
+        if (!useAppStore.getState().user) {
+          return;
+        }
+        setBloccata(await sensorePronto());
+      })();
+    });
+    return () => sub.remove();
+  }, []);
+
   if (loadingUser) {
     return (
       <>
         <StatusBar barStyle="light-content" backgroundColor={colors.primary} />
         <SplashScreen />
+      </>
+    );
+  }
+
+  // v4.87: con la sessione ripristinata, finche' la verifica biometrica
+  // non risponde resta la splash: nessun contenuto mostrato prima.
+  if (user && !verificaFatta) {
+    return (
+      <>
+        <StatusBar barStyle="light-content" backgroundColor={colors.primary} />
+        <SplashScreen />
+      </>
+    );
+  }
+
+  // v4.87: app chiusa col cancelletto: entra solo la biometria (dentro
+  // subito, senza ridigitare nulla) oppure il login completo col tasto
+  // sotto, sempre visibile. Dopo 2 tentativi falliti di fila si va al
+  // login completo.
+  if (user && bloccata) {
+    return (
+      <>
+        <StatusBar
+          barStyle={effective === 'dark' ? 'light-content' : 'dark-content'}
+          backgroundColor={colors.background}
+        />
+        <LockScreen
+          onSbloccato={() => setBloccata(false)}
+          onTornaAlLogin={() => {
+            setBloccata(false);
+            useAppStore.getState().setUser(null);
+          }}
+        />
       </>
     );
   }

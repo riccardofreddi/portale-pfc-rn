@@ -187,6 +187,30 @@ export default function App() {
     return () => sub.remove();
   }, [user]);
 
+  // v4.87: sblocco biometrico. Quando l'app torna in primo piano dopo
+  // almeno 60 secondi in background (anche solo con lo schermo bloccato)
+  // emette l'evento "pfc-app-rilock": il navigator, se c'e' una sessione
+  // e una biometria configurata, ri-chiede impronta o volto. Entro 60
+  // secondi non arriva nessun evento: l'app si riapre com'era.
+  const sfondoDa = useRef(0);
+  useEffect(() => {
+    const sub = AppState.addEventListener('change', (stato) => {
+      if (stato === 'background' || stato === 'inactive') {
+        sfondoDa.current = Date.now();
+        return;
+      }
+      if (
+        stato === 'active' &&
+        sfondoDa.current > 0 &&
+        Date.now() - sfondoDa.current >= 60_000
+      ) {
+        sfondoDa.current = 0;
+        DeviceEventEmitter.emit('pfc-app-rilock');
+      }
+    });
+    return () => sub.remove();
+  }, []);
+
   // v4.86: aggiornamento guidato. A ogni avvio (con utente collegato,
   // dopo una piccola pausa per non fare rumore col resto del bootstrap)
   // l'app chiede a GitHub Releases se esiste una versione piu' recente:
