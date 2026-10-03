@@ -170,7 +170,6 @@ import {
   type ViewStyle,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import Constants from 'expo-constants';
 import { Ionicons } from '@expo/vector-icons';
 import Svg, { Defs, Rect, LinearGradient, Stop } from 'react-native-svg';
 import DocumentPicker, { types } from 'react-native-document-picker';
@@ -191,13 +190,6 @@ const NAVY_NOTTE = '#0A1128';
 const NAVY_PRIMARIO = '#003566';
 const ORO = '#D4AF37';
 const ORO_CHIARO = '#F7E7B4';
-
-// v4.52: sigillo dell'INTERFACCIA (parte JS): cambia a ogni release e viaggia
-// col codice, non col build. Nella tacca si legge "v1.74.0 - js474": se vedi
-// js474 il codice nuovo sta girando davvero; se leggi js473 il Metro sta
-// servendo ancora il codice di prima (ricarica con r) o la build non si e'
-// aggiornata.
-const CODICE_INTERFACCIA = 487;
 
 type Tab = 'attivi' | 'archiviati';
 
@@ -643,15 +635,6 @@ export default function MessaggiScreen() {
         </View>
       </View>
 
-      {/* v4.29: tacca di versione sotto le linguette: chi dice la verita' su
-       * quale build sta girando davvero sul telefono (anti "non vedo le
-       * modifiche": o vedi v1.30.0, oppure il build nuovo non e' partito).
-       * v4.30: c'e' anche il sigillo JS: se leggi js430 il codice nuovo e'
-       * caricato anche a caldo, senza reinstallare nulla. */}
-      <Text style={styles.versioneTag}>
-        v{Constants.expoConfig?.version ?? '?'} · js{CODICE_INTERFACCIA}
-      </Text>
-
       <FlatList
         style={styles.list}
         contentContainerStyle={styles.listContent}
@@ -864,8 +847,6 @@ const makeStyles = (colors: ThemeColors) =>
     list: { flex: 1 },
     listContent: { padding: spacing.lg, gap: 14, paddingBottom: spacing.xxl },
     skeletonInList: { paddingVertical: spacing.sm },
-    // v4.29: tacca di versione: piccola, discreta, sempre veritiera (letta dalla config)
-    versioneTag: { textAlign: 'center', fontSize: 11, color: colors.textTertiary, paddingBottom: spacing.xs, letterSpacing: 0.3 },
 
     // v4.49 — Hero dell'intestazione: STESSA firma di Cassetto (vaultHero),
     // Archivio (heroNavy) e Registro attività (heroCard): angoli 22, bordo
