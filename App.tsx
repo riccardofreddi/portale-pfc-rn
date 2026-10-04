@@ -218,15 +218,26 @@ export default function App() {
   // dell'APK. Qualsiasi errore resta silenzioso: nessun dialog e si
   // riprova al prossimo avvio. Il controllo non parte dal login: solo
   // con la sessione ripristinata (l'aggiornamento resta fuori dal login).
+  //
+  // v4.93: il dialog NON si riapre piu' dopo "Aggiorna ora". La logica
+  // della memoria ("gia' chiesto di andare alla versione X") vive in
+  // updates.ts; qui teniamo la versione proposta (versioneLatest) da
+  // passare al modal per l'ack e chiudiamo il dialog quando l'utente
+  // preme il bottone (onAggiora): il download parte nel browser e
+  // l'app resta subito utilizzabile.
   const [aggiornamentoOpen, setAggiornamentoOpen] = useState(false);
+  const [versioneLatest, setVersioneLatest] = useState<string | null>(null);
   useEffect(() => {
     if (!user) return;
     let cancellato = false;
     const timer = setTimeout(() => {
       void (async () => {
         try {
-          const daFare = await aggiornamentoDisponibileAllAvvio();
-          if (!cancellato && daFare) setAggiornamentoOpen(true);
+          const { daFare, latest } = await aggiornamentoDisponibileAllAvvio();
+          if (!cancellato && daFare) {
+            setVersioneLatest(latest);
+            setAggiornamentoOpen(true);
+          }
         } catch {
           // silenzio: si riprova al prossimo avvio
         }
@@ -243,7 +254,11 @@ export default function App() {
       <ThemeProvider>
         <AppNavigator />
         <Toaster />
-        <AggiornamentoModal visible={aggiornamentoOpen} />
+        <AggiornamentoModal
+          visible={aggiornamentoOpen}
+          versioneLatest={versioneLatest}
+          onAggiora={() => setAggiornamentoOpen(false)}
+        />
       </ThemeProvider>
     </SafeAreaProvider>
   );

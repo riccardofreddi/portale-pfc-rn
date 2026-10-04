@@ -25,6 +25,17 @@
  *    browser e rete possono rispondere con la copia VECCHIA che
  *    hanno in cache e far installare di nuovo la versione di prima.
  *    Ora l'URL porta "?t=<tempo>" che rende ogni download unico.
+ *
+ * v4.93 - "AGGIORNA ORA" ORA CHIUSE IL PANNELLO E NON RICOMPARA.
+ * Prima il dialog restava aperto anche dopo il tocco (tornando dal
+ * browser era ancora li') e a ogni avvio successivo ricompariva finche'
+ * l'install non riusciva: il cliente restava intrappolato. Ora quando
+ * l'utente preme "Aggiorna ora" l'app RICORDA la richiesta ( AsyncStorage,
+ * chiave pfc-update-ack-v1: "gia' chiesto di andare alla versione X")
+ * e chiude il pannello: si continua a usare l'app mentre l'APK scarica.
+ * All'avvio il dialog compare SOLO se la release trovata e' DIVERSA da
+ * quella gia' chiesta: stessa release => piu' dialog; release NUOVA =>
+ * torna a comparire, come giusto.
  */
 import { Linking } from 'react-native';
 import Constants from 'expo-constants';
@@ -55,9 +66,9 @@ export const APP_VERSION: string =
   Application.nativeApplicationVersion ?? Constants.expoConfig?.version ?? '1.0.0';
 
 /** Sigillo dell'interfaccia JS: cambia a ogni release e viaggia
- *  col codice, non col build (segue il versionCode: 491 = versionCode
- *  91). Unica fonte: la tacca di versione, ora in Impostazioni. */
-export const CODICE_INTERFACCIA = 492;
+ *  col codice, non col build (segue il versionCode: 493 = versionCode
+ *  93). Unica fonte: la tacca di versione, ora in Impostazioni. */
+export const CODICE_INTERFACCIA = 493;
 
 interface ReleaseInfo {
   version: string | null;
@@ -104,6 +115,46 @@ function compareVersions(a: string, b: string): number {
 export type UpdateCheckResult =
   | { status: 'up-to-date'; current: string; latest: string | null }
   | { status: 'available'; current: string; latest: string; url: string };
+
+// ==== v4.93: memoria dell'"Aggiorna ora" gia' chiesto ==================
+
+/** Il rimando resta per sempre (nessuna scadenza): finche' su GitHub
+ *  non esce una release DIVERSA da quella gia' chiesta, il dialog non
+ *  torna a disturbare. E' la richiesta del titolare: "una volta che e'
+ *  stato fatto Aggiorna ora non deve piu' riaprirsi". */
+const ACK_KEY = 'pfc-update-ack-v1';
+
+interface AckAggiornamento {
+  /** Quando e' stato premuto il bottone. */
+  t: number;
+  /** La versione dell'ultima release per cui l'utente ha gia' premuto
+   *  "Aggiorna ora" (la versione che GitHub proponeva in quel momento). */
+  verso: string;
+}
+
+/** v4.93: registra che l'utente ha premuto "Aggiorna ora" mentre GitHub
+ *  proponeva la versione `verso`. Silenzioso: se lo storage fallisce,
+ *  al peggio il dialog ricompara come prima della modifica. */
+export async function segnaAggiornamentoChiesto(verso: string): Promise<void> {
+  try {
+    const ack: AckAggiornamento = { t: Date.now(), verso };
+    await AsyncStorage.setItem(ACK_KEY, JSON.stringify(ack));
+  } catch {
+    // storage indisponibile: non blocca nulla
+  }
+}
+
+async function leggiAckAggiornamento(): Promise<AckAggiornamento | null> {
+  try {
+    const raw = await AsyncStorage.getItem(ACK_KEY);
+    if (!raw) return null;
+    const ack = JSON.parse(raw) as Partial<AckAggiornamento> | null;
+    if (ack && typeof ack.verso === 'string' && ack.verso) return ack as AckAggiornamento;
+  } catch {
+    // ack illeggibile: come se non ci fosse
+  }
+  return null;
+}
 
 export async function checkForUpdates(): Promise<UpdateCheckResult> {
   const rel = await fetchLatestRelease();
@@ -158,6 +209,11 @@ interface CacheControllo {
    *  dialog "Aggiorna ora" ricompariva per fino a 10 minuti anche
    *  dopo aver installato con successo la nuova versione. */
   v?: string;
+  /** v4.93: la versione proposta da GitHub al momento del controllo.
+   *  Serve per applicare il filtro "gia' chiesto" anche sugli esiti
+   *  in cache. Le cache scritte prima della v4.93 non ce l'hanno:
+   *  in quel caso si ricontrolla la rete. */
+  latest?: string | null;
 }
 
 /**
@@ -166,8 +222,22 @@ interface CacheControllo {
  * ravvicinate. Silenzioso: qualsiasi errore (rete assente, GitHub
  * giu', storage illeggibile) vale false e non rompe nulla; si riprova
  * al prossimo avvio.
+ *
+ * v4.93: ritorna anche la versione trovata (`latest`) cosi' App puo'
+ * segnare l'ack quando l'utente preme "Aggiorna ora". E SOPRATTUTTO
+ * applica il filtro dell'ack: se l'unica release disponibile e' quella
+ * per cui l'utente ha gia' premuto "Aggiorna ora", il dialog NON torna
+ * (daFare: false) anche se GitHub continua a proportela. Il filtro
+ * viene applicato DOPO la cache: anche un esito in cache non puo'
+ * far riaprire il dialog di una release gia' chiesta.
  */
-export async function aggiornamentoDisponibileAllAvvio(): Promise<boolean> {
+export async function aggiornamentoDisponibileAllAvvio(): Promise<{
+  daFare: boolean;
+  latest: string | null;
+}> {
+  let disponibile = false;
+  let latest: string | null = null;
+
   try {
     const raw = await AsyncStorage.getItem(CACHE_KEY);
     if (raw) {
@@ -179,23 +249,45 @@ export async function aggiornamentoDisponibileAllAvvio(): Promise<boolean> {
         cache.v === APP_VERSION && // v4.91: esiti di un'altra versione non valgono
         Date.now() - cache.t < CACHE_MS
       ) {
-        return cache.disponibile;
+        disponibile = cache.disponibile;
+        latest = typeof cache.latest === 'string' ? cache.latest : null;
       }
     }
   } catch {
     // cache illeggibile: prosegui col controllo di rete
   }
-  try {
-    const res = await checkForUpdates();
-    const disponibile = res.status === 'available';
+
+  // Cache assente, scaduta o di un'altra versione: chiedi a GitHub.
+  if (latest === null && !disponibile) {
     try {
-      const cache: CacheControllo = { t: Date.now(), disponibile, v: APP_VERSION };
-      await AsyncStorage.setItem(CACHE_KEY, JSON.stringify(cache));
+      const res = await checkForUpdates();
+      disponibile = res.status === 'available';
+      latest = res.latest;
+      try {
+        const cache: CacheControllo = {
+          t: Date.now(),
+          disponibile,
+          v: APP_VERSION,
+          latest,
+        };
+        await AsyncStorage.setItem(CACHE_KEY, JSON.stringify(cache));
+      } catch {
+        // storage indisponibile: non blocca il risultato
+      }
     } catch {
-      // storage indisponibile: non blocca il risultato
+      // rete assente / GitHub giu': silenzio, si riprova al prossimo avvio
+      return { daFare: false, latest: null };
     }
-    return disponibile;
-  } catch {
-    return false;
   }
+
+  // v4.93: filtro "gia' chiesto". Applicato anche agli esiti in cache:
+  // l'ack vale piu' della cache (dura sempre, la cache 10 minuti).
+  if (disponibile && latest) {
+    const ack = await leggiAckAggiornamento();
+    if (ack && ack.verso === latest) {
+      return { daFare: false, latest };
+    }
+  }
+
+  return { daFare: disponibile, latest };
 }

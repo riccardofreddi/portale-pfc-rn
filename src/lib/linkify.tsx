@@ -5,39 +5,60 @@
  * ("visita www.studio.it" o "https://agenziaentrate.gov.it"), il cliente si
  * aspetta di poterci toccare sopra e arrivare al sito. Qui spezziamo il
  * testo in pezzi: i pezzi normali restano testo semplice (ereditano lo stile
- * del <Text> padre), gli indirizzi diventano <Text> toccabili che aprono il
- * browser del telefono (Linking.openURL).
+ * del <Text> padre), gli indirizzi diventano pezzi evidenziati (oro,
+ * sottolineato) e il tocco apre il browser del telefono (Linking.openURL).
  *
  * Usato da:
  * - AvvisiBanner (avvisi pubblici dello studio, sotto la TopBar)
  * - MessaggiScreen (corpo dei messaggi privati)
  *
- * v4.92 - ADDIO TOCCO MUTO: due strade per aprire il sito.
- * 1) apriLink non tace piu': se il telefono rifiuta l'apertura (niente
- *    browser, errore Android...) compare un avviso a schermo con il
- *    motivo. Prima l'errore veniva inghiottito e il link sembrava
- *    "morto" anche quando il tocco arrivava fino a qui.
- * 2) TestoConLink: il testo che contiene un sito viene avvolto in un
- *    Pressable di riserva: se il tocco sul pezzo-link non parte (sul
- *    tocco del testo annidato alcuni telefoni Android fanno i capricci),
- *    il sito si apre comunque. I testi senza siti restano come prima.
+ * Storia del tocco:
+ * - v4.19: i pezzi-link erano <Text onPress> annidati: sul vecchio motore
+ *   funzionavano, sulla NUOVA architettura (Fabric, attiva in questa app)
+ *   il tocco del testo annidato e' la strada fragile: su parecchi telefoni
+ *   il tocco arriva ma l' onPress non parte.
+ * - v4.90: siti riconosciuti anche senza www davanti.
+ * - v4.92: aggiunto un Pressable di riserva attorno al testo. Peccato che
+ *   sul tocco CADUTO ESATTAMENTE sul link vinca comunque il pezzo annidato
+ *   (il piu' interno vince la competizione del tocco) e se il suo onPress
+ *   non parte il link resta morto: e' il caso visto dal titolare ("nei
+ *   messaggi privati non mi fa cliccare il link").
+ * - v4.93: ADDIO COMPETIZIONE. Un testo toccabile SOLO: il corpo intero.
+ *   I pezzi-link restano evidenziati (stile) ma SENZA onPress proprio:
+ *   qualsiasi tocco (o pressa lunga) sul testo apre il sito, passando dal
+ *   tocco del <Text> REALE, la stessa strada solidale dei bottoni di tutta
+ *   l'app (niente piu' nodi virtuali che si contendono il tocco). Nei
+ *   messaggi con piu' siti si apre il primo: e' la stessa regola che la
+ *   v4.92 usava come riserva, qui diventa la strada principale. I testi
+ *   senza siti restano testo semplice, identici a prima.
+ *
+ * Nota tecnica: il rilevamento link NATIVO di Android (dataDetectorType)
+ * non esiste sulla nuova architettura, quindi la strada "natale" non e'
+ * disponibile: il tocco unico del Text reale e' la piu' affidabile.
  */
 
-import React from 'react';
-import { Alert, Linking, Pressable, Text } from 'react-native';
-import type { StyleProp, TextStyle, ViewStyle } from 'react-native';
+import React, { useState } from 'react';
+import { Alert, Linking, Text } from 'react-native';
+import type { StyleProp, TextStyle } from 'react-native';
 
 /** http://..., https://..., www.... oppure anche i domini scritti senza
  *  www ("studios.it", "agenziaentrate.gov.it/istanze"): v4.90. Prima la
  *  regex vedeva solo i link con www o http(s) davanti, quindi i siti
  *  scritti senza restavano testo semplice, non cliccabile. La lista dei
  *  suffissi (TLD) evita falsi positivi su numeri e nomi di file
- *  ("1.87.2", "documento.pdf"). Fermati al primo spazio. */
+ *  ("1.87.2", "documento.pdf"). Fermati al primo spazio.
+ *
+ *  v4.93: lista TLD allargata. Il cliente non deve perdere un link per
+ *  colpa di un suffisso mancante: entrano i paesi toccati dallo studio
+ *  (sm, va, at, fr...), i domini di settore (pec non esiste, ma studio,
+ *  finance, tax, legal...), i moderni (cloud, tech, digital...) e le
+ *  regioni italiane che hanno un proprio dominio (lazio, sicilia...). */
 const MOTIVO_LINK =
-  /(https?:\/\/[^\s]+|www\.[^\s]+|\b[a-z0-9][a-z0-9-]*(?:\.[a-z0-9-]+)*\.(?:it|com|net|org|eu|io|gov|edu|info|biz|co|uk|fr|de|es|ch|us|nl|pt|me|xyz|online|site|shop|app|store)(?:\/[^\s]*)?)/gi;
+  /(https?:\/\/[^\s]+|www\.[^\s]+|\b[a-z0-9][a-z0-9-]*(?:\.[a-z0-9-]+)*\.(?:it|com|net|org|eu|io|gov|edu|info|biz|co|uk|fr|de|es|ch|us|nl|pt|me|xyz|online|site|shop|app|store|at|be|sm|va|ie|mt|lu|mc|ad|se|no|fi|dk|is|pl|cz|sk|hu|ro|bg|gr|tr|ru|ua|si|hr|ee|lv|lt|cy|al|rs|ba|mk|ca|mx|br|ar|cl|pe|au|nz|jp|kr|cn|in|za|ae|il|ai|tv|fm|mobi|tel|aero|asia|cat|int|jobs|pro|coop|name|cloud|tech|digital|studio|finance|agency|company|group|solutions|services|support|systems|expert|consulting|email|link|page|blog|news|tips|tools|top|work|zone|live|life|world|club|fun|game|games|vip|icu|website|space|network|media|design|dev|guru|capital|partners|legal|law|accountant|accountants|tax|money|bank|insurance|abruzzo|calabria|campania|friuli|lazio|liguria|lombardia|marche|molise|piemonte|puglia|sardegna|sicilia|toscana|trentino|umbria|veneto|romagna|emilia)(?![a-z0-9-])(?:\/[^\s]*)?)/gi;
 
-/** Punteggiatura che spesso chiude la frase e NON fa parte del link. */
-const CODA_LINK = '.,;:!?)]}>"';
+/** Punteggiatura che spesso chiude la frase e NON fa parte del link.
+ *  v4.93: entrano anche gli apostrofi e le virgolette tipografiche. */
+const CODA_LINK = '.,;:!?)]}>"\'’”';
 
 /**
  * Stacca dal link la punteggiatura finale ("...vai su https://x.it." ->
@@ -56,7 +77,7 @@ function pulisciLink(linkGrezzo: string): { url: string; coda: string } {
   return { url, coda };
 }
 
-/** v4.92: il carattere subito prima del match fa parte di qualcos'altro
+/** Il carattere subito prima del match fa parte di qualcos'altro
  *  (email, parola piu' lunga)? Allora il match va ignorato. E' la regola
  *  della v4.90, qui estratta per riusarla anche in primoLink. */
 function matchDaIgnorare(testo: string, trovato: RegExpExecArray): boolean {
@@ -88,8 +109,9 @@ export function apriLink(url: string): void {
   });
 }
 
-/** v4.92: il PRIMO sito riconosciuto nel testo (o null). E' la materia
- *  prima della strada di riserva di TestoConLink. */
+/** Il PRIMO sito riconosciuto nel testo (o null): e' il sito che apre il
+ *  tocco del testo intero (v4.93). Con la stessa regex e gli stessi filtri
+ *  di spezzaLink: se qui non c'e' sito, l'evidenziazione non ne trova. */
 function primoLink(testo: string): string | null {
   if (!testo) return null;
   const re = new RegExp(MOTIVO_LINK.source, 'gi');
@@ -106,11 +128,10 @@ function primoLink(testo: string): string | null {
 }
 
 /**
- * Spezza il testo in nodi React: stringhe normali (ereditano lo stile del
- * padre) e link cliccabili (con lo stile "link" passato da chi lo usa).
- *
- * Uso diretto (senza riserva):  <Text>{spezzaLink(t, st.link)}</Text>
- * Uso con la strada di riserva: <TestoConLink ... />
+ * Spezza il testo in nodi React: stringhe normali e pezzi-link EVIDENZIATI
+ * (v4.93: solo stile, SENZA onPress: il tocco lo gestisce il <Text> padre
+ * in TestoConLink, unico toccabile del testo). Se il testo non contiene
+ * siti il risultato e' il testo stesso, identico a prima.
  */
 export function spezzaLink(
   testo: string,
@@ -139,15 +160,11 @@ export function spezzaLink(
       // Estremo raro (solo punteggiatura): resta testo semplice
       pezzi.push(trovato[0]);
     } else {
-      // v4.92: via accessibilityRole/accessibilityLabel: restano solo le
-      // proprieta' che servono al tocco (stile + onPress): una variabile
-      // in meno nella catena del tocco del testo annidato.
+      // v4.93: il pezzo-link e' SOLO evidenziazione (stile): nessun onPress
+      // qui dentro. Il tocco lo prende il Text padre (vedi TestoConLink):
+      // un solo toccabile, zero competizioni, zero tocchi muti.
       pezzi.push(
-        <Text
-          key={`link-${chiave++}`}
-          style={stileLink}
-          onPress={() => apriLink(url)}
-        >
+        <Text key={`link-${chiave++}`} style={stileLink}>
           {url}
         </Text>,
       );
@@ -162,13 +179,15 @@ export function spezzaLink(
 }
 
 /**
- * v4.92: il testo con dentro un sito, con la STRADA DI RISERVA.
+ * Il testo con dentro un sito, TOCCABILE IN UN SOLO PUNTO (v4.93).
  *
- * Il pezzo-link resta un <Text onPress> (strada normale); intorno al
- * testo c'e' un Pressable che apre il primo sito trovato: se il tocco
- * del testo annidato non parte su qualche telefono, il sito si apre
- * comunque toccando il testo. Nei testi SENZA siti il Pressable resta
- * inerte (niente onPress): zero cambi per tutti gli altri testi.
+ * Se il testo contiene almeno un sito, tutto il testo diventa toccabile
+ * (onPress + pressa lunga come rete di sicurezza) e qualunque tocco apre
+ * il primo sito trovato. Il feedback "premuto" (stilePremuto, di solito
+ * una leggera trasparenza) e' gestito qui con onPressIn/onPressOut, come
+ * faceva il Pressable della v4.92 ma senza il suo costo: niente nodo che
+ * compete per il tocco con i pezzi di testo. Nei testi SENZA siti nulla
+ * cambia: testo semplice, non toccabile, identico a prima.
  */
 export function TestoConLink({
   testo,
@@ -179,17 +198,27 @@ export function TestoConLink({
   testo: string;
   stileTesto: StyleProp<TextStyle>;
   stileLink: StyleProp<TextStyle>;
-  stilePremuto?: StyleProp<ViewStyle>;
+  stilePremuto?: StyleProp<TextStyle>;
 }): React.ReactElement {
+  // Hook PRIMA di ogni uscita condizionale: regola dei React hooks.
+  const [premuto, setPremuto] = useState(false);
   const link = primoLink(testo);
+
+  if (!link) {
+    // Nessun sito: testo semplice (i pezzi non esisterebbero comunque)
+    return <Text style={stileTesto}>{testo}</Text>;
+  }
+
   return (
-    <Pressable
-      onPress={link ? () => apriLink(link) : undefined}
-      style={({ pressed }) =>
-        link && pressed && stilePremuto ? stilePremuto : undefined
-      }
+    <Text
+      style={[stileTesto, premuto && stilePremuto ? stilePremuto : null]}
+      suppressHighlighting
+      onPress={() => apriLink(link)}
+      onLongPress={() => apriLink(link)}
+      onPressIn={() => setPremuto(true)}
+      onPressOut={() => setPremuto(false)}
     >
-      <Text style={stileTesto}>{spezzaLink(testo, stileLink)}</Text>
-    </Pressable>
+      {spezzaLink(testo, stileLink)}
+    </Text>
   );
 }
