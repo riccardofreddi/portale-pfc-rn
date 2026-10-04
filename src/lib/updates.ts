@@ -13,6 +13,18 @@
  * nessun numero di versione. Se il controllo fallisce (rete assente,
  * GitHub irraggiungibile) non succede nulla: si riprova al prossimo
  * avvio.
+ *
+ * v4.91 - FIX "Aggiorna ora" che ricompariva sempre: due motivi.
+ * 1) La cache del controllo (10 minuti) non ricordava PER QUALE
+ *    versione dell'app era la risposta: aggiornata l'app, il vecchio
+ *    esito "aggiornamento disponibile" restava valido ancora qualche
+ *    minuto e il dialog ricompariva anche a aggiornamento riuscito.
+ *    Ora la cache porta la versione dell'app e viene scartata se
+ *    non coincide con quella installata sul telefono.
+ * 2) Il download parte sempre dallo stesso URL (il tag latest-apk):
+ *    browser e rete possono rispondere con la copia VECCHIA che
+ *    hanno in cache e far installare di nuovo la versione di prima.
+ *    Ora l'URL porta "?t=<tempo>" che rende ogni download unico.
  */
 import { Linking } from 'react-native';
 import Constants from 'expo-constants';
@@ -43,9 +55,9 @@ export const APP_VERSION: string =
   Application.nativeApplicationVersion ?? Constants.expoConfig?.version ?? '1.0.0';
 
 /** Sigillo dell'interfaccia JS: cambia a ogni release e viaggia
- *  col codice, non col build (segue il versionCode: 490 = versionCode
- *  90). Unica fonte: la tacca di versione, ora in Impostazioni. */
-export const CODICE_INTERFACCIA = 490;
+ *  col codice, non col build (segue il versionCode: 491 = versionCode
+ *  91). Unica fonte: la tacca di versione, ora in Impostazioni. */
+export const CODICE_INTERFACCIA = 492;
 
 interface ReleaseInfo {
   version: string | null;
@@ -119,7 +131,12 @@ const APK_URL = `https://github.com/${GITHUB_REPO}/releases/download/latest-apk/
 
 /** Apre il download diretto dell'APK (browser di sistema, poi install). */
 export function apriDownloadAggiornamento(): void {
-  void Linking.openURL(APK_URL);
+  // v4.91: "?t=..." in coda all'URL. L'indirizzo del tag e' sempre lo
+  // stesso, quindi il browser puo' rispondere con l'APK VECCHIO che ha
+  // in cache: l'aggiornamento sembra riuscito ma il telefono resta
+  // sulla versione di prima (sospetto: e' capitato con la 1.87.3).
+  // Con "?t" ogni download e' unico, il browser non puo' usare la cache.
+  void Linking.openURL(`${APK_URL}?t=${Date.now()}`);
 }
 
 // Cache del controllo (anti-martello sulla API di GitHub): se abbiamo
@@ -127,12 +144,20 @@ export function apriDownloadAggiornamento(): void {
 // riaperture ravvicinate dell'app non fanno richieste a ripetizione.
 // v4.88: chiave nuova per ignorare le vecchie cache che dicevano
 // "aggiornamento disponibile" per colpa della versione letta male.
+// v4.91: la risposta in cache vale solo per la versione che l'ha
+// prodotta (campo v): dopo un aggiornamento si ricontrolla di nuovo.
 const CACHE_KEY = 'pfc-update-check-v2';
 const CACHE_MS = 10 * 60 * 1000;
 
 interface CacheControllo {
   t: number;
   disponibile: boolean;
+  /** v4.91: la versione dell'app per cui la risposta e' valida. Dopo
+   *  un aggiornamento la versione cambia e una cache scritta dalla
+   *  versione prima NON deve piu' valere: e' il motivo per cui il
+   *  dialog "Aggiorna ora" ricompariva per fino a 10 minuti anche
+   *  dopo aver installato con successo la nuova versione. */
+  v?: string;
 }
 
 /**
@@ -151,6 +176,7 @@ export async function aggiornamentoDisponibileAllAvvio(): Promise<boolean> {
         cache &&
         typeof cache.t === 'number' &&
         typeof cache.disponibile === 'boolean' &&
+        cache.v === APP_VERSION && // v4.91: esiti di un'altra versione non valgono
         Date.now() - cache.t < CACHE_MS
       ) {
         return cache.disponibile;
@@ -163,7 +189,7 @@ export async function aggiornamentoDisponibileAllAvvio(): Promise<boolean> {
     const res = await checkForUpdates();
     const disponibile = res.status === 'available';
     try {
-      const cache: CacheControllo = { t: Date.now(), disponibile };
+      const cache: CacheControllo = { t: Date.now(), disponibile, v: APP_VERSION };
       await AsyncStorage.setItem(CACHE_KEY, JSON.stringify(cache));
     } catch {
       // storage indisponibile: non blocca il risultato

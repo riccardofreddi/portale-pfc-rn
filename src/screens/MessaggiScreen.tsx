@@ -177,7 +177,7 @@ import { EmptyState } from '@/components/EmptyState';
 import { SkeletonList } from '@/components/Skeleton';
 import { toast } from '@/components/Toaster';
 import { haptics } from '@/lib/haptics';
-import { spezzaLink } from '@/lib/linkify';
+import { TestoConLink } from '@/lib/linkify';
 import { api } from '@/api/client';
 import { useAppStore } from '@/store/auth';
 import type { Messaggio } from '@/types/api';
@@ -734,10 +734,17 @@ export default function MessaggiScreen() {
                    * lo deve sempre leggere intero senza cliccare nulla").
                    * v4.19: i siti internet nel testo sono cliccabili (linkify). */}
                   {corpoMostrato.trim().length > 0 && (
+                    /* v4.92: TestoConLink = strada di riserva: se il tocco
+                     * sul pezzo-link non parte (tocco del testo annidato
+                     * capriccioso su alcuni Android), il sito si apre
+                     * comunque toccando il testo del messaggio. */
                     <View style={styles.corpoBox}>
-                      <Text style={styles.corpo}>
-                        {spezzaLink(corpoMostrato, styles.corpoLink)}
-                      </Text>
+                      <TestoConLink
+                        testo={corpoMostrato}
+                        stileTesto={styles.corpo}
+                        stileLink={styles.corpoLink}
+                        stilePremuto={styles.corpoBoxPressed}
+                      />
                     </View>
                   )}
 
@@ -897,6 +904,8 @@ const makeStyles = (colors: ThemeColors) =>
     // v4.19: i link nel corpo del messaggio si Vedono e si toccano (aprono il browser)
     // v4.23: link in oro, stessa lingua della Bacheca
     corpoLink: { color: colors.accentDark, fontWeight: '700', textDecorationLine: 'underline' },
+    // v4.92: riserva tocco: il testo sbiadisce un attimo mentre e' premuto
+    corpoBoxPressed: { opacity: 0.85 },
     // v4.23: allegato dello Studio in tinta oro (come la Bacheca)
     allegatoBox: { flexDirection: 'row', alignItems: 'center', gap: 8, backgroundColor: colors.accentSoft, borderRadius: 12, borderWidth: 1, borderColor: `${colors.accent}55`, paddingHorizontal: 12, paddingVertical: 9 },
     allegatoText: { ...typography.caption, color: colors.textPrimary, fontWeight: '600', flex: 1 },

@@ -13,6 +13,20 @@
     <permission android:name="${applicationId}.permission.C2D_MESSAGE" android:protectionLevel="signature" />
     <uses-permission android:name="${applicationId}.permission.C2D_MESSAGE" />
 
+    <!-- v4.92: da Android 11 l'app non vede le app che aprono siti (browser)
+         se non le dichiara qui: senza queste righe il tocco sui link dei
+         messaggi restava muto perche' Linking non trovava nessuno che
+         potesse aprire http/https (package visibility). -->
+    <queries>
+      <intent>
+        <action android:name="android.intent.action.VIEW" />
+        <data android:scheme="https" />
+      </intent>
+      <intent>
+        <action android:name="android.intent.action.VIEW" />
+        <data android:scheme="http" />
+      </intent>
+    </queries>
     <application
       android:name=".MainApplication"
       android:label="@string/app_name"

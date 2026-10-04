@@ -42,7 +42,7 @@ import Svg, { Defs, Rect, LinearGradient, Stop } from 'react-native-svg';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Modal } from '@/components/Modal';
 import { api } from '@/api/client';
-import { spezzaLink } from '@/lib/linkify';
+import { TestoConLink } from '@/lib/linkify';
 import { haptics } from '@/lib/haptics';
 import { prendiTapAvvisoPendente } from '@/lib/push';
 import { useColors, useTheme, type ThemeColors } from '@/theme';
@@ -254,9 +254,12 @@ export function AvvisiBanner() {
                   </View>
                 </View>
               )}
-              <Text style={styles.voceTesto}>
-                {spezzaLink(a.text, styles.linkVoce)}
-              </Text>
+              {/* v4.92: TestoConLink = strada di riserva per il tocco del link */}
+              <TestoConLink
+                testo={a.text}
+                stileTesto={styles.voceTesto}
+                stileLink={styles.linkVoce}
+              />
             </View>
           ))}
         </ScrollView>
