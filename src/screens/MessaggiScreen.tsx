@@ -688,16 +688,25 @@ export default function MessaggiScreen() {
                 <View style={styles.msgInner}>
                   {/* Testata: icona stato + STUDIO PFC + titolo + data (v4.40).
                    * v4.82: solo intestazione, NIENTE tocco: il testo si
-                   * legge per intero sotto la testata, senza cliccare nulla. */}
+                   * legge per intero sotto la testata, senza cliccare nulla.
+                   * v4.94: UNA eccezione: il titolo con dentro un sito e'
+                   * toccabile (TestoConLink, la stessa strada del corpo).
+                   * Motivo: il messaggio di SOLA riga-link vive SOLO nel
+                   * titolo (pulisciCorpo svuota il corpo toltone il
+                   * doppione): il link resterebbe nel titolo, evidenziato
+                   * mai, morto sempre. Senza siti il titolo resta testo
+                   * semplice, identico a prima. */}
                   <View style={styles.msgHeader}>
                     <View style={[styles.msgIcon, { backgroundColor: ic.bg }]}>
                       <Ionicons name={ic.icon} size={20} color={ic.color} />
                     </View>
                     <View style={styles.msgHeaderText}>
                       <Text style={styles.msgStudio}>STUDIO PFC</Text>
-                      <Text style={[styles.msgTitle, eNuovo && styles.msgTitleUnread]}>
-                        {msg.titolo}
-                      </Text>
+                      <TestoConLink
+                        testo={msg.titolo}
+                        stileTesto={[styles.msgTitle, eNuovo && styles.msgTitleUnread]}
+                        stileLink={styles.corpoLink}
+                      />
                       {/* v4.40: la data sta da sola, sotto il titolo: tutta
                        * visibile, mai sotto le icone (prima la riga
                        * "STUDIO PFC • data" sbordava sulla freccia e
