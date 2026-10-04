@@ -17,8 +17,14 @@ import React from 'react';
 import { Linking, Text } from 'react-native';
 import type { StyleProp, TextStyle } from 'react-native';
 
-/** http://..., https://... oppure www.... (fermati al primo spazio). */
-const MOTIVO_LINK = /(https?:\/\/[^\s]+|www\.[^\s]+)/gi;
+/** http://..., https://..., www.... oppure anche i domini scritti senza
+ *  www ("studios.it", "agenziaentrate.gov.it/istanze"): v4.90. Prima la
+ *  regex vedeva solo i link con www o http(s) davanti, quindi i siti
+ *  scritti senza restavano testo semplice, non cliccabile. La lista dei
+ *  suffissi (TLD) evita falsi positivi su numeri e nomi di file
+ *  ("1.87.2", "documento.pdf"). Fermati al primo spazio. */
+const MOTIVO_LINK =
+  /(https?:\/\/[^\s]+|www\.[^\s]+|\b[a-z0-9][a-z0-9-]*(?:\.[a-z0-9-]+)*\.(?:it|com|net|org|eu|io|gov|edu|info|biz|co|uk|fr|de|es|ch|us|nl|pt|me|xyz|online|site|shop|app|store)(?:\/[^\s]*)?)/gi;
 
 /** Punteggiatura che spesso chiude la frase e NON fa parte del link. */
 const CODA_LINK = '.,;:!?)]}>\'"';
@@ -74,6 +80,18 @@ export function spezzaLink(
   let trovato: RegExpExecArray | null;
 
   while ((trovato = re.exec(testo)) !== null) {
+    // v4.90: niente link dentro parole piu' lunghe o email. Se il
+    // carattere subito prima del match e' una lettera, un numero, @,
+    // punto, trattino o slash, il pezzo fa parte di qualcos'altro
+    // ("nome@studio.it"): il match salta e la ricerca riparte dal
+    // carattere dopo. Vale anche per i "www." subito dopo una @.
+    const prima = trovato.index > 0 ? (testo[trovato.index - 1] ?? '') : '';
+    const grezzo = trovato[0];
+    const nudo = !/^https?:\/\//i.test(grezzo) && !/^www\./i.test(grezzo);
+    if (prima === '@' || (nudo && /[A-Za-z0-9._\/-]/.test(prima))) {
+      re.lastIndex = trovato.index + 1;
+      continue;
+    }
     // Testo normale PRIMA del link (come stringa: eredita lo stile padre)
     if (trovato.index > ultimo) {
       pezzi.push(testo.slice(ultimo, trovato.index));
