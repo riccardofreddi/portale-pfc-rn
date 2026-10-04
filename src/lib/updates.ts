@@ -66,9 +66,9 @@ export const APP_VERSION: string =
   Application.nativeApplicationVersion ?? Constants.expoConfig?.version ?? '1.0.0';
 
 /** Sigillo dell'interfaccia JS: cambia a ogni release e viaggia
- *  col codice, non col build (segue il versionCode: 494 = versionCode
- *  94). Unica fonte: la tacca di versione, ora in Impostazioni. */
-export const CODICE_INTERFACCIA = 494;
+ *  col codice, non col build (segue il versionCode: 495 = versionCode
+ *  95). Unica fonte: la tacca di versione, ora in Impostazioni. */
+export const CODICE_INTERFACCIA = 495;
 
 interface ReleaseInfo {
   version: string | null;

@@ -681,7 +681,17 @@ export default function MessaggiScreen() {
             !msg.archiviato && !msg.haRisposta && (!msg.letto || nuoviIds.includes(msg.id));
           const ic = iconaStato(msg, eNuovo);
           // v4.26: il corpo mostrato non ripete il titolo (via il doppione)
-          const corpoMostrato = pulisciCorpo(msg.corpo, msg.titolo);
+          // v4.95: il titolo VISIBILE della scheda e' la PRIMA RIGA INTERA,
+          // non il titolo troncato a 80 caratteri che arriva da client.ts.
+          // Motivo: con una frase lunga il taglio a 80 puo' cadere IN MEZZO
+          // al link ("...pubblicati https://www.ag") e il titolo, toccabile
+          // dalla v4.94, apre un sito troncato che non esiste. Con la riga
+          // intera il link resta sempre completo e cliccabile; in piu', se
+          // il messaggio e' di una riga sola, pulisciCorpo ora riconosce la
+          // prima riga come doppione e svuota il corpo: il testo non si
+          // ripete piu' due volte nella scheda (titolo + box sotto).
+          const titoloIntero = (msg.corpo.split('\n')[0] ?? '').trim() || msg.titolo;
+          const corpoMostrato = pulisciCorpo(msg.corpo, titoloIntero);
           return (
             <Entrata delay={Math.min(60 + index * 50, 400)}>
               <View style={[styles.msgCard, eNuovo && styles.msgCardUnread]}>
@@ -695,7 +705,10 @@ export default function MessaggiScreen() {
                    * titolo (pulisciCorpo svuota il corpo toltone il
                    * doppione): il link resterebbe nel titolo, evidenziato
                    * mai, morto sempre. Senza siti il titolo resta testo
-                   * semplice, identico a prima. */}
+                   * semplice, identico a prima.
+                   * v4.95: il titolo mostrato e' la prima riga INTERA
+                   * (titoloIntero): il taglio a 80 di client.ts non deve
+                   * mai spezzare un link nel mezzo. */}
                   <View style={styles.msgHeader}>
                     <View style={[styles.msgIcon, { backgroundColor: ic.bg }]}>
                       <Ionicons name={ic.icon} size={20} color={ic.color} />
@@ -703,7 +716,7 @@ export default function MessaggiScreen() {
                     <View style={styles.msgHeaderText}>
                       <Text style={styles.msgStudio}>STUDIO PFC</Text>
                       <TestoConLink
-                        testo={msg.titolo}
+                        testo={titoloIntero}
                         stileTesto={[styles.msgTitle, eNuovo && styles.msgTitleUnread]}
                         stileLink={styles.corpoLink}
                       />
