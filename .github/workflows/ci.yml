@@ -91,7 +91,13 @@ jobs:
           path: android/app/build/outputs/apk/release/app-release.apk
           if-no-files-found: error
 
+      # v4.96: la publicazione sulla release latest-apk avviene SOLO dal
+      # push su main. I branch di prova (es. test-v4.96) costruiscono l'APK
+      # e lo lasciano nell'ARTIFACT della run (scaricabile dalla pagina
+      # Actions), SENZA sovrascrivere la release che vedono i telefoni:
+      # cosi' si prova sul telefono PRIMA di pubblicare davvero.
       - name: Pubblica APK su Release latest-apk
+        if: github.ref == 'refs/heads/main'
         uses: softprops/action-gh-release@v2
         with:
           tag_name: latest-apk

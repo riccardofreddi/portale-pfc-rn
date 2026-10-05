@@ -1,6 +1,15 @@
 ﻿/**
  * Schermata Cassetto Personale.
  *
+ * v4.96 — l'IBAN si COPIA, non si scarica: il bottone "Scarica" della scheda
+ *   e del pannello diventa "Copia IBAN" (icona copia). Un tocco e le
+ *   coordinate (Intestatario + IBAN) sono negli appunti, pronte da incollare
+ *   nell'app della banca o dove serve: scaricare un .txt di due righe era il
+ *   passo inutile del giro. Il testo copiato e' IDENTICO a quello di
+ *   "Condividi" e se i dati non sono in memoria l'app li rilegge freschi dal
+ *   server prima di copiare. Clipboard e' nel cuore di React Native (zero
+ *   dipendenze nuove) e scrivere negli appunti non richiede permessi.
+ *   "Scarica" resta per tutti gli altri documenti del Cassetto.
  * v4.72 — RISOLTO DEFINITIVAMENTE il mistero dell'anteprima "vecchia":
  * - CAUSA VERA: la copia locale usata dall'anteprima si chiamava solo
  *   pfc_<chiave> e veniva riusata per sempre. Ma il Cassetto dà allo
@@ -103,6 +112,7 @@ import React, { useCallback, useEffect, useState } from 'react';
 import {
   ActivityIndicator,
   BackHandler,
+  Clipboard,
   FlatList,
   Pressable,
   RefreshControl,
@@ -604,6 +614,37 @@ export default function CassettoScreen() {
     }
   }
 
+  // v4.96: COPIA l'IBAN negli appunti del telefono (stessa strada di
+  // condividiIban: se il dettaglio non e' in memoria lo rilegge fresco dal
+  // server prima di copiare). Il testo copiato e' IDENTICO a quello di
+  // "Condividi": una sola fonte di verita' per le coordinate.
+  async function copiaIban() {
+    if (!ibanManualeServer) return;
+    haptics.tap();
+    let dato = ibanDettaglio;
+    if (!dato) {
+      try {
+        const testo = await scaricaTesto(ibanManualeServer.key, versioneDi(ibanManualeServer));
+        dato = parseIbanTesto(testo);
+      } catch {
+        dato = null;
+      }
+    }
+    if (!dato) {
+      toast.error('Errore', "Non sono riuscito a leggere l'IBAN da copiare");
+      return;
+    }
+    try {
+      Clipboard.setString(
+        `Coordinate bancarie\n\nIntestatario: ${dato.intestatario}\nIBAN: ${formattaIban(dato.iban)}`,
+      );
+      haptics.success();
+      toast.success('IBAN copiato', 'Incollalo dove ti serve');
+    } catch {
+      toast.error('Errore', "Non sono riuscito a copiare l'IBAN");
+    }
+  }
+
   async function salvaIbanManuale() {
     const intestatario = ibanIntestatario.trim();
     const iban = ibanValore.trim().toUpperCase().replace(/\s+/g, '');
@@ -762,20 +803,18 @@ export default function CassettoScreen() {
                 </Pressable>
                 <View style={styles.divider} />
                 {/* v4.74: la scheda IBAN ha GLI STESSI bottoni delle altre
-                 * schede del Cassetto, su una riga sola e mai a capo:
-                 * Scarica | Modifica | Elimina. Condividi sta DENTRO,
-                 * aprendo la scheda (come l'anteprima degli altri file). */}
+                 * schede del Cassetto, su una riga sola e mai a capo.
+                 * v4.96: al posto di Scarica c'e' COPIA IBAN: le coordinate
+                 * finiscono negli appunti (Condividi sta DENTRO, aprendo
+                 * la scheda come l'anteprima degli altri file). */}
                 <View style={styles.fileActionsRow}>
                   <Pressable
-                    onPress={() => handleDownload(ibanManualeServer)}
-                    disabled={scaricando !== null}
+                    onPress={copiaIban}
                     style={({ pressed }) => [styles.actionPill, pressed && { opacity: 0.8 }]}
-                    accessibilityLabel="Scarica IBAN"
+                    accessibilityLabel="Copia IBAN"
                   >
-                    <Ionicons name="download-outline" size={15} color={colors.primary} />
-                    <Text style={styles.actionPillText} numberOfLines={1} allowFontScaling={false}>
-                      {scaricando === ibanManualeServer.key ? `Scarica... ${percento}%` : 'Scarica'}
-                    </Text>
+                    <Ionicons name="copy-outline" size={15} color={colors.primary} />
+                    <Text style={styles.actionPillText} numberOfLines={1} allowFontScaling={false}>Copia IBAN</Text>
                   </Pressable>
                   <Pressable
                     onPress={apriIbanEdit}
@@ -988,13 +1027,13 @@ export default function CassettoScreen() {
                 <>
                   <Text style={styles.modalTitle}>IBAN</Text>
                   {/* v4.74: dentro la scheda, come nell'anteprima degli altri
-                   * file, in ALTO i DUE pulsanti che servono: Scarica e
-                   * Condividi. Niente spiegazioni: solo i dati. */}
+                   * file, in ALTO i DUE pulsanti che servono. Niente
+                   * spiegazioni: solo i dati. v4.96: i pulsanti sono Copia
+                   * IBAN e Condividi (Scarica e' uscito dal giro). */}
                   <View style={styles.overlayAzioni}>
                     <Button
-                      label={scaricando === ibanManualeServer.key ? `Scarica... ${percento}%` : 'Scarica'}
-                      onPress={() => handleDownload(ibanManualeServer)}
-                      disabled={scaricando !== null}
+                      label="Copia IBAN"
+                      onPress={copiaIban}
                       size="md"
                       style={styles.flex}
                     />
