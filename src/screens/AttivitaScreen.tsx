@@ -291,7 +291,7 @@ export default function AttivitaScreen() {
           }
           ListEmptyComponent={
             <EmptyState
-              icon={<Ionicons name="time-outline" size={36} color={colors.primary} />}
+              icon={<Ionicons name="time-outline" size={36} color={colors.primaryText} />}
               title="Nessuna attività registrata"
               subtitle="Le azioni eseguite sul portale verranno elencate in questa cronologia"
             />

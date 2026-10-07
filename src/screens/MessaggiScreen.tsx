@@ -560,7 +560,8 @@ export default function MessaggiScreen() {
     // lingua soft di verde/ambra. Resta ben distinto dal letto (oro) e
     // reggono la segnalazione fondo tinto + titolo grassetto + pill rossa.
     if (msg.haRisposta) return { icon: 'checkmark-circle', color: colors.success, bg: `${colors.success}26` };
-    if (eNuovo) return { icon: 'mail-unread-outline', color: colors.primary, bg: `${colors.primary}1A` };
+    // v4.98: primaryText — il navy su fondo notte era invisibile.
+    if (eNuovo) return { icon: 'mail-unread-outline', color: colors.primaryText, bg: `${colors.primaryText}1A` };
     // v4.27: richiesta documento = busta AMBRA (via la nuvola)
     if (msg.richiedeUpload) return { icon: 'mail-unread-outline', color: colors.warning, bg: `${colors.warning}26` };
     // v4.25: i messaggi letti prendono la tinta ORO della Bacheca (era grigio)
@@ -837,7 +838,7 @@ export default function MessaggiScreen() {
                 <Ionicons
                   name={tab === 'attivi' ? 'chatbubble-outline' : 'archive-outline'}
                   size={36}
-                  color={colors.primary}
+                  color={colors.primaryText}
                 />
               }
               title={tab === 'attivi' ? 'Nessun messaggio attivo' : 'Nessun messaggio archiviato'}

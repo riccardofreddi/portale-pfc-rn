@@ -265,7 +265,7 @@ export function SettingsModal() {
           <View style={styles.divider} />
           <View style={styles.switchRow}>
             <View style={styles.switchIconBox}>
-              <Ionicons name="notifications-outline" size={18} color={colors.primary} />
+              <Ionicons name="notifications-outline" size={18} color={colors.primaryText} />
             </View>
             <View style={styles.switchText}>
               <Text style={styles.switchTitle}>Ricevi gli avvisi dello studio</Text>
@@ -324,7 +324,7 @@ export function SettingsModal() {
             accessibilityLabel="Rivedi la guida introduttiva"
           >
             <View style={styles.switchIconBox}>
-              <Ionicons name="school-outline" size={18} color={colors.primary} />
+              <Ionicons name="school-outline" size={18} color={colors.primaryText} />
             </View>
             <View style={styles.switchText}>
               <Text style={styles.switchTitle}>Rivedi la guida introduttiva</Text>
@@ -405,7 +405,7 @@ const makeStyles = (colors: ThemeColors) =>
     ruoloPillCliente: { backgroundColor: colors.infoSoft },
     ruoloPillAdmin: { backgroundColor: colors.warningSoft },
     ruoloText: { fontSize: 10, fontWeight: '700' },
-    ruoloTextCliente: { color: colors.primary },
+    ruoloTextCliente: { color: colors.primaryText },
     ruoloTextAdmin: { color: colors.warning },
 
     // Stato notifiche

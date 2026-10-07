@@ -284,7 +284,9 @@ function MainTabsScreen() {
         }}
         screenOptions={{
           headerShown: false,
-          tabBarActiveTintColor: colors.primary,
+          // v4.98: primaryText — nel tema scuro il navy `primary` sul fondo
+          // notte della tab bar era quasi invisibile (tab attiva spenta).
+          tabBarActiveTintColor: colors.primaryText,
           tabBarInactiveTintColor: colors.textTertiary,
           tabBarStyle: {
             backgroundColor: colors.surface,

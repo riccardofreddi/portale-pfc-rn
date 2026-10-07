@@ -10,6 +10,15 @@ export interface ThemeColors {
   // === Primari ===
   primary: string;
   primaryLight: string;
+  // v4.98: `primaryText` e' la versione di `primary` LEGGIBILE quando sta
+  // come SCRITTA o ICONA (primo piano). Nel tema chiaro coincide col navy
+  // (su fondi chiari si legge gia'); nel tema scuro `primary` resta il blu
+  // notte dei PANNELLI (sfondi di bottoni, barre, avatar) mentre
+  // `primaryText` e' l'azzurro chiaro che sostituisce primary in tutti i
+  // punti in cui era primo piano: tab attiva, badge VISTO, icone cartelle,
+  // pillole d'azione del Cassetto. Stessa regola delle famiglie di stato:
+  // colore acceso per la grafica grande, tinta leggibile per il dettaglio.
+  primaryText: string;
   background: string;
   surface: string;
   surfaceAlt: string;
@@ -64,6 +73,9 @@ export interface ThemeColors {
 const lightColors: ThemeColors = {
   primary: '#003566',
   primaryLight: '#034078',
+  // v4.98: nel tema chiaro la scritta navy su fondo chiaro e' gia' a
+  // contrasto pieno: primaryText = primary, ZERO cambiamenti visivi.
+  primaryText: '#003566',
   background: '#F8FAFC',
   surface: '#FFFFFF',
   surfaceAlt: '#F1F5F9',
@@ -107,6 +119,13 @@ const lightColors: ThemeColors = {
 const darkColors: ThemeColors = {
   primary: '#1C2B4B',
   primaryLight: '#334A75',
+  // v4.98: primary e' piu' SCURO dello sfondo notte (nasce per stare
+  // DENTRO i pannelli con la scritta bianca sopra): usato come icona o
+  // scritta su surface/surfaceAlt era quasi invisibile (VISTO, cartelle,
+  // pillole "Scarica"). primaryText = azzurro chiaro, contrasto ~8:1 su
+  // surfaceAlt (#131D36) e ~9:1 su surface (#0D1527), ben oltre il 4.5:1
+  // WCAG per i testi piccoli.
+  primaryText: '#9DB8E8',
   background: '#0A1128',
   surface: '#0D1527',
   surfaceAlt: '#131D36',

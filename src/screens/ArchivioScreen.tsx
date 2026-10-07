@@ -900,7 +900,7 @@ function PreferitiModal({
         </View>
         {righe.length === 0 ? (
           <EmptyState
-            icon={<Ionicons name="star-outline" size={36} color={colors.primary} />}
+            icon={<Ionicons name="star-outline" size={36} color={colors.primaryText} />}
             title="Nessun preferito"
             subtitle="Aggiungi un documento ai preferiti con la stellina sulla sua riga"
           />
@@ -1693,7 +1693,7 @@ export default function ArchivioScreen() {
             style={({ pressed }) => [styles.searchBackCircle, pressed && styles.btnPressedOpacity]}
             accessibilityLabel="Chiudi ricerca e torna all'archivio"
           >
-            <Ionicons name="arrow-back" size={19} color={colors.primary} />
+            <Ionicons name="arrow-back" size={19} color={colors.primaryText} />
           </Pressable>
           <View style={styles.searchField}>
             <Ionicons name="search" size={18} color={colors.accentDark} />
@@ -1726,7 +1726,7 @@ export default function ArchivioScreen() {
           </View>
         ) : searchResults.length === 0 ? (
           <EmptyState
-            icon={<Ionicons name="search-outline" size={36} color={colors.primary} />}
+            icon={<Ionicons name="search-outline" size={36} color={colors.primaryText} />}
             title={q.length >= 2 ? `Nessun documento trovato` : 'Cerca documenti'}
             subtitle={
               q.length >= 2
@@ -1803,7 +1803,7 @@ export default function ArchivioScreen() {
             style={({ pressed }) => [styles.breadBack, pressed && styles.btnPressedOpacity]}
             accessibilityLabel="Torna indietro"
           >
-            <Ionicons name="arrow-back" size={18} color={colors.primary} />
+            <Ionicons name="arrow-back" size={18} color={colors.primaryText} />
           </Pressable>
           <View style={styles.breadText}>
             <Text style={styles.breadOver}>Archivio {anno}</Text>
@@ -2027,7 +2027,7 @@ export default function ArchivioScreen() {
                     <Card style={styles.folderCard} padded={false}>
                       <View style={styles.folderRowInner}>
                         <View style={styles.folderIconBox}>
-                          <Ionicons name="folder" size={24} color={colors.primary} />
+                          <Ionicons name="folder" size={24} color={colors.primaryText} />
                         </View>
                         <View style={styles.rowText}>
                           <Text style={styles.folderName} numberOfLines={1}>
@@ -2239,13 +2239,13 @@ export default function ArchivioScreen() {
                * sono finiti (visti dal dettaglio o da una notifica):
                * messaggio dedicato, mai un falso "Nessuna cartella". */
               <EmptyState
-                icon={<Ionicons name="sparkles-outline" size={36} color={colors.primary} />}
+                icon={<Ionicons name="sparkles-outline" size={36} color={colors.primaryText} />}
                 title="Nessun documento nuovo"
                 subtitle={'Tocca la ✕ della linguetta "Solo nuovi" per tornare alle cartelle'}
               />
             ) : (
               <EmptyState
-                icon={<Ionicons name="folder-open-outline" size={36} color={colors.primary} />}
+                icon={<Ionicons name="folder-open-outline" size={36} color={colors.primaryText} />}
                 title={
                   step === 'file'
                     ? 'Cartella vuota'
@@ -2455,7 +2455,7 @@ const makeStyles = (colors: ThemeColors) =>
     breadOver: { fontSize: 11, fontWeight: '500', color: colors.textSecondary },
     breadTitle: { fontSize: 15, fontWeight: '700', color: colors.textPrimary },
     breadAction: { paddingHorizontal: 10, height: 34, alignItems: 'center', justifyContent: 'center' },
-    breadActionText: { fontSize: 13, fontWeight: '700', color: colors.primary },
+    breadActionText: { fontSize: 13, fontWeight: '700', color: colors.primaryText },
     breadActionTextMuto: { fontSize: 13, fontWeight: '500', color: colors.textSecondary },
 
     // v4.11 — Vista ricerca dedicata (campo come OutlinedTextField v4)

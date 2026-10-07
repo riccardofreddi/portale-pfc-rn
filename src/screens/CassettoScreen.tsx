@@ -813,7 +813,7 @@ export default function CassettoScreen() {
                     style={({ pressed }) => [styles.actionPill, pressed && { opacity: 0.8 }]}
                     accessibilityLabel="Copia IBAN"
                   >
-                    <Ionicons name="copy-outline" size={15} color={colors.primary} />
+                    <Ionicons name="copy-outline" size={15} color={colors.primaryText} />
                     <Text style={styles.actionPillText} numberOfLines={1} allowFontScaling={false}>Copia IBAN</Text>
                   </Pressable>
                   <Pressable
@@ -821,7 +821,7 @@ export default function CassettoScreen() {
                     style={({ pressed }) => [styles.actionPill, pressed && { opacity: 0.8 }]}
                     accessibilityLabel="Modifica IBAN"
                   >
-                    <Ionicons name="pencil-outline" size={15} color={colors.primary} />
+                    <Ionicons name="pencil-outline" size={15} color={colors.primaryText} />
                     <Text style={styles.actionPillText} numberOfLines={1} allowFontScaling={false}>Modifica</Text>
                   </Pressable>
                   <Pressable
@@ -864,7 +864,7 @@ export default function CassettoScreen() {
                   style={({ pressed }) => [styles.actionPill, pressed && { opacity: 0.8 }]}
                   accessibilityLabel="Scarica"
                 >
-                  <Ionicons name="download-outline" size={15} color={colors.primary} />
+                  <Ionicons name="download-outline" size={15} color={colors.primaryText} />
                   {/* v4.38: durante il download il pulsante mostra la
                    * percentuale, come la barra di avanzamento di Archivio. */}
                   <Text style={styles.actionPillText} numberOfLines={1} allowFontScaling={false}>{scaricando === file.key ? `Scarica... ${percento}%` : 'Scarica'}</Text>
@@ -877,7 +877,7 @@ export default function CassettoScreen() {
                   style={({ pressed }) => [styles.actionPill, pressed && { opacity: 0.8 }]}
                   accessibilityLabel="Modifica"
                 >
-                  <Ionicons name="pencil-outline" size={15} color={colors.primary} />
+                  <Ionicons name="pencil-outline" size={15} color={colors.primaryText} />
                   <Text style={styles.actionPillText} numberOfLines={1} allowFontScaling={false}>Modifica</Text>
                 </Pressable>
                 <Pressable
@@ -893,7 +893,7 @@ export default function CassettoScreen() {
           )}
           ListEmptyComponent={
             <EmptyState
-              icon={<Ionicons name="folder-open-outline" size={36} color={colors.primary} />}
+              icon={<Ionicons name="folder-open-outline" size={36} color={colors.primaryText} />}
               title="Nessun documento trovato"
               subtitle="Tocca «Aggiungi» per caricare i tuoi documenti personali"
             />
@@ -1148,7 +1148,9 @@ const makeStyles = (colors: ThemeColors) =>
     // v4.37: tre bottoni con la scritta (Scarica / Modifica / Elimina)
     fileActionsRow: { flexDirection: 'row', alignItems: 'center', gap: 8, paddingHorizontal: 12, paddingVertical: 10 },
     actionPill: { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 5, backgroundColor: colors.surfaceAlt, borderRadius: 999, paddingVertical: 9 },
-    actionPillText: { color: colors.primary, fontWeight: '700', fontSize: 12 },
+    // v4.98: primaryText — la pillola sta su surfaceAlt: nel tema scuro il
+    // navy `primary` su notte era illeggibile ("Scarica" spariva).
+    actionPillText: { color: colors.primaryText, fontWeight: '700', fontSize: 12 },
     actionPillDanger: { backgroundColor: colors.dangerSoft },
     actionPillTextDanger: { color: colors.danger },
     modalContent: { padding: spacing.xl, gap: spacing.md },
@@ -1169,8 +1171,8 @@ const makeStyles = (colors: ThemeColors) =>
     tipoRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.md, paddingVertical: spacing.md, paddingHorizontal: spacing.md, borderRadius: 10 },
     tipoRowActive: { backgroundColor: colors.accentSoft },
     radio: { width: 20, height: 20, borderRadius: 10, borderWidth: 2, borderColor: colors.borderStrong, alignItems: 'center', justifyContent: 'center' },
-    radioSelected: { borderColor: colors.primary },
-    radioDot: { width: 10, height: 10, borderRadius: 5, backgroundColor: colors.primary },
+    radioSelected: { borderColor: colors.primaryText },
+    radioDot: { width: 10, height: 10, borderRadius: 5, backgroundColor: colors.primaryText },
     tipoLabel: { ...typography.body, color: colors.textPrimary, flex: 1 },
     tipoLabelActive: { color: colors.accentDark, fontWeight: '600' },
     uploadCtaBtn: { marginTop: spacing.sm },

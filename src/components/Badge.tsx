@@ -24,8 +24,10 @@ function variantStyles(colors: ThemeColors): Record<BadgeVariant, { bg: string; 
     warning: { bg: colors.warningSoft, fg: colors.warning },
     danger: { bg: colors.dangerSoft, fg: colors.danger },
     info: { bg: colors.infoSoft, fg: colors.info },
-    // Blu navy su contenitore azzurro (VISTO nell'app v4)
-    neutral: { bg: colors.surfaceAlt, fg: colors.primary },
+    // v4.98: fg = primaryText — nel tema scuro il navy `primary` su
+    // surfaceAlt notte era invisibile (il badge VISTO spariva); nel tema
+    // chiaro primaryText = primary, identico a prima.
+    neutral: { bg: colors.surfaceAlt, fg: colors.primaryText },
   };
 }
 
