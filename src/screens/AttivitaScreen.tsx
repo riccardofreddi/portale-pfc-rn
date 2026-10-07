@@ -75,26 +75,32 @@ const ORO_CHIARO = '#F7E7B4';
  * cliente (CLIENT_ACTIONS in /api/audit/me). Quattro famiglie con una
  * regola sola: VERDE = operazione completata, BLU = solo lettura,
  * GRIGIO = organizzazione (nessun impatto sui file), ROSSO = attenzione.
+ * v4.97: ogni voce porta DUE tonalita' dello stesso colore: `fg` per
+ * l'ICONA (21px, resta il colore acceso) e `text` per la SCRITTA della
+ * pillola (11px, la versione piu' scura della tinta: contrasto sempre
+ * >= 4.5:1 sul fondo soft). Le due voci di UPLOAD escono dal verde e
+ * passano al VERDE-ACQUA (teal): caricare e' il contrario di scaricare.
  */
 function getActionConfig(
   colors: ThemeColors,
-): Record<string, { label: string; icon: keyof typeof Ionicons.glyphMap; bg: string; fg: string }> {
+): Record<string, { label: string; icon: keyof typeof Ionicons.glyphMap; bg: string; fg: string; text: string }> {
   return {
     // — VERDE: operazione completata —
-    LOGIN_SUCCESS: { label: 'Accesso effettuato', icon: 'log-in-outline', bg: colors.successSoft, fg: colors.success },
-    DOWNLOAD_DOC: { label: 'File scaricato', icon: 'download-outline', bg: colors.successSoft, fg: colors.success },
-    DOWNLOAD_CASSETTO: { label: 'File scaricato', icon: 'download-outline', bg: colors.successSoft, fg: colors.success },
-    UPLOAD_CASSETTO: { label: 'File caricato', icon: 'cloud-upload-outline', bg: colors.successSoft, fg: colors.success },
-    UPLOAD_RISPOSTA: { label: 'File inviato', icon: 'paper-plane-outline', bg: colors.successSoft, fg: colors.success },
-    SCARICA_ARCHIVIO: { label: 'Cartella scaricata', icon: 'folder-open-outline', bg: colors.successSoft, fg: colors.success },
+    LOGIN_SUCCESS: { label: 'Accesso effettuato', icon: 'log-in-outline', bg: colors.successSoft, fg: colors.success, text: colors.successText },
+    DOWNLOAD_DOC: { label: 'File scaricato', icon: 'download-outline', bg: colors.successSoft, fg: colors.success, text: colors.successText },
+    DOWNLOAD_CASSETTO: { label: 'File scaricato', icon: 'download-outline', bg: colors.successSoft, fg: colors.success, text: colors.successText },
+    SCARICA_ARCHIVIO: { label: 'Cartella scaricata', icon: 'folder-open-outline', bg: colors.successSoft, fg: colors.success, text: colors.successText },
+    // — VERDE-ACQUA (v4.97): caricare e' il contrario di scaricare —
+    UPLOAD_CASSETTO: { label: 'File caricato', icon: 'cloud-upload-outline', bg: colors.tealSoft, fg: colors.teal, text: colors.tealText },
+    UPLOAD_RISPOSTA: { label: 'File inviato', icon: 'paper-plane-outline', bg: colors.tealSoft, fg: colors.teal, text: colors.tealText },
     // — BLU: solo lettura —
-    LETTO_MESSAGGI: { label: 'Messaggi letti', icon: 'checkmark-done-outline', bg: colors.infoSoft, fg: colors.info },
+    LETTO_MESSAGGI: { label: 'Messaggi letti', icon: 'checkmark-done-outline', bg: colors.infoSoft, fg: colors.info, text: colors.infoText },
     // — GRIGIO: organizzazione, nessun impatto sui file —
-    LOGOUT: { label: 'Disconnessione', icon: 'log-out-outline', bg: colors.surfaceAlt, fg: colors.textSecondary },
-    RINOMINA_FILE: { label: 'File rinominato', icon: 'pencil-outline', bg: colors.surfaceAlt, fg: colors.textSecondary },
+    LOGOUT: { label: 'Disconnessione', icon: 'log-out-outline', bg: colors.surfaceAlt, fg: colors.textSecondary, text: colors.textSecondary },
+    RINOMINA_FILE: { label: 'File rinominato', icon: 'pencil-outline', bg: colors.surfaceAlt, fg: colors.textSecondary, text: colors.textSecondary },
     // — ROSSO: attenzione —
-    LOGIN_FAILED: { label: 'Accesso negato', icon: 'alert-circle-outline', bg: colors.dangerSoft, fg: colors.danger },
-    ELIMINA_FILE_CASSETTO: { label: 'File eliminato', icon: 'trash-outline', bg: colors.dangerSoft, fg: colors.danger },
+    LOGIN_FAILED: { label: 'Accesso negato', icon: 'alert-circle-outline', bg: colors.dangerSoft, fg: colors.danger, text: colors.dangerText },
+    ELIMINA_FILE_CASSETTO: { label: 'File eliminato', icon: 'trash-outline', bg: colors.dangerSoft, fg: colors.danger, text: colors.dangerText },
   };
 }
 
@@ -160,6 +166,7 @@ export default function AttivitaScreen() {
         icon: 'information-circle-outline' as keyof typeof Ionicons.glyphMap,
         bg: colors.surfaceAlt,
         fg: colors.textSecondary,
+        text: colors.textSecondary,
       },
     [actionConfig, colors.surfaceAlt, colors.textSecondary],
   );
@@ -251,8 +258,11 @@ export default function AttivitaScreen() {
                   </View>
                   <View style={styles.entryText}>
                     <View style={styles.entryTopRow}>
+                      {/* v4.97: la scritta usa la tonalita' `text` (piu'
+                       * scura, leggibile a 11px); icona e bordo restano
+                       * sul colore acceso `fg`. */}
                       <View style={[styles.entryPill, { backgroundColor: cfg.bg, borderColor: `${cfg.fg}4D` }]}>
-                        <Text style={[styles.entryPillText, { color: cfg.fg }]}>{cfg.label}</Text>
+                        <Text style={[styles.entryPillText, { color: cfg.text }]}>{cfg.label}</Text>
                       </View>
                       <Text style={styles.entryDate}>{formatDateAudit(item.ts)}</Text>
                     </View>
