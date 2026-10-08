@@ -19,8 +19,8 @@ android {
         applicationId "com.portalepfcrn"
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
-        versionCode 104
-        versionName "1.88.7"
+        versionCode 105
+        versionName "1.88.8"
     }
     signingConfigs {
         debug {
