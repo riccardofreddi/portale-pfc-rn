@@ -55,6 +55,25 @@
  * L'APK gia' scaricato per la release proposta resta in cache: al
  * secondo tentativo l'installer apre SUBITO, senza riscaricare 100 MB
  * (chiave pfc-apk-pronto-v1).
+ *
+ * v4.102 - IL CONTROLLO CHE NON PUO' PIU' MANCARE. La prova dal vivo
+ * con la 1.88.4 non e' partita: il telefono non ha mostrato il
+ * pannello. Due difetti, uno di pagina e uno di rete.
+ * 1) PAGINA (App.tsx): il controllo viveva SOLO all'avvio a freddo;
+ *    se l'app era in background e veniva RIAPERTA, il controllo non
+ *    ripartiva e il pannello non compariva mai finche' l'app non
+ *    veniva chiusa davvero. Sistemato in App.tsx: il controllo riparte
+ *    anche al ritorno sull'app.
+ * 2) RETE (qui): il check parlava SOLO con l'API di GitHub
+ *    (api.github.com), che senza autenticazione ha un tetto di 60
+ *    richieste ORARIE PER INDIRIZZO IP. Su rete mobile l'indirizzo e'
+ *    condiviso fra tante persone: spesso e' gia' esaurito (HTTP 403)
+ *    e il check moriva in silenzio anche se la release c'era.
+ *    Rimedio: la CI pubblica ora accanto all'APK anche un file di
+ *    testo con la sola versione (versione.txt: "1.88.5" e basta);
+ *    l'app lo legge dalla via DOWNLOAD di GitHub, che NON ha il tetto
+ *    dell'API. L'API resta come ripiego (e per le release piu' vecchie
+ *    che non hanno il file).
  */
 import { Linking } from 'react-native';
 import Constants from 'expo-constants';
@@ -88,7 +107,7 @@ export const APP_VERSION: string =
 /** Sigillo dell'interfaccia JS: cambia a ogni release e viaggia
  *  col codice, non col build (segue il versionCode: 4101 = versionCode
  *  100). Unica fonte: la tacca di versione, ora in Impostazioni. */
-export const CODICE_INTERFACCIA = 4101;
+export const CODICE_INTERFACCIA = 4102;
 
 interface ReleaseInfo {
   version: string | null;
@@ -119,6 +138,47 @@ async function fetchLatestRelease(): Promise<ReleaseInfo> {
     publishedAt: data.published_at ?? '',
     htmlUrl: data.html_url ?? RELEASES_PAGE_URL,
   };
+}
+
+// ==== v4.102: la via del FILE, senza il tetto dell'API ===============
+
+/** Il file di testo pubblicato dalla CI accanto all'APK: contiene la
+ *  sola versione ("1.88.5", un rigo). Serve l'appendice "?t=" perche'
+ *  l'indirizzo e' sempre lo stesso e la rete potrebbe rispondere con
+ *  la copia vecchia in cache (stesso difetto dell'APK, v4.91). */
+const VERSIONE_TXT_URL = `https://github.com/${GITHUB_REPO}/releases/download/latest-apk/versione.txt`;
+
+/** Legge la versione dal file (via download, senza rate limit).
+ *  null se il file non c'e' (release vecchie), la rete manca o la
+ *  risposta non e' una versione: il chiamante passa al ripiego API. */
+async function leggiVersioneDaFile(): Promise<string | null> {
+  try {
+    const res = await fetch(`${VERSIONE_TXT_URL}?t=${Date.now()}`, {
+      headers: { Accept: 'text/plain' },
+    });
+    if (!res.ok) return null;
+    const testo = (await res.text()).trim();
+    // Solo cifre e punti: una pagina d'errore HTML non deve mai
+    // passare per versione
+    return /^[0-9]+(\.[0-9]+)*$/.test(testo) ? testo : null;
+  } catch {
+    return null;
+  }
+}
+
+/** Trova l'ultima release pubblicata. Prima la via del file (robusta,
+ *  senza tetto di richieste); se quella non risponde, il ripiego API
+ *  di sempre (che pero' puo' colare contro il tetto dei 60/ora). */
+async function trovaUltimaRelease(): Promise<ReleaseInfo> {
+  const viaFile = await leggiVersioneDaFile();
+  if (viaFile) {
+    return {
+      version: viaFile,
+      publishedAt: '',
+      htmlUrl: RELEASES_PAGE_URL,
+    };
+  }
+  return fetchLatestRelease();
 }
 
 function compareVersions(a: string, b: string): number {
@@ -258,7 +318,7 @@ export async function eseguiAggiornamento(
 }
 
 export async function checkForUpdates(): Promise<UpdateCheckResult> {
-  const rel = await fetchLatestRelease();
+  const rel = await trovaUltimaRelease();
   const latest = rel.version;
   if (latest && compareVersions(latest, APP_VERSION) > 0) {
     return {

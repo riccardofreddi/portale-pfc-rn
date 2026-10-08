@@ -229,12 +229,26 @@ export default function App() {
   // bottone in poi e' tutto automatico: download dentro l'app con
   // percentuale e apertura da sola dell'installer di Android; al
   // cliente resta solo la conferma di sistema "Aggiorna app?".
+  //
+  // v4.102: il controllo riparte ANCHE al RITORNO sull'app, non solo
+  // all'avvio a freddo. Prima viveva solo nel useEffect su user: se
+  // l'app restava in background (il caso piu' comune: Android la tiene
+  // viva per ore) e veniva riaperta, il controllo NON ripartiva e il
+  // pannello non compariva mai finche' l'app non veniva chiusa per
+  // davvero - e' cosi' che la prova della 1.88.4 e' andata vuota.
+  // Il freno e' unico e gia' esistente: la cache di 10 minuti dentro
+  // aggiornamentoDisponibileAllAvvio (stessa finestra della soglia
+  // qui sotto), quindi le riaperture ravvicinate non generano richieste
+  // a ripetizione. Se il pannello e' gia' aperto, riaprirlo non fa nulla.
   const [aggiornamentoOpen, setAggiornamentoOpen] = useState(false);
   const [versioneLatest, setVersioneLatest] = useState<string | null>(null);
+  const ultimoControlloAgg = useRef(0);
   useEffect(() => {
     if (!user) return;
     let cancellato = false;
-    const timer = setTimeout(() => {
+
+    const eseguiControllo = () => {
+      ultimoControlloAgg.current = Date.now();
       void (async () => {
         try {
           const { daFare, latest } = await aggiornamentoDisponibileAllAvvio();
@@ -243,13 +257,32 @@ export default function App() {
             setAggiornamentoOpen(true);
           }
         } catch {
-          // silenzio: si riprova al prossimo avvio
+          // silenzio: si riprova al prossimo avvio o ritorno sull'app
         }
       })();
-    }, 8_000);
+    };
+
+    // All'avvio: dopo una piccola pausa per non fare rumore col resto
+    // del bootstrap.
+    const timer = setTimeout(eseguiControllo, 8_000);
+
+    // Al ritorno sull'app (era in background): ricontrolla se dal
+    // ultimo controllo e' passata la stessa finestra della cache (10
+    // min, CACHE_MS in updates.ts): quando scatta, la cache e' ormai
+    // scaduta e il controllo va davvero a cercare la versione nuova.
+    const sub = AppState.addEventListener('change', (stato) => {
+      if (
+        stato === 'active' &&
+        Date.now() - ultimoControlloAgg.current >= 10 * 60 * 1000
+      ) {
+        eseguiControllo();
+      }
+    });
+
     return () => {
       cancellato = true;
       clearTimeout(timer);
+      sub.remove();
     };
   }, [user]);
 

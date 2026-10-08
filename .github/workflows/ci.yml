@@ -96,6 +96,15 @@ jobs:
       # e lo lasciano nell'ARTIFACT della run (scaricabile dalla pagina
       # Actions), SENZA sovrascrivere la release che vedono i telefoni:
       # cosi' si prova sul telefono PRIMA di pubblicare davvero.
+      # v4.102: accanto all'APK esce anche versione.txt (la sola
+      # versione, un rigo). L'app lo legge per il controllo aggiornamenti
+      # usando la via DOWNLOAD di GitHub, che NON ha il tetto di 60
+      # richieste/ora dell'API non autenticata: su rete mobile l'IP e'
+      # condiviso e spesso l'API risponde 403. Il body con "**Versione:**"
+      # resta: le app gia' distribuite lo leggono via API come ripiego.
+      - name: Scrivi versione.txt
+        run: echo "${{ steps.version.outputs.version }}" > versione.txt
+
       - name: Pubblica APK su Release latest-apk
         if: github.ref == 'refs/heads/main'
         uses: softprops/action-gh-release@v2
@@ -107,6 +116,8 @@ jobs:
             APK React Native — generato dalla CI di GitHub Actions.
 
             **Versione:** ${{ steps.version.outputs.version }}
-          files: android/app/build/outputs/apk/release/app-release.apk
+          files: |
+            android/app/build/outputs/apk/release/app-release.apk
+            versione.txt
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
