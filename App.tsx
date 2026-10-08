@@ -236,10 +236,13 @@ export default function App() {
   // viva per ore) e veniva riaperta, il controllo NON ripartiva e il
   // pannello non compariva mai finche' l'app non veniva chiusa per
   // davvero - e' cosi' che la prova della 1.88.4 e' andata vuota.
-  // Il freno e' unico e gia' esistente: la cache di 10 minuti dentro
-  // aggiornamentoDisponibileAllAvvio (stessa finestra della soglia
-  // qui sotto), quindi le riaperture ravvicinate non generano richieste
-  // a ripetizione. Se il pannello e' gia' aperto, riaprirlo non fa nulla.
+  // Se il pannello e' gia' aperto, riaprirlo non fa nulla.
+  //
+  // v4.104: al ritorno il controllo e' SUBITO e SENZA cache (saltaCache:
+  // via del file senza tetto di richieste): i doppi freni da 10 minuti
+  // (soglia + cache) facevano si' che riaprendo l'app prima dei dieci
+  // minuti niente partisse e la prova dal vivo sembrasse fallita. Ora
+  // il freno e' solo un minuto contro i passaggi rapidi app/schermo.
   const [aggiornamentoOpen, setAggiornamentoOpen] = useState(false);
   const [versioneLatest, setVersioneLatest] = useState<string | null>(null);
   const ultimoControlloAgg = useRef(0);
@@ -247,11 +250,12 @@ export default function App() {
     if (!user) return;
     let cancellato = false;
 
-    const eseguiControllo = () => {
+    const eseguiControllo = (saltaCache = false) => {
       ultimoControlloAgg.current = Date.now();
       void (async () => {
         try {
-          const { daFare, latest } = await aggiornamentoDisponibileAllAvvio();
+          const { daFare, latest } =
+            await aggiornamentoDisponibileAllAvvio(saltaCache);
           if (!cancellato && daFare) {
             setVersioneLatest(latest);
             setAggiornamentoOpen(true);
@@ -263,19 +267,25 @@ export default function App() {
     };
 
     // All'avvio: dopo una piccola pausa per non fare rumore col resto
-    // del bootstrap.
-    const timer = setTimeout(eseguiControllo, 8_000);
+    // del bootstrap. Con la cache del controllo (10 min) come freno.
+    const timer = setTimeout(() => eseguiControllo(), 8_000);
 
-    // Al ritorno sull'app (era in background): ricontrolla se dal
-    // ultimo controllo e' passata la stessa finestra della cache (10
-    // min, CACHE_MS in updates.ts): quando scatta, la cache e' ormai
-    // scaduta e il controllo va davvero a cercare la versione nuova.
+    // Al ritorno sull'app (era in background): v4.104 - SI CONTROLLA
+    // SUBITO, saltando la cache, se dal precedente controllo e' passata
+    // almeno un MINUTO (il freno serve solo per i passaggi rapidi
+    // app/schermo, non per i ritorni veri). Prima (v4.102) qui c'era la
+    // stessa finestra della cache (10 min) E il controllo la rispettava:
+    // doppi freni - riaprendo prima dei dieci minuti il controllo non
+    // partiva affatto e la release nuova restava invisibile. Ora la
+    // richiesta va diretta al file versione.txt (senza tetto dell'API):
+    // una richiesta leggerissima per riapertura, e il pannello compare
+    // appena una release esce, comunque sia tornati sull'app.
     const sub = AppState.addEventListener('change', (stato) => {
       if (
         stato === 'active' &&
-        Date.now() - ultimoControlloAgg.current >= 10 * 60 * 1000
+        Date.now() - ultimoControlloAgg.current >= 60_000
       ) {
-        eseguiControllo();
+        eseguiControllo(true);
       }
     });
 

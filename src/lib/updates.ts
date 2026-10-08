@@ -107,7 +107,7 @@ export const APP_VERSION: string =
 /** Sigillo dell'interfaccia JS: cambia a ogni release e viaggia
  *  col codice, non col build (segue il versionCode: 4101 = versionCode
  *  100). Unica fonte: la tacca di versione, ora in Impostazioni. */
-export const CODICE_INTERFACCIA = 4103;
+export const CODICE_INTERFACCIA = 4104;
 
 interface ReleaseInfo {
   version: string | null;
@@ -392,34 +392,50 @@ interface CacheControllo {
  * ripresenta al prossimo avvio: tutti devono finire sull'ultima
  * versione. (Le vecchie voci pfc-update-ack-v1 restano in storage
  * ma non vengono piu' lette: nessun danno.)
+ *
+ * v4.104: parametro `saltaCache`. Al RITORNO sull'app (App.tsx) la
+ * cache si SALTA e si chiede la versione VERA: con i soli freni da 10
+ * minuti (soglia + cache) riaprendo l'app prima dei dieci minuti il
+ * controllo non partiva affatto e la release nuova restava invisibile
+ * - la prova dal vivo e' andata vuota proprio cosi'. La via del file
+ * (versione.txt) non ha il tetto di richieste dell'API, quindi si puo'
+ * permettere un controllo a ogni riapertura vera; il freno contro i
+ * passaggi rapidi app/schermo e' il timer di 60 secondi in App.tsx.
+ * All'AVVIO la cache resta (zero rumore col bootstrap, riaperture
+ * ravvicinate non chiedono nulla).
  */
-export async function aggiornamentoDisponibileAllAvvio(): Promise<{
+export async function aggiornamentoDisponibileAllAvvio(
+  saltaCache = false,
+): Promise<{
   daFare: boolean;
   latest: string | null;
 }> {
   let disponibile = false;
   let latest: string | null = null;
 
-  try {
-    const raw = await AsyncStorage.getItem(CACHE_KEY);
-    if (raw) {
-      const cache = JSON.parse(raw) as Partial<CacheControllo> | null;
-      if (
-        cache &&
-        typeof cache.t === 'number' &&
-        typeof cache.disponibile === 'boolean' &&
-        cache.v === APP_VERSION && // v4.91: esiti di un'altra versione non valgono
-        Date.now() - cache.t < CACHE_MS
-      ) {
-        disponibile = cache.disponibile;
-        latest = typeof cache.latest === 'string' ? cache.latest : null;
+  if (!saltaCache) {
+    try {
+      const raw = await AsyncStorage.getItem(CACHE_KEY);
+      if (raw) {
+        const cache = JSON.parse(raw) as Partial<CacheControllo> | null;
+        if (
+          cache &&
+          typeof cache.t === 'number' &&
+          typeof cache.disponibile === 'boolean' &&
+          cache.v === APP_VERSION && // v4.91: esiti di un'altra versione non valgono
+          Date.now() - cache.t < CACHE_MS
+        ) {
+          disponibile = cache.disponibile;
+          latest = typeof cache.latest === 'string' ? cache.latest : null;
+        }
       }
+    } catch {
+      // cache illeggibile: prosegui col controllo di rete
     }
-  } catch {
-    // cache illeggibile: prosegui col controllo di rete
   }
 
-  // Cache assente, scaduta o di un'altra versione: chiedi a GitHub.
+  // Cache assente, scaduta, di un'altra versione o SALTATA (v4.104):
+  // chiedi a GitHub.
   if (latest === null && !disponibile) {
     try {
       const res = await checkForUpdates();
