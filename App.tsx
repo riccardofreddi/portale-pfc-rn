@@ -219,12 +219,16 @@ export default function App() {
   // riprova al prossimo avvio. Il controllo non parte dal login: solo
   // con la sessione ripristinata (l'aggiornamento resta fuori dal login).
   //
-  // v4.93: il dialog NON si riapre piu' dopo "Aggiorna ora". La logica
-  // della memoria ("gia' chiesto di andare alla versione X") vive in
-  // updates.ts; qui teniamo la versione proposta (versioneLatest) da
-  // passare al modal per l'ack e chiudiamo il dialog quando l'utente
-  // preme il bottone (onAggiora): il download parte nel browser e
-  // l'app resta subito utilizzabile.
+  // v4.93: qui teniamo la versione proposta (versioneLatest) da passare
+  // al modal e chiudiamo il dialog quando l'utente preme il bottone
+  // (onAggiora): l'app resta subito utilizzabile.
+  //
+  // v4.100: il dialog si ripresenta a ogni avvio finche' la release
+  // proposta e' piu' nuova dell'app installata (nessuna memoria v4.93:
+  // se il cliente annulla l'installer, l'aggiornamento riparte). Dal
+  // bottone in poi e' tutto automatico: download dentro l'app con
+  // percentuale e apertura da sola dell'installer di Android; al
+  // cliente resta solo la conferma di sistema "Aggiorna app?".
   const [aggiornamentoOpen, setAggiornamentoOpen] = useState(false);
   const [versioneLatest, setVersioneLatest] = useState<string | null>(null);
   useEffect(() => {

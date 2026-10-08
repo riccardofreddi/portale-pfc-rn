@@ -13,6 +13,17 @@
     <permission android:name="${applicationId}.permission.C2D_MESSAGE" android:protectionLevel="signature" />
     <uses-permission android:name="${applicationId}.permission.C2D_MESSAGE" />
 
+    <!-- v4.100: aggiornamento che fa tutto da solo. L'app scarica l'APK
+         della nuova versione dentro la sua cache e apre DA SOLA
+         l'installer di Android (stesso meccanismo di apriConApp per i
+         PDF, gia' in produzione). Da Android 8 il sistema esige questo
+         permesso per lanciare l'installer su un APK: senza, il tocco su
+         "Aggiorna ora" restava muto. Non fa comparire alcuna richiesta
+         a runtime: la prima volta Android mostra solo il suo interruttore
+         "Installa app sconosciute", poi sempre la solita conferma
+         "Aggiorna app?". -->
+    <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
+
     <!-- v4.92: da Android 11 l'app non vede le app che aprono siti (browser)
          se non le dichiara qui: senza queste righe il tocco sui link dei
          messaggi restava muto perche' Linking non trovava nessuno che

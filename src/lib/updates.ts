@@ -36,11 +36,31 @@
  * All'avvio il dialog compare SOLO se la release trovata e' DIVERSA da
  * quella gia' chiesta: stessa release => piu' dialog; release NUOVA =>
  * torna a comparire, come giusto.
+ *
+ * v4.100 - L'AGGIORNAMENTO FA TUTTO DA SOLO. Prima "Aggiorna ora"
+ * apriva il BROWSER: l'APK scaricava li', poi il cliente doveva cercare
+ * la notifica, toccare il file e solo dopo arrivava la conferma di
+ * Android: troppi passaggi. Ora il download avviene DENTRO l'app
+ * (react-native-blob-util, con percentuale visibile sul bottone) e a
+ * fine download l'app apre DA SOLA l'installer di Android: l'unico
+ * tocco che resta al cliente e' la conferma di sistema "Aggiorna app?"
+ * (non eliminabile: e' la sicurezza di Android). Il meccanismo nativo
+ * e' lo stesso di apriConApp (lib/download.ts), gia' in produzione per
+ * i PDF; il permesso REQUEST_INSTALL_PACKAGES e' nell'AndroidManifest.
+ * La memoria dell'ack v4.93 e' RIMOSSA di proposito: finche' la release
+ * proposta e' piu' nuova dell'app installata, il pannello riparte a
+ * ogni avvio. Se il cliente annulla l'installer, al prossimo avvio
+ * l'aggiornamento si ripresenta: tutti devono finire sull'ultima
+ * versione (richiesta del titolare: "il cliente non deve fare nulla").
+ * L'APK gia' scaricato per la release proposta resta in cache: al
+ * secondo tentativo l'installer apre SUBITO, senza riscaricare 100 MB
+ * (chiave pfc-apk-pronto-v1).
  */
 import { Linking } from 'react-native';
 import Constants from 'expo-constants';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as Application from 'expo-application';
+import ReactNativeBlobUtil from 'react-native-blob-util';
 
 export const GITHUB_REPO = 'riccardofreddi/portale-pfc-rn';
 
@@ -66,9 +86,9 @@ export const APP_VERSION: string =
   Application.nativeApplicationVersion ?? Constants.expoConfig?.version ?? '1.0.0';
 
 /** Sigillo dell'interfaccia JS: cambia a ogni release e viaggia
- *  col codice, non col build (segue il versionCode: 499 = versionCode
- *  99). Unica fonte: la tacca di versione, ora in Impostazioni. */
-export const CODICE_INTERFACCIA = 499;
+ *  col codice, non col build (segue il versionCode: 4100 = versionCode
+ *  100). Unica fonte: la tacca di versione, ora in Impostazioni. */
+export const CODICE_INTERFACCIA = 4100;
 
 interface ReleaseInfo {
   version: string | null;
@@ -116,44 +136,125 @@ export type UpdateCheckResult =
   | { status: 'up-to-date'; current: string; latest: string | null }
   | { status: 'available'; current: string; latest: string; url: string };
 
-// ==== v4.93: memoria dell'"Aggiorna ora" gia' chiesto ==================
+// ==== v4.100: il download dentro l'app e l'installer automatico =======
 
-/** Il rimando resta per sempre (nessuna scadenza): finche' su GitHub
- *  non esce una release DIVERSA da quella gia' chiesta, il dialog non
- *  torna a disturbare. E' la richiesta del titolare: "una volta che e'
- *  stato fatto Aggiorna ora non deve piu' riaprirsi". */
-const ACK_KEY = 'pfc-update-ack-v1';
+/** Percorso FISSO dell'APK in cache: sovrascritto a ogni download
+ *  (l'unlink preventivo evita di ritrovare un file a meta' da un
+ *  tentativo interrotto, stessa prudenza di condividi.ts). La cache
+ *  e' coperta dal FileProvider della libreria (cache-path), quello
+ *  stesso che gia' serve apriConApp. Compiuto PIGRO: fs.dirs tocca il
+ *  modulo nativo e non deve essere interrogato durante l'import del
+ *  modulo (stessa prudenza di download.ts, che lo usa solo dentro le
+ *  funzioni). */
+function percorsoApkCache(): string {
+  return `${ReactNativeBlobUtil.fs.dirs.CacheDir}/pfc_aggiornamento.apk`;
+}
 
-interface AckAggiornamento {
-  /** Quando e' stato premuto il bottone. */
-  t: number;
-  /** La versione dell'ultima release per cui l'utente ha gia' premuto
-   *  "Aggiorna ora" (la versione che GitHub proponeva in quel momento). */
+/** Memoria dell'APK gia' scaricato per una release: se il cliente ha
+ *  annullato l'installer e riprova, l'installer apre SUBITO senza
+ *  riscaricare ~100 MB. La voce vale solo se il file c'e' ancora
+ *  (Android puo' svuotare la cache quando vuole). */
+const APK_PRONTO_KEY = 'pfc-apk-pronto-v1';
+
+interface ApkPronto {
+  /** La release per cui l'APK e' stato scaricato. */
   verso: string;
+  /** Il percorso del file in cache. */
+  path: string;
 }
 
-/** v4.93: registra che l'utente ha premuto "Aggiorna ora" mentre GitHub
- *  proponeva la versione `verso`. Silenzioso: se lo storage fallisce,
- *  al peggio il dialog ricompara come prima della modifica. */
-export async function segnaAggiornamentoChiesto(verso: string): Promise<void> {
+async function leggiApkPronto(verso: string): Promise<string | null> {
   try {
-    const ack: AckAggiornamento = { t: Date.now(), verso };
-    await AsyncStorage.setItem(ACK_KEY, JSON.stringify(ack));
-  } catch {
-    // storage indisponibile: non blocca nulla
-  }
-}
-
-async function leggiAckAggiornamento(): Promise<AckAggiornamento | null> {
-  try {
-    const raw = await AsyncStorage.getItem(ACK_KEY);
+    const raw = await AsyncStorage.getItem(APK_PRONTO_KEY);
     if (!raw) return null;
-    const ack = JSON.parse(raw) as Partial<AckAggiornamento> | null;
-    if (ack && typeof ack.verso === 'string' && ack.verso) return ack as AckAggiornamento;
+    const meta = JSON.parse(raw) as Partial<ApkPronto> | null;
+    if (
+      meta &&
+      meta.verso === verso &&
+      typeof meta.path === 'string' &&
+      (await ReactNativeBlobUtil.fs.exists(meta.path))
+    ) {
+      return meta.path;
+    }
   } catch {
-    // ack illeggibile: come se non ci fosse
+    // memoria illeggibile o file sparito: si riscarica
   }
   return null;
+}
+
+/**
+ * v4.100: scarica l'APK dell'ultima release DENTRO l'app (cache) e
+ * ritorna il percorso. onProgress riceve la percentuale (0-100) se la
+ * rete comunica la dimensione del file, altrimenti non viene chiamato
+ * e l'interfaccia resta sul "Scaricamento..." senza numero. L'URL e'
+ * lo stesso del browser (con "?t=" anti-cache, v4.91); eventuali
+ * errori HTTP lasciano la cache pulita.
+ */
+export async function scaricaAggiornamentoAPK(
+  onProgress?: (percento: number) => void,
+): Promise<string> {
+  const destinazione = percorsoApkCache();
+  await ReactNativeBlobUtil.fs.unlink(destinazione).catch(() => {});
+  const task = ReactNativeBlobUtil.config({ path: destinazione }).fetch(
+    'GET',
+    `${APK_URL}?t=${Date.now()}`,
+  );
+  if (onProgress) {
+    task.progress((received: number | string, total: number | string) => {
+      const tot = Number(total);
+      if (tot > 0) {
+        onProgress(Math.min(100, Math.round((Number(received) / tot) * 100)));
+      }
+    });
+  }
+  const res = await task;
+  const status = res.info().status;
+  if (status < 200 || status >= 300) {
+    await ReactNativeBlobUtil.fs.unlink(destinazione).catch(() => {});
+    throw new Error(`Errore del server (HTTP ${status})`);
+  }
+  return res.path();
+}
+
+/**
+ * v4.100: apre l'installer di Android sull'APK scaricato. Da qui e'
+ * Android a parlare al cliente: la sua conferma "Aggiorna app?" e'
+ * l'unico tocco rimasto (e' la sicurezza del sistema, non si toglie).
+ * Stessa via di apriConApp, in produzione da sempre per i PDF.
+ */
+export async function apriInstallerAPK(percorso: string): Promise<void> {
+  await ReactNativeBlobUtil.android.actionViewIntent(
+    percorso,
+    'application/vnd.android.package-archive',
+  );
+}
+
+/**
+ * v4.100: l'orchestrazione completa chiamata dal pannello. Se l'APK
+ * per questa release e' gia' in cache lo riusa (installer subito),
+ * altrimenti scarica (con percentuale) e poi apre l'installer. Se una
+ * parte fallisce l'errore sale al chiamante: il pannello passa a
+ * "Riprova" e, come ultima spiaggia, resta il download dal browser.
+ */
+export async function eseguiAggiornamento(
+  verso: string,
+  onProgress?: (percento: number) => void,
+): Promise<void> {
+  const giaPronto = await leggiApkPronto(verso);
+  if (giaPronto) {
+    await apriInstallerAPK(giaPronto);
+    return;
+  }
+  const percorso = await scaricaAggiornamentoAPK(onProgress);
+  try {
+    await AsyncStorage.setItem(
+      APK_PRONTO_KEY,
+      JSON.stringify({ verso, path: percorso } satisfies ApkPronto),
+    );
+  } catch {
+    // memoria piena: la prossima volta si riscarica, nulla si rompe
+  }
+  await apriInstallerAPK(percorso);
 }
 
 export async function checkForUpdates(): Promise<UpdateCheckResult> {
@@ -223,13 +324,14 @@ interface CacheControllo {
  * giu', storage illeggibile) vale false e non rompe nulla; si riprova
  * al prossimo avvio.
  *
- * v4.93: ritorna anche la versione trovata (`latest`) cosi' App puo'
- * segnare l'ack quando l'utente preme "Aggiorna ora". E SOPRATTUTTO
- * applica il filtro dell'ack: se l'unica release disponibile e' quella
- * per cui l'utente ha gia' premuto "Aggiorna ora", il dialog NON torna
- * (daFare: false) anche se GitHub continua a proportela. Il filtro
- * viene applicato DOPO la cache: anche un esito in cache non puo'
- * far riaprire il dialog di una release gia' chiesta.
+ * v4.93: ritorna anche la versione trovata (`latest`) per il pannello.
+ *
+ * v4.100: il filtro dell'ack e' RIMOSSO: finche' la release proposta
+ * e' piu' nuova dell'app installata, `daFare` resta true a ogni
+ * avvio. Se il cliente annulla l'installer, l'aggiornamento si
+ * ripresenta al prossimo avvio: tutti devono finire sull'ultima
+ * versione. (Le vecchie voci pfc-update-ack-v1 restano in storage
+ * ma non vengono piu' lette: nessun danno.)
  */
 export async function aggiornamentoDisponibileAllAvvio(): Promise<{
   daFare: boolean;
@@ -280,14 +382,8 @@ export async function aggiornamentoDisponibileAllAvvio(): Promise<{
     }
   }
 
-  // v4.93: filtro "gia' chiesto". Applicato anche agli esiti in cache:
-  // l'ack vale piu' della cache (dura sempre, la cache 10 minuti).
-  if (disponibile && latest) {
-    const ack = await leggiAckAggiornamento();
-    if (ack && ack.verso === latest) {
-      return { daFare: false, latest };
-    }
-  }
-
+  // v4.100: nessun filtro "gia' chiesto": se c'e' una release piu'
+  // nuova dell'app installata, il pannello riparte. Da qui il "fa
+  // tutto da solo": annullare l'installer non disarma l'aggiornamento.
   return { daFare: disponibile, latest };
 }
