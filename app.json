@@ -4,7 +4,7 @@
   "expo": {
     "name": "Portale Studio",
     "slug": "portale-pfc",
-    "version": "1.88.1",
+    "version": "1.88.2",
     "orientation": "portrait",
     "userInterfaceStyle": "automatic",
     "android": {

@@ -61,6 +61,16 @@ function conPrefissoFile(percorso: string): string {
  * documento (es. "Verbale.pdf"). Chi riceve il file vede il nome giusto
  * invece di un nome tecnico interno. Se la copia non riesce si usa
  * comunque l'originale: l'importante e' che il file parta.
+ *
+ * v4.99 — FIX ".bin": il cp NATIVO di react-native-blob-util su Android,
+ * quando la copia RIUSCE, invoca il callback SENZA argomenti
+ * (callback.invoke() in ReactNativeBlobUtilFS.cp) e la promessa JS
+ * risolve con UNDEFINED. Fidandosi del valore di ritorno
+ * (`copiato ? destinazione : percorso`) la condivisione partiva SEMPRE
+ * col file di cache interno (pfc_..._1234567890.pdf_1234567890) invece
+ * della copia col nome vero: underscore + numeri + estensione invalida
+ * => WhatsApp/Gmail lo mostravano come ".bin". Ora il ritorno del cp
+ * NON viene piu' letto: la copia si VERIFICA su disco con fs.exists.
  */
 async function preparaFileCondivisibile(
   percorso: string,
@@ -69,16 +79,29 @@ async function preparaFileCondivisibile(
   try {
     const cartella = `${ReactNativeBlobUtil.fs.dirs.CacheDir}/condividi`;
     const destinazione = `${cartella}/${nomeFileSicuro(nome)}`;
-    const cartellaGiaPresente = await ReactNativeBlobUtil.fs
-      .exists(cartella)
-      .catch(() => false);
-    if (!cartellaGiaPresente) {
-      await ReactNativeBlobUtil.fs.mkdir(cartella);
-    }
+    // Cartella creata sempre: se esiste gia' mkdir viene ignorato
+    // (catch) invece di fidarsi di un exists() fatto in precedenza.
+    await ReactNativeBlobUtil.fs.mkdir(cartella).catch(() => {});
     await ReactNativeBlobUtil.fs.unlink(destinazione).catch(() => {});
-    const copiato = await ReactNativeBlobUtil.fs.cp(percorso, destinazione);
-    return copiato ? destinazione : percorso;
-  } catch {
+    await ReactNativeBlobUtil.fs.cp(percorso, destinazione);
+    // La copia e' davvero a posto? Si guarda il DISCO, non il ritorno.
+    const copiata = await ReactNativeBlobUtil.fs
+      .exists(destinazione)
+      .catch(() => false);
+    if (copiata) {
+      console.log('[CONDIVIDI] copia col nome vero OK:', destinazione);
+      return destinazione;
+    }
+    console.warn(
+      '[CONDIVIDI] copia non presente dopo cp, condivido il file di cache:',
+      percorso,
+    );
+    return percorso;
+  } catch (err) {
+    console.warn(
+      '[CONDIVIDI] preparazione della copia fallita:',
+      err instanceof Error ? err.message : err,
+    );
     // La copia col nome bello e' un vezzo: se non riesce parte l'originale.
     return percorso;
   }

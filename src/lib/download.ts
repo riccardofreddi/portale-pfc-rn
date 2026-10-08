@@ -163,7 +163,17 @@ export async function scaricaInCache(
 ): Promise<string> {
   const cookie = await api.documenti.sessionCookieHeader();
   const suffisso = versione !== undefined && versione !== null ? `_${versione}` : '';
-  const nomeCache = `pfc_${key}${suffisso}`.replace(/[^a-zA-Z0-9._-]/g, '_');
+  // v4.99: il suffisso versione va PRIMA dell'estensione
+  // (pfc_Documenti_..._Verbale_1728...pdf e non pfc_..._Verbale.pdf_1728...):
+  // un'estensione finale sempre VALIDA significa che anche se la
+  // condivisione usasse questo file di cache al posto della copia col nome
+  // vero, il destinatario vede comunque un PDF e non un ".bin".
+  const ext = key.match(/\.([a-zA-Z0-9]{1,8})$/)?.[1];
+  const nomeCache = (
+    ext
+      ? `pfc_${key.slice(0, -(ext.length + 1))}${suffisso}.${ext}`
+      : `pfc_${key}${suffisso}`
+  ).replace(/[^a-zA-Z0-9._-]/g, '_');
   const path = `${ReactNativeBlobUtil.fs.dirs.CacheDir}/${nomeCache}`;
   const giaPresente = await ReactNativeBlobUtil.fs.exists(path).catch(() => false);
   if (giaPresente) return path;
