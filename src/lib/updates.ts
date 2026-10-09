@@ -107,7 +107,7 @@ export const APP_VERSION: string =
 /** Sigillo dell'interfaccia JS: cambia a ogni release e viaggia
  *  col codice, non col build (segue il versionCode: 4101 = versionCode
  *  100). Unica fonte: la tacca di versione, ora in Impostazioni. */
-export const CODICE_INTERFACCIA = 4107;
+export const CODICE_INTERFACCIA = 4108;
 
 interface ReleaseInfo {
   version: string | null;

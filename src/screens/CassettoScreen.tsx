@@ -1,6 +1,18 @@
 ﻿/**
  * Schermata Cassetto Personale.
  *
+ * v4.108 — RINOMINA DEFINITIVA (la v4.107 non bastava sul telefono):
+ *   il campo si apre VUOTO — niente nome pre-caricato, che era il testo
+ *   su cui la digitazione si ACCODAVA ("Visura.pdfVisura 2026"). Il
+ *   campo vuoto rende l'accodamento IMPOSSIBILE per costruzione, con
+ *   qualunque tastiera. Sopra il campo compare "Nome attuale: ..." come
+ *   promemoria; il segnaposto chiede il nome nuovo. La protezione
+ *   estensione di v4.107 resta: scrivi "Visura 2026" e l'app riattacca
+ *   l'estensione dell'originale ("Visura 2026.pdf"). Nota tecnica: la
+ *   v4.107 provava "tutto selezionato" ma su Android il focus del
+ *   TextInput rimette il cursore in fondo e la selezione non regge
+ *   (onSelectionChange la riscrive col cursore a fine testo).
+ *
  * v4.107 — RINOMINA: il campo si apre con TUTTO SELEZIONATO (il primo
  *   tasto rimpiazza il nome, come le app Files di sistema; per un ritocco
  *   piccolo tocchi dove vuoi il cursore). Protezione estensione: se
@@ -329,12 +341,6 @@ export default function CassettoScreen() {
   const [uploading, setUploading] = useState(false);
   const [renaming, setRenaming] = useState<CassettoFile | null>(null);
   const [renameValue, setRenameValue] = useState('');
-  // v4.107: selezione del campo rinomina (controllata). All'apertura =
-  // tutto selezionato: il primo tasto RIMPIAZZA (prima il cursore andava
-  // in fondo e il testo digitato si accodava). onSelectionChange tiene lo
-  // stato allineato mentre scrivi/tocchi, altrimenti il cursore starebbe
-  // fermo dove lo abbiamo messo noi.
-  const [renameSelezione, setRenameSelezione] = useState<{ start: number; end: number } | null>(null);
   // v4.38: stato del download in corso (chiave del file + percentuale),
   // come in Archivio: il pulsante mostra l'avanzamento invece di restare
   // muto finche' arriva la notifica di sistema.
@@ -989,10 +995,10 @@ export default function CassettoScreen() {
                 <Pressable
                   onPress={() => {
                     setRenaming(file);
-                    setRenameValue(file.nome);
-                    // v4.107: TUTTO selezionato (prima: cursore in fondo e
-                    // il testo nuovo si accodava al vecchio)
-                    setRenameSelezione({ start: 0, end: file.nome.length });
+                    // v4.108: campo VUOTO — il nome nuovo si SCRIVE, non si
+                    // accoda a quello vecchio (il pre-riempimento era la
+                    // causa dell'accodamento, con qualunque cursore/tastiera)
+                    setRenameValue('');
                   }}
                   style={({ pressed }) => [styles.actionPill, pressed && { opacity: 0.8 }]}
                   accessibilityLabel="Modifica"
@@ -1106,11 +1112,16 @@ export default function CassettoScreen() {
       <Modal visible={!!renaming} onClose={() => setRenaming(null)}>
         <View style={styles.modalContent}>
           <Text style={styles.modalTitle}>Rinomina documento</Text>
+          {/* v4.108: campo VUOTO con promemoria del nome attuale: la
+           * selezione automatica (v4.107) non reggeva al focus su Android
+           * (il cursore tornava in fondo e il testo si accodava). Con il
+           * campo vuoto l'accodamento e' impossibile per costruzione. */}
+          {renaming && <Text style={styles.modalSubtitle}>Nome attuale: {renaming.nome}</Text>}
           <TextInput
             value={renameValue}
             onChangeText={setRenameValue}
-            selection={renameSelezione ?? undefined}
-            onSelectionChange={(e) => setRenameSelezione(e.nativeEvent.selection)}
+            placeholder="Scrivi il nome nuovo"
+            placeholderTextColor={colors.textTertiary}
             style={styles.renameInput}
             autoFocus
             onSubmitEditing={handleRenameSubmit}
