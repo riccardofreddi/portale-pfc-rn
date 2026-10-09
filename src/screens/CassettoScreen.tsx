@@ -1,6 +1,15 @@
 ﻿/**
  * Schermata Cassetto Personale.
  *
+ * v4.107 — RINOMINA: il campo si apre con TUTTO SELEZIONATO (il primo
+ *   tasto rimpiazza il nome, come le app Files di sistema; per un ritocco
+ *   piccolo tocchi dove vuoi il cursore). Protezione estensione: se
+ *   salvi senza estensione ("Visura 2026") l'app riattacca quella
+ *   originale ("Visura 2026.pdf"), un'estensione digitata a mano si
+ *   rispetta. Prima: campo pre-riempito col nome vecchio e cursore in
+ *   fondo => il nome nuovo si ACCODAVA al vecchio ("Visura.pdfVisura
+ *   2026") — il bug segnalato dal titolare.
+ *
  * v4.106 — RISOLTO "ho rinominato un file e ora Scarica/Condividi dicono
  *   file spostato": il server RINOMINA DAVVERO il documento (la chiave
  *   cambia, il nome vive dentro la chiave) e la risposta del rename porta
@@ -320,6 +329,12 @@ export default function CassettoScreen() {
   const [uploading, setUploading] = useState(false);
   const [renaming, setRenaming] = useState<CassettoFile | null>(null);
   const [renameValue, setRenameValue] = useState('');
+  // v4.107: selezione del campo rinomina (controllata). All'apertura =
+  // tutto selezionato: il primo tasto RIMPIAZZA (prima il cursore andava
+  // in fondo e il testo digitato si accodava). onSelectionChange tiene lo
+  // stato allineato mentre scrivi/tocchi, altrimenti il cursore starebbe
+  // fermo dove lo abbiamo messo noi.
+  const [renameSelezione, setRenameSelezione] = useState<{ start: number; end: number } | null>(null);
   // v4.38: stato del download in corso (chiave del file + percentuale),
   // come in Archivio: il pulsante mostra l'avanzamento invece di restare
   // muto finche' arriva la notifica di sistema.
@@ -572,6 +587,19 @@ export default function CassettoScreen() {
   async function handleRenameSubmit() {
     if (!renaming || !renameValue.trim()) return;
     haptics.tap();
+    // v4.107: protezione estensione — "Visura 2026" diventa
+    // "Visura 2026.pdf" (riattacca l'estensione dell'originale, cosi'
+    // anteprima e download restano a posto). Un'estensione digitata a mano
+    // si rispetta ("Visura 2026.dat" resta tale). I punti finali sparisono
+    // ("banca." -> "banca" + estensione).
+    const digitato = renameValue.trim().replace(/\.+$/, '');
+    if (!digitato) return;
+    const taglio = renaming.nome.lastIndexOf('.');
+    const extVecchia = taglio > 0 ? renaming.nome.slice(taglio) : '';
+    const nomeFinale =
+      /\.[a-zA-Z0-9]{1,6}$/.test(digitato) || !extVecchia
+        ? digitato
+        : `${digitato}${extVecchia}`;
     try {
       // v4.106: il server rinomina DAVVERO il documento: la chiave cambia
       // e la risposta porta la chiave nuova (newKey). Prima la si
@@ -579,9 +607,9 @@ export default function CassettoScreen() {
       // 404, anteprima "file spostato", Condividi irraggiungibile. Ora la
       // riga prende chiave e nome DALLA RISPOSTA (fonte di verita'), con
       // fallback prudenti se il server non li spedisse.
-      const esito = await api.cassetto.rename(renaming.key, renameValue.trim());
+      const esito = await api.cassetto.rename(renaming.key, nomeFinale);
       const chiaveViva = esito?.newKey || renaming.key;
-      const nomeVivo = esito?.newName || renameValue.trim();
+      const nomeVivo = esito?.newName || nomeFinale;
       setFiles((prev) =>
         prev.map((f) => (f.key === renaming.key ? { ...f, key: chiaveViva, nome: nomeVivo } : f)),
       );
@@ -962,6 +990,9 @@ export default function CassettoScreen() {
                   onPress={() => {
                     setRenaming(file);
                     setRenameValue(file.nome);
+                    // v4.107: TUTTO selezionato (prima: cursore in fondo e
+                    // il testo nuovo si accodava al vecchio)
+                    setRenameSelezione({ start: 0, end: file.nome.length });
                   }}
                   style={({ pressed }) => [styles.actionPill, pressed && { opacity: 0.8 }]}
                   accessibilityLabel="Modifica"
@@ -1078,6 +1109,8 @@ export default function CassettoScreen() {
           <TextInput
             value={renameValue}
             onChangeText={setRenameValue}
+            selection={renameSelezione ?? undefined}
+            onSelectionChange={(e) => setRenameSelezione(e.nativeEvent.selection)}
             style={styles.renameInput}
             autoFocus
             onSubmitEditing={handleRenameSubmit}
