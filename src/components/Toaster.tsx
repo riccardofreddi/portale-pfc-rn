@@ -104,11 +104,16 @@ function ToastCard({ item }: { item: ToastItem }) {
               <Text style={styles.toastIconText}>{v.icon}</Text>
             </View>
             <View style={styles.toastText}>
-              <Text style={[styles.toastTitle, { color: v.fg }]} numberOfLines={1}>
+              {/* v4.110: il titolo e il sottotitolo hanno fino a 3 righe. Prima il
+                  titolo era numberOfLines={1} e i messaggi lunghi (es. dopo
+                  "Segna come pagata") venivano tagliati con i puntini, cosi' il
+                  cliente leggeva solo l'inizio e non capiva cosa succede alle
+                  notifiche. I toast corti restano identici a prima. */}
+              <Text style={[styles.toastTitle, { color: v.fg }]} numberOfLines={3}>
                 {item.title}
               </Text>
               {item.subtitle ? (
-                <Text style={[styles.toastSubtitle, { color: v.fg }]} numberOfLines={2}>
+                <Text style={[styles.toastSubtitle, { color: v.fg }]} numberOfLines={3}>
                   {item.subtitle}
                 </Text>
               ) : null}

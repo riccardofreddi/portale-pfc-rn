@@ -1394,8 +1394,14 @@ export default function ArchivioScreen() {
       setDetailFile((prev) => (prev ? applica(prev) : prev));
       // v4.81: aggiorna anche la lista "Documenti Nuovi", se aperta.
       setNuoviLista((prev) => (prev ? prev.map(applica) : prev));
+      // v4.110: titolo corto + spiegazione COMPLETA nel sottotitolo. Prima tutto
+      // era nel titolo del toast (limitato a una riga) e veniva tagliato: il
+      // cliente vedeva "Segnata come pagata: le notifi..." senza capire.
       toast.success(
-        pagata ? 'Segnata come pagata: le notifiche si fermano' : 'Pagamento annullato: le notifiche riprendono',
+        pagata ? 'Scadenza segnata come pagata' : 'Pagamento annullato',
+        pagata
+          ? 'Le notifiche di questo documento (promemoria, push, campanella) si fermano.'
+          : 'Le notifiche di questo documento (promemoria, push, campanella) ripartono.',
       );
       aggiornaPromemoriaScadenze().catch(() => {});
     } catch {
