@@ -1,6 +1,18 @@
 ﻿/**
  * Schermata Cassetto Personale.
  *
+ * v4.109 — RINOMINA: rimozione del PREFISSO TECNICO dalla visualizzazione.
+ *   Il server incide il tipo nella chiave ({tipo}_{anno}[_{nome}].{ext}):
+ *   l'upload crea "altro_2026.pdf" (il nome originale viene scartato) e la
+ *   rinomina produce "altro_2026_bilancio.pdf" — per design, perche' la
+ *   regola "uno slot per tipo" legge il prefisso della chiave. L'app mostrava
+ *   il nome GREZZO: al cliente sembrava che il nome nuovo si INCOLLASSE
+ *   dopo quello vecchio ("altro_2026" + "bilancio"). Da ora la lista,
+ *   l'anteprima e il pannello rinomina mostrano SOLO la parte pulita
+ *   ("bilancio.pdf"); il nome tecnico resta solo dentro la chiave, dove
+ *   serve al server. Verificato con simulatore end-to-end (10/10) sul codice
+ *   server reale: digiti X => vedi X.estensioneoriginale, sempre.
+ *
  * v4.108 — RINOMINA DEFINITIVA (la v4.107 non bastava sul telefono):
  *   il campo si apre VUOTO — niente nome pre-caricato, che era il testo
  *   su cui la digitazione si ACCODAVA ("Visura.pdfVisura 2026"). Il
@@ -207,6 +219,30 @@ const TIPO_KEY_DA_LABEL: Record<string, string> = {
   'IBAN': 'iban',
 };
 
+// v4.109: il server incide TIPO e ANNO nella chiave del Cassetto
+// ({tipoKey}_{anno}[_{nomeutente}].{ext}; vedi cassetto/rename/route.ts:
+// la rinomina ricostruisce SEMPRE il prefisso per la regola "uno slot
+// per tipo"). Quel prefisso e' tecnico: NON deve mai arrivare all'utente.
+// nomeVisibile toglie "{tipoKey}_{anno}_" quando esiste la parte col nome
+// scelto dall'utente; i file MAI rinominati ("altro_2026.pdf", senza parte
+// utente) restano com'erano: si puliscono al primo cambio nome.
+const RE_PREFISSO_TECNICO =
+  /^(qr_code_p_iva|certificato_p_iva|visura_camerale|doc_identita|iban|altro)_(\d{4})(?:_(.+))?(\.[^.]*)$/;
+
+function nomeVisibile(nome: string): string {
+  const m = nome.match(RE_PREFISSO_TECNICO);
+  if (m && m[3]) return `${m[3]}${m[4]}`;
+  return nome;
+}
+
+// v4.109: ogni volta che la lista arriva dal server (load, refresh al
+// focus, self-heal scarica) i nomi vengono puliti UNA volta sola: tutto
+// il resto dello schermo (righe, anteprima, condivisione, conferma di
+// eliminazione, pannello rinomina) vede solo nomi puliti.
+function conNomiPuliti(files: CassettoFile[]): CassettoFile[] {
+  return files.map((f) => ({ ...f, nome: nomeVisibile(f.nome) }));
+}
+
 // v4.53: limite Cassetto 5MB, allineato al server (che resta l'ultima parola:
 // il pre-controllo serve solo ad avvisare prima, sui file leggibili).
 const CASSETTO_MAX_FILE_SIZE_MB = 5;
@@ -380,7 +416,7 @@ export default function CassettoScreen() {
     else setLoading(true);
     try {
       const res = await api.cassetto.list();
-      setFiles(res.files);
+      setFiles(conNomiPuliti(res.files));
     } catch (err) {
       toast.error('Errore', err instanceof Error ? err.message : 'Errore caricamento');
     } finally {
@@ -409,7 +445,7 @@ export default function CassettoScreen() {
       api.cassetto
         .list()
         .then((res) => {
-          if (vivo) setFiles(res.files);
+          if (vivo) setFiles(conNomiPuliti(res.files));
         })
         .catch(() => {
           // silenzio: resta la lista che c'e' gia'
@@ -550,9 +586,12 @@ export default function CassettoScreen() {
               ? res.files.find((f) => f.tipoKey === file.tipoKey)
               : undefined) ?? res.files.find((f) => f.nome === file.nome);
           if (vivo) {
-            setFiles(res.files);
+            setFiles(conNomiPuliti(res.files));
             setScaricando(vivo.key);
-            await scaricaInDownload(vivo.key, vivo.nome || file.nome, setPercento);
+            // v4.109: vivo.nome arriva GREZZO dal server (con prefisso
+            // tecnico): pulito, cosi' il file salvato in Download ha lo
+            // stesso nome pulito che mostra la lista.
+            await scaricaInDownload(vivo.key, nomeVisibile(vivo.nome) || file.nome, setPercento);
             guarito = true;
           }
         } catch {
@@ -593,11 +632,12 @@ export default function CassettoScreen() {
   async function handleRenameSubmit() {
     if (!renaming || !renameValue.trim()) return;
     haptics.tap();
-    // v4.107: protezione estensione — "Visura 2026" diventa
+    // v4.108: protezione estensione — "Visura 2026" diventa
     // "Visura 2026.pdf" (riattacca l'estensione dell'originale, cosi'
-    // anteprima e download restano a posto). Un'estensione digitata a mano
-    // si rispetta ("Visura 2026.dat" resta tale). I punti finali sparisono
-    // ("banca." -> "banca" + estensione).
+    // anteprima e download restano a posto). Nota v4.109: il server usa
+    // SEMPRE l'estensione della chiave originale (quella digitata viene
+    // da lui ignorata) — questa protezione serve solo al fallback locale
+    // se la risposta non portasse newName. I punti finali sparisono.
     const digitato = renameValue.trim().replace(/\.+$/, '');
     if (!digitato) return;
     const taglio = renaming.nome.lastIndexOf('.');
@@ -615,7 +655,10 @@ export default function CassettoScreen() {
       // fallback prudenti se il server non li spedisse.
       const esito = await api.cassetto.rename(renaming.key, nomeFinale);
       const chiaveViva = esito?.newKey || renaming.key;
-      const nomeVivo = esito?.newName || nomeFinale;
+      // v4.109: il server riattacca il prefisso tecnico {tipo}_{anno}_ al
+      // newName: pulito SUBITO, cosi' la riga mostra il nome come lo vuole
+      // l'utente e non rispunta il prefisso tecnico a schermo.
+      const nomeVivo = esito?.newName ? nomeVisibile(esito.newName) : nomeFinale;
       setFiles((prev) =>
         prev.map((f) => (f.key === renaming.key ? { ...f, key: chiaveViva, nome: nomeVivo } : f)),
       );
