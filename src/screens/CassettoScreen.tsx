@@ -1,6 +1,27 @@
 ﻿/**
  * Schermata Cassetto Personale.
  *
+ * v4.106 — RISOLTO "ho rinominato un file e ora Scarica/Condividi dicono
+ *   file spostato": il server RINOMINA DAVVERO il documento (la chiave
+ *   cambia, il nome vive dentro la chiave) e la risposta del rename porta
+ *   la chiave NUOVA (newKey) — che l'app IGNORAVA: la lista restava con
+ *   la chiave vecchia, morta da subito. Scarica = 404; l'anteprima
+ *   (tocco sul file) attivava la riparazione cercando nella RICERCA
+ *   DELL'ARCHIVIO, che il Cassetto non copre => "Documento non piu'
+ *   presente... spostato o eliminato"; Condividi (che sta dentro
+ *   l'anteprima) irraggiungibile. Tre cure insieme:
+ *   1) la rinomina aggiorna la riga con chiave e nome DALLA RISPOSTA
+ *      del server: da subito tutte le azioni puntano al file vivo;
+ *   2) al ritorno sulla schermata la lista si allinea DA SOLA e in
+ *      silenzio (useFocusEffect): qualunque chiave morta guarisce prima
+ *      che l'utente tocchi qualcosa;
+ *   3) "Scarica" con cintura di sicurezza: su 404 ricarica la lista,
+ *      ritrova il file (per tipoKey, che sopravvive alla rinomina, o
+ *      per nome) e riprova UNA volta con la chiave viva.
+ *   I file rinominati con le versioni precedenti tornano a funzionare
+ *   da soli: la lista rilegge le chiavi vere dal server. Nessun dato
+ *   perso: sul server il file e' sempre stato al suo posto.
+ *
  * v4.96 — l'IBAN si COPIA, non si scarica: il bottone "Scarica" della scheda
  *   e del pannello diventa "Copia IBAN" (icona copia). Un tocco e le
  *   coordinate (Intestatario + IBAN) sono negli appunti, pronte da incollare
@@ -108,7 +129,7 @@
  * - Logica INTATTA: caricamento, upload con tipo, download, rinomina,
  *   eliminazione, limite dimensione file.
  */
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   BackHandler,
@@ -129,6 +150,7 @@ import { Ionicons } from '@expo/vector-icons';
 import Svg, { Defs, Rect, LinearGradient, Stop } from 'react-native-svg';
 import DocumentPicker, { types } from 'react-native-document-picker';
 import ReactNativeBlobUtil from 'react-native-blob-util';
+import { useFocusEffect } from '@react-navigation/native';
 import { Card } from '@/components/Card';
 import { EmptyState } from '@/components/EmptyState';
 import { FileIcon } from '@/components/FileIcon';
@@ -350,6 +372,33 @@ export default function CassettoScreen() {
     load();
   }, [load]);
 
+  // v4.106: al ritorno sulla schermata la lista si allinea DA SOLA e in
+  // silenzio (niente ruote, niente skeleton): una rilettura leggera che
+  // cura le chiavi morte prima che l'utente tocchi qualcosa (rinomina
+  // fatta con un'app vecchia, file mosso lato server...). Il primo
+  // focus e' saltato: al mount ci pensa gia' il load() qui sopra.
+  const primoFocus = useRef(true);
+  useFocusEffect(
+    useCallback(() => {
+      if (primoFocus.current) {
+        primoFocus.current = false;
+        return;
+      }
+      let vivo = true;
+      api.cassetto
+        .list()
+        .then((res) => {
+          if (vivo) setFiles(res.files);
+        })
+        .catch(() => {
+          // silenzio: resta la lista che c'e' gia'
+        });
+      return () => {
+        vivo = false;
+      };
+    }, []),
+  );
+
   // v4.72 (migrazione una-tantum): chi aveva scritto l'IBAN a mano nella
   // v4.71 lo aveva custodito SUL TELEFONO (AsyncStorage). Da questa versione
   // l'IBAN vive sul server come gli altri documenti: al primo avvio lo
@@ -464,7 +513,37 @@ export default function CassettoScreen() {
       haptics.success();
       toast.success('Download completato', 'Il file è in Download e nella barra in alto');
     } catch (err) {
-      toast.error('Errore download', err instanceof Error ? err.message : 'Errore sconosciuto');
+      // v4.106: cintura di sicurezza. Un 404 su un file del Cassetto
+      // significa quasi sempre "chiave morta": ricarico la lista dal
+      // server, ritrovo il file (per tipoKey, che sopravvive alla
+      // rinomina, altrimenti per nome) e riprovo UNA sola volta con la
+      // chiave viva; la lista si allinea e anche l'anteprima e le
+      // prossime azioni guariscono. Gli altri errori passano dritti.
+      const msg = err instanceof Error ? err.message : '';
+      let guarito = false;
+      if (/HTTP 404/.test(msg)) {
+        try {
+          const res = await api.cassetto.list();
+          const vivo: CassettoFile | undefined =
+            (file.tipoKey
+              ? res.files.find((f) => f.tipoKey === file.tipoKey)
+              : undefined) ?? res.files.find((f) => f.nome === file.nome);
+          if (vivo) {
+            setFiles(res.files);
+            setScaricando(vivo.key);
+            await scaricaInDownload(vivo.key, vivo.nome || file.nome, setPercento);
+            guarito = true;
+          }
+        } catch {
+          // la cura non basta: qui sotto l'errore originale
+        }
+      }
+      if (guarito) {
+        haptics.success();
+        toast.success('Download completato', 'Il file è in Download e nella barra in alto');
+      } else {
+        toast.error('Errore download', err instanceof Error ? err.message : 'Errore sconosciuto');
+      }
     } finally {
       setScaricando(null);
       setPercento(0);
@@ -494,8 +573,18 @@ export default function CassettoScreen() {
     if (!renaming || !renameValue.trim()) return;
     haptics.tap();
     try {
-      await api.cassetto.rename(renaming.key, renameValue.trim());
-      setFiles((prev) => prev.map((f) => (f.key === renaming.key ? { ...f, nome: renameValue.trim() } : f)));
+      // v4.106: il server rinomina DAVVERO il documento: la chiave cambia
+      // e la risposta porta la chiave nuova (newKey). Prima la si
+      // ignorava e la lista restava con la chiave vecchia, morta: Scarica
+      // 404, anteprima "file spostato", Condividi irraggiungibile. Ora la
+      // riga prende chiave e nome DALLA RISPOSTA (fonte di verita'), con
+      // fallback prudenti se il server non li spedisse.
+      const esito = await api.cassetto.rename(renaming.key, renameValue.trim());
+      const chiaveViva = esito?.newKey || renaming.key;
+      const nomeVivo = esito?.newName || renameValue.trim();
+      setFiles((prev) =>
+        prev.map((f) => (f.key === renaming.key ? { ...f, key: chiaveViva, nome: nomeVivo } : f)),
+      );
       toast.success('File rinominato');
       setRenaming(null);
       setRenameValue('');

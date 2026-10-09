@@ -243,9 +243,25 @@ export default function App() {
   // (soglia + cache) facevano si' che riaprendo l'app prima dei dieci
   // minuti niente partisse e la prova dal vivo sembrasse fallita. Ora
   // il freno e' solo un minuto contro i passaggi rapidi app/schermo.
+  //
+  // v4.106: il pannello compare UNA VOLTA PER VERSIONE in questa
+  // sessione (releasePropostaRef). Il ritorno dal background non riapre
+  // mai il pannello gia' visto: lo stesso riconoscimento del dito
+  // genera lui stesso un passaggio background/primo piano (il prompt
+  // biometrico e' un overlay di sistema) e con la regola v4.104 il
+  // pannello saltava fuori in mezzo al lavoro, e di nuovo a ogni
+  // rientro, finche' l'installazione non era finita. Una release
+  // DIVERSA da quella gia' proposta (vera novita' pubblicata mentre
+  // l'app era in background) riapre il pannello come sempre. Se il
+  // cliente annulla l'installer, la proposta riparte al prossimo avvio
+  // vero dell'app: nuova sessione, memoria azzerata.
   const [aggiornamentoOpen, setAggiornamentoOpen] = useState(false);
   const [versioneLatest, setVersioneLatest] = useState<string | null>(null);
   const ultimoControlloAgg = useRef(0);
+  // v4.106: la versione per cui il pannello e' gia' comparso in questa
+  // sessione (null = nessuna ancora). In memoria, NON su disco: chiusa
+  // l'app (o finito l'aggiornamento) la proposta riparte legittimamente.
+  const releasePropostaRef = useRef<string | null>(null);
   useEffect(() => {
     if (!user) return;
     let cancellato = false;
@@ -257,6 +273,11 @@ export default function App() {
           const { daFare, latest } =
             await aggiornamentoDisponibileAllAvvio(saltaCache);
           if (!cancellato && daFare) {
+            // v4.106: stessa versione gia' proposta in sessione = il
+            // pannello NON si ripropone (il check resta mutato). Prima
+            // comparsa (o versione nuova) = si mostra e si registra.
+            if (releasePropostaRef.current === latest) return;
+            releasePropostaRef.current = latest;
             setVersioneLatest(latest);
             setAggiornamentoOpen(true);
           }
@@ -280,6 +301,10 @@ export default function App() {
     // richiesta va diretta al file versione.txt (senza tetto dell'API):
     // una richiesta leggerissima per riapertura, e il pannello compare
     // appena una release esce, comunque sia tornati sull'app.
+    // v4.106: il check qui resta (e' lui che scopre la release nuova),
+    // ma la comparsa del pannello la decide releasePropostaRef: stessa
+    // versione gia' vista in sessione = nessun pannello, per nessun
+    // motivo (rientro vero, dito, cambio app e ritorno...).
     const sub = AppState.addEventListener('change', (stato) => {
       if (
         stato === 'active' &&
