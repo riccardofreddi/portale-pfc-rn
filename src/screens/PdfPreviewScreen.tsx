@@ -177,10 +177,16 @@ export default function PdfPreviewScreen({ route }: Props) {
     haptics.tap();
     setCondividendo(true);
     try {
+      // v4.111: il messaggio "Condivisione pronta / Scegli l'app" esce PRIMA
+      // di aprire il pannello di Android, cosi' l'utente lo legge MENTRE
+      // sceglie l'app. Prima usciva DOPO shareAsync (cioe' dopo la scelta,
+      // quando non serviva piu' a niente) — segnalato dal titolare.
+      // Il pannello di condivisione parte dal BASSO dello schermo: la
+      // tendina in alto resta visibile sotto.
+      toast.info('Condivisione pronta', "Scegli l'app con cui inviarlo");
       const esito = await condividiDocumento(percorsoLocale, nome);
       if (esito === 'ok') {
         haptics.success();
-        toast.success('Condivisione pronta', "Scegli l'app con cui inviarlo");
       } else if (esito === 'solo-testo') {
         toast.info('Pannello aperto', "Per allegare il FILE serve l'aggiornamento dell'app");
       } else if (esito === 'errore') {

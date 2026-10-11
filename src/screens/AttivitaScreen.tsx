@@ -58,6 +58,7 @@ import { SkeletonList } from '@/components/Skeleton';
 import { haptics } from '@/lib/haptics';
 import { api } from '@/api/client';
 import { formatDateAudit } from '@/lib/utils';
+import { nomeVisibile } from '@/lib/nomi-cassetto';
 import type { AuditEntry } from '@/types/api';
 import { shadow, spacing, typography, useColors, type ThemeColors } from '@/theme';
 
@@ -151,6 +152,17 @@ function semplificaDettaglio(action: string, detail: string): string {
     }
   }
   const corto = testo.trim();
+  // v4.111: la rinomina del CASSETTO arriva come chiavi tecniche
+  // ("altro_2026.pdf -> altro_2026_bilancio.pdf", logAudit in
+  // cassetto/rename/route.ts): tenendo l'ultimo pezzo il cliente vedeva
+  // il prefisso tecnico davanti al nome nuovo — sembrava il file
+  // originario con la rinomina incollata dopo. Stessa pulizia del
+  // Cassetto (v4.109): resta solo "bilancio.pdf". Le rinomine dei
+  // Documenti dell'archivio (nomi veri, senza prefisso) passano
+  // indenni: nomeVisibile non tocca cio' che non matcha.
+  if (action === 'RINOMINA_FILE' && corto) {
+    return nomeVisibile(corto) || d;
+  }
   return corto || d;
 }
 

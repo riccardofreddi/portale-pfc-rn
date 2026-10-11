@@ -194,6 +194,7 @@ import { SkeletonList } from '@/components/Skeleton';
 import { toast } from '@/components/Toaster';
 import { haptics } from '@/lib/haptics';
 import { api } from '@/api/client';
+import { nomeVisibile } from '@/lib/nomi-cassetto';
 import { useAppStore } from '@/store/auth';
 import { scaricaInDownload, scaricaTesto } from '@/lib/download';
 import { formatDate } from '@/lib/utils';
@@ -222,18 +223,9 @@ const TIPO_KEY_DA_LABEL: Record<string, string> = {
 // v4.109: il server incide TIPO e ANNO nella chiave del Cassetto
 // ({tipoKey}_{anno}[_{nomeutente}].{ext}; vedi cassetto/rename/route.ts:
 // la rinomina ricostruisce SEMPRE il prefisso per la regola "uno slot
-// per tipo"). Quel prefisso e' tecnico: NON deve mai arrivare all'utente.
-// nomeVisibile toglie "{tipoKey}_{anno}_" quando esiste la parte col nome
-// scelto dall'utente; i file MAI rinominati ("altro_2026.pdf", senza parte
-// utente) restano com'erano: si puliscono al primo cambio nome.
-const RE_PREFISSO_TECNICO =
-  /^(qr_code_p_iva|certificato_p_iva|visura_camerale|doc_identita|iban|altro)_(\d{4})(?:_(.+))?(\.[^.]*)$/;
-
-function nomeVisibile(nome: string): string {
-  const m = nome.match(RE_PREFISSO_TECNICO);
-  if (m && m[3]) return `${m[3]}${m[4]}`;
-  return nome;
-}
+// per tipo"). Quel prefisso e' tecnico: NON deve mai arrivare all'utente
+// (la pulizia nomeVisibile e' in src/lib/nomi-cassetto.ts, condivisa dal
+// v4.111 anche col REGISTRO ATTIVITA').
 
 // v4.109: ogni volta che la lista arriva dal server (load, refresh al
 // focus, self-heal scarica) i nomi vengono puliti UNA volta sola: tutto
