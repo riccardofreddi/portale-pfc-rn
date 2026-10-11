@@ -124,6 +124,33 @@ export async function avvisaSistemaScaricato(
   }
 }
 
+/** v4.113: sceglie un percorso LIBERO nella cartella Download. Prima il
+ * percorso era SEMPRE il nome puro del file: due documenti diversi con lo
+ * stesso nome (es. "Bilancio.pdf" del 2024 e del 2025) si sovrascrivevano
+ * a vicenda e il primo andava perso per sempre. Ora se il nome esiste
+ * gia' si passa a "Bilancio (2).pdf", "Bilancio (3).pdf"... (comportamento
+ * identico a quello del browser); se il nome non esiste resta puro. */
+async function percorsoLibero(base: string): Promise<string> {
+  const dir = ReactNativeBlobUtil.fs.dirs.DownloadDir;
+  const primo = `${dir}/${base}`;
+  try {
+    if (!(await ReactNativeBlobUtil.fs.exists(primo))) return primo;
+  } catch {
+    return primo; // verifica impossibile: come prima (nessun rischio nuovo)
+  }
+  const ext = base.match(/\.([a-zA-Z0-9]{1,8})$/)?.[0] ?? '';
+  const senzaExt = ext ? base.slice(0, -ext.length) : base;
+  for (let n = 2; n < 100; n++) {
+    const percorso = `${dir}/${senzaExt} (${n})${ext}`;
+    try {
+      if (!(await ReactNativeBlobUtil.fs.exists(percorso))) return percorso;
+    } catch {
+      break;
+    }
+  }
+  return `${dir}/${senzaExt} (${Date.now()})${ext}`;
+}
+
 /** Scarica il file nella cartella Download del telefono. Ritorna il percorso. */
 export async function scaricaInDownload(
   key: string,
@@ -132,7 +159,9 @@ export async function scaricaInDownload(
 ): Promise<string> {
   const cookie = await api.documenti.sessionCookieHeader();
   const url = api.documenti.downloadUrl(key);
-  const path = `${ReactNativeBlobUtil.fs.dirs.DownloadDir}/${nomeFileSicuro(nome)}`;
+  // v4.113: il percorso si SCEGLIE prima del download e resta libero
+  // (mai sopra un file che esiste gia': gli omonimi non si cancellano piu').
+  const path = await percorsoLibero(nomeFileSicuro(nome));
   const salvato = await fetchConControllo(url, cookie, path, onProgress);
   // v3.7: la notifica di sistema "Download completato" in alto + file
   // registrato nell'app File del telefono (sezione Download). Mai un
@@ -305,7 +334,13 @@ export async function riparaChiaveMorta(
   if (!trovato) return { chiave: null, tipo: null, eraPreferito, ricercaOk: true };
   // Se la chiave morta era un preferito e il percorso e' CAMBIATO,
   // sposto la stellina sul file vivo.
-  if (eraPreferito && trovato.chiave !== chiaveMorta) {
+  // v4.113: SOLO con gradi CERTI ('stessa' = ancora al suo posto,
+  // 'esatta' = nome identico). Con grado 'simile' la ricerca puo'
+  // accoppiare un documento DIVERSO con un nome pareggiato: spostare
+  // la stellina l' portava il preferito sul documento SBAGLIATO (e il
+  // preferito vero si perdeva). Il file 'simile' si apre comunque: la
+  // stellina semplicemente resta dove non puo' sbagliare.
+  if (eraPreferito && trovato.chiave !== chiaveMorta && trovato.tipo !== 'simile') {
     try {
       await api.preferiti.toggle(chiaveMorta); // via il morto
       await api.preferiti.toggle(trovato.chiave); // aggiunto il vivo

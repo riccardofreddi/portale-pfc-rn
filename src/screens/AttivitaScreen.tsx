@@ -40,8 +40,9 @@
  * - Logica INTATTA: caricamento paginato (30 per pagina), "Carica altre
  *   attività", trascina per aggiornare, gestione errori silenziosa.
  */
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
+  ActivityIndicator,
   FlatList,
   Pressable,
   RefreshControl,
@@ -188,11 +189,17 @@ export default function AttivitaScreen() {
   const [refreshing, setRefreshing] = useState(false);
   const [page, setPage] = useState(1);
   const [hasMore, setHasMore] = useState(false);
+  // v4.113: la paginazione ha il suo STATO di attesa. Prima ogni "Carica
+  // altre" passava da setLoading(true): la lista veniva sostituita dallo
+  // skeleton e tornava = LAMPEGGIO ad ogni pagina, con lo scroll che
+  // saltava. Ora il bottone lavora in silenzio e la lista resta al suo posto.
+  const [loadingMore, setLoadingMore] = useState(false);
+  const paginando = useRef(false);
 
   const load = useCallback(
     async (showRefresh = false) => {
       if (showRefresh) setRefreshing(true);
-      else setLoading(true);
+      else if (!paginando.current) setLoading(true);
       try {
         const limit = page * PAGE_SIZE;
         const res = await api.audit.meList(limit);
@@ -204,10 +211,20 @@ export default function AttivitaScreen() {
       } finally {
         setLoading(false);
         setRefreshing(false);
+        setLoadingMore(false);
+        paginando.current = false;
       }
     },
     [page],
   );
+
+  function caricaAltre() {
+    if (loadingMore || !hasMore) return;
+    haptics.tap();
+    setLoadingMore(true);
+    paginando.current = true;
+    setPage((p) => p + 1);
+  }
 
   useEffect(() => {
     load();
@@ -291,13 +308,14 @@ export default function AttivitaScreen() {
           ListFooterComponent={
             hasMore ? (
               <Pressable
-                onPress={() => {
-                  haptics.tap();
-                  setPage((p) => p + 1);
-                }}
+                onPress={caricaAltre}
                 style={({ pressed }) => [styles.loadMoreBtn, pressed && { opacity: 0.6 }]}
               >
-                <Text style={styles.loadMoreText}>Carica altre attività</Text>
+                {loadingMore ? (
+                  <ActivityIndicator size="small" color={colors.accent} />
+                ) : (
+                  <Text style={styles.loadMoreText}>Carica altre attività</Text>
+                )}
               </Pressable>
             ) : null
           }

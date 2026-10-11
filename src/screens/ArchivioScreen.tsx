@@ -1654,7 +1654,15 @@ export default function ArchivioScreen() {
 
   function selectAll() {
     haptics.tap();
-    setSelected(new Set(files.map((f) => f.key)));
+    // v4.113: SOLO le righe VISIBILI della lista. Prima qui finivano anche
+    // i file delle sottocartelle (il backend li appiattisce nei nomi,
+    // "Sotto/file.pdf"): in questa lista NON hanno una riga spuntabile
+    // (le sottocartelle sono solo righe da aprire), ma finivano nel badge
+    // "N selezionati" e nel download in blocco senza che nessuno li
+    // vedesse. I file delle sottocartelle si selezionano entrandoci.
+    setSelected(
+      new Set(files.filter((f) => !f.nome.includes('/')).map((f) => f.key)),
+    );
   }
 
   function clearSelection() {
@@ -1686,8 +1694,15 @@ export default function ArchivioScreen() {
 
   async function handleBulkPreferiti() {
     haptics.tap();
+    // v4.113: il toggle del server TOGLIE la stellina a chi ce l'ha gia':
+    // in blocco l'utente vuole AGGIUNGERE la stellina a tutti i selezionati,
+    // non toglierla a quelli che erano gia' preferiti. I gia'-preferiti
+    // restano tali (e vengono contati nel messaggio); il toggle parte solo
+    // per gli altri.
+    const daAggiungere = selectedFiles.filter((f) => !f.isPreferito);
+    const giaPreferiti = selectedFiles.length - daAggiungere.length;
     let count = 0;
-    for (const f of selectedFiles) {
+    for (const f of daAggiungere) {
       try {
         await api.preferiti.toggle(f.key);
         count++;
@@ -1695,7 +1710,25 @@ export default function ArchivioScreen() {
         console.error('[Archivio] bulk preferiti error:', f.nome, err);
       }
     }
-    toast.success('Preferiti aggiornati', count === 1 ? '1 file modificato' : `${count} file modificati`);
+    if (count === 0 && giaPreferiti > 0) {
+      toast.info(
+        'Erano già preferiti',
+        giaPreferiti === 1
+          ? 'Il file selezionato aveva già la stellina: nessuna modifica'
+          : `Tutti i ${giaPreferiti} file selezionati avevano già la stellina: nessuna modifica`,
+      );
+    } else if (count === 0) {
+      toast.warning('Nessun preferito aggiornato', 'Controlla la connessione e riprova');
+    } else {
+      toast.success(
+        'Preferiti aggiornati',
+        giaPreferiti > 0
+          ? `${count === 1 ? '1 stellina aggiunta' : `${count} stelline aggiunte`} — ${giaPreferiti} avevano già la stellina`
+          : count === 1
+            ? '1 stellina aggiunta'
+            : `${count} stelline aggiunte`,
+      );
+    }
     load(true);
     loadPreferiti();
     clearSelection();
