@@ -12,13 +12,13 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { AppState, DeviceEventEmitter } from 'react-native';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
-import { api } from '@/api/client';
+import { api, ApiError } from '@/api/client';
 import { useAppStore } from '@/store/auth';
 import { riRegistraPushSilenziosa, setupPushListeners } from '@/lib/push';
 import { aggiornaPromemoriaScadenze } from '@/lib/scadenze-locali';
 import { preparaNotifiche } from '@/lib/notifiche';
 import { AppNavigator } from '@/navigation/AppNavigator';
-import { Toaster } from '@/components/Toaster';
+import { Toaster, toast } from '@/components/Toaster';
 import { ThemeProvider } from '@/theme/ThemeContext';
 import { aggiornamentoDisponibileAllAvvio } from '@/lib/updates';
 import { AggiornamentoModal } from '@/screens/AggiornamentoModal';
@@ -51,8 +51,22 @@ export default function App() {
         } else {
           setUser(null);
         }
-      } catch {
+      } catch (err) {
+        // v4.112: PRIMA il catch ingoiava tutto e mandava al login allo
+        // stesso modo: sessione scaduta e RETE ASSENTE sembravano la stessa
+        // cosa (il cliente si rilogga pensando di essere stato sloggato).
+        // Ora: 401 = sessione VERAMENTE scaduta (login giusto); qualunque
+        // altro errore (rete giu', timeout v4.112) = la sessione NON e'
+        // persa (il cookie resta al suo posto): si va al login ma lo si
+        // DICE. Chiusa e riaperta l'app con la rete tornata, la sessione
+        // si ripristina da sola come sempre.
         setUser(null);
+        if (!(err instanceof ApiError && err.status === 401)) {
+          toast.info(
+            'Connessione assente',
+            "L'app non raggiunge lo studio adesso. La sessione NON è persa: rientra quando la rete torna.",
+          );
+        }
       } finally {
         setLoadingUser(false);
       }

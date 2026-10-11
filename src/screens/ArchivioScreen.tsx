@@ -1261,10 +1261,18 @@ export default function ArchivioScreen() {
   // utile, mai un errore a schermo.
   useEffect(() => {
     if (!pendingDocumento) return;
-    if (loading) return;
+    // v4.112: GUARDIA DI ARRIVO. Prima si consumava il pending appena
+    // anno/cartella corrispondevano: ma tra il cambio cartella (stati
+    // aggiornati SUBITO) e l'arrivo dei file nuovi (risposta di rete) i
+    // `files` erano ancora quelli della cartella PRECEDENTE: il documento
+    // non veniva trovato, il pending veniva AZZERATO e il deep-link si
+    // perdeva (il tocco sulla notifica portava alla cartella, non al file).
+    // Ora si consuma SOLO quando il caricamento della cartella richiesta e'
+    // COMPLETATO: `arrivatoPer` e' la firma v4.36 che il load scrive in
+    // fondo (con i file gia' a schermo) e ha lo stesso formato chiave.
     if (
-      anno !== pendingDocumento.anno ||
-      cartella !== pendingDocumento.cartella
+      arrivatoPer !==
+      `${pendingDocumento.anno ?? ''}|${pendingDocumento.cartella ?? ''}`
     ) {
       return;
     }
@@ -1284,7 +1292,7 @@ export default function ArchivioScreen() {
     // apriDocumento e' una funzione del componente: volutamente fuori dalle
     // dipendenze (il comportamento giusto e' reagire a pendingDocumento/files).
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [pendingDocumento, loading, files, anno, cartella, setPendingDocumento]);
+  }, [pendingDocumento, arrivatoPer, files, setPendingDocumento]);
 
   // Ricerca con debounce: parte dopo 300 ms, solo da 2 caratteri, e ignora
   // le risposte ormai superate da query più recenti (guardia di sequenza).

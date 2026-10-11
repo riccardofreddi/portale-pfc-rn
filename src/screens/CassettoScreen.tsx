@@ -820,10 +820,47 @@ export default function CassettoScreen() {
     try {
       // una cosa sola nello slot: se c'era già un file IBAN (di solito il
       // .txt dell'IBAN scritto prima), prima lo cancella DAL SERVER
+      // v4.112: MA NON SI PUO' PIU' PERDERE L'IBAN. Prima: delete (errore
+      // ingoiato) -> upload fallito => vecchio cancellato e nuovo non
+      // arrivato, slot VUOTO e cliente a mani vuote. Ora prima della
+      // cancellazione salviamo una COPIA DEL TESTO vecchio in memoria e se
+      // il carico del nuovo fallisce il vecchio TORNA al suo posto da solo.
+      // L'ordine resta delete-prima: il server costruisce la chiave dal tipo
+      // e non e' detto che tolleri una seconda chiave nello stesso slot.
+      let vecchio: { intestatario: string; iban: string } | null = null;
+      let chiaveVecchia: string | null = null;
       if (fileIban) {
+        chiaveVecchia = fileIban.key;
+        try {
+          vecchio = parseIbanTesto(await scaricaTesto(fileIban.key, versioneDi(fileIban)));
+        } catch {
+          // file non leggibile (es. PDF/foto): la copia di sicurezza non e'
+          // possibile, ma resta la sovrascrittura normale del flusso.
+          vecchio = null;
+        }
         await api.cassetto.delete(fileIban.key).catch(() => {});
       }
-      await caricaIbanManualeSuServer(intestatario, iban);
+      try {
+        await caricaIbanManualeSuServer(intestatario, iban);
+      } catch (errCarico) {
+        // v4.112: il carico del nuovo e' FALLITO: ripristino il vecchio.
+        const msgCarico = errCarico instanceof Error ? errCarico.message : 'Errore sconosciuto';
+        if (vecchio && chiaveVecchia) {
+          let ripristinato = false;
+          try {
+            await api.cassetto.delete(chiaveVecchia).catch(() => {});
+            await caricaIbanManualeSuServer(vecchio.intestatario, vecchio.iban);
+            ripristinato = true;
+          } catch {
+            ripristinato = false;
+          }
+          if (ripristinato) {
+            throw new Error(`Il nuovo IBAN non è stato salvato: il precedente resta al suo posto. ${msgCarico}`);
+          }
+          throw new Error(`Il salvataggio non è riuscito e il vecchio IBAN non è tornato: riscrivilo. ${msgCarico}`);
+        }
+        throw new Error(`Il nuovo IBAN non è stato salvato. ${msgCarico}`);
+      }
       setIbanDettaglio(null);
       toast.success('IBAN salvato', 'Il tuo IBAN è aggiornato');
       setIbanPannello(null);

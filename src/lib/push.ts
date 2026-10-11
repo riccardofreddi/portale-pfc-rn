@@ -35,6 +35,7 @@
  * mai mostrare prompt né schermate (riRegistraPushSilenziosa).
  */
 
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import messaging from '@react-native-firebase/messaging';
 import { DeviceEventEmitter, Platform } from 'react-native';
 import { api } from '@/api/client';
@@ -68,6 +69,69 @@ export const pushState = {
   token: '',
   error: '',
 };
+
+/**
+ * v4.112: DEREGISTRAZIONE PENDENTE. Prima, spegnendo le notifiche mentre il
+ * telefono era OFFLINE, l'uscita dal registro del server NON avveniva (il
+ * token era perso dalla memoria dell'app e la chiamata falliva ingoiata):
+ * le push continuavano ad arrivare a interruttore spento. Ora il "da
+ * deregistrare" resta su DISCO e riRegistraPushSilenziosa lo completa
+ * appena la rete torna. Chiave e helper sono in questo modulo.
+ */
+const FCM_DEREGISTRAZIONE_KEY = 'pfc_fcm_deregistrazione_pendente';
+
+async function segnaDeregistrazionePendente(): Promise<void> {
+  try {
+    await AsyncStorage.setItem(FCM_DEREGISTRAZIONE_KEY, '1');
+  } catch {
+    // storage pieno/indisponibile: si riproverà al prossimo spegnimento
+  }
+}
+
+/** v4.112: l'utente ha RIACCHIUSO le notifiche: l'eventuale promemoria di
+ * deregistrazione non ha più senso (il telefono deve stare nel registro). */
+export async function annullaDeregistrazionePendente(): Promise<void> {
+  try {
+    await AsyncStorage.removeItem(FCM_DEREGISTRAZIONE_KEY);
+  } catch {
+    // come sopra: senza danni, il consumo sa anche riconoscere il caso
+  }
+}
+
+/** v4.112: token FCM con RISERVA: lo stato in memoria si perde al riavvio
+ * dell'app, quindi se non c'è lo chiede a Firebase (il permesso esiste
+ * già se il telefono era registrato; senza rete fallisce -> ''). */
+async function tokenConRiserva(): Promise<string> {
+  if (pushState.token) return pushState.token;
+  try {
+    return (await messaging().getToken()) || '';
+  } catch {
+    return '';
+  }
+}
+
+/**
+ * v4.112: spegne le push sul server per conto dell'interruttore Impostazioni.
+ * Ritorna true se il telefono è USCITO dal registro del server ADESSO; false
+ * se non è riuscito (offline / token non ottenibile): in quel caso resta il
+ * promemoria persistente e la deregistrazione si completerà da sola.
+ */
+export async function deregistraPushDaServer(): Promise<boolean> {
+  const token = await tokenConRiserva();
+  if (token) {
+    try {
+      await api.push.fcmUnregister(token);
+      await annullaDeregistrazionePendente();
+      pushState.registered = false;
+      return true;
+    } catch {
+      // offline o server irraggiungibile: si marca e si riprova da soli
+    }
+  }
+  await segnaDeregistrazionePendente();
+  pushState.registered = false;
+  return false;
+}
 
 /**
  * v4.20: la push di un AVVISO PUBBLICO dello studio e' riconoscibile dal
@@ -129,14 +193,17 @@ function attaccaListenerRinnovoToken(): void {
 
 /**
  * Registra il device per le push FCM. Da chiamare dopo il login.
+ * v4.112: ritorna TRUE solo se il telefono è davvero registrato al server:
+ * chi mostra un messaggio all'utente può ora dire la verità (prima il
+ * chiamante fingeva tutto ok anche con permesso negato o rete giù).
  */
-export async function registerPushForCurrentUser(): Promise<void> {
+export async function registerPushForCurrentUser(): Promise<boolean> {
   try {
     // v4.13: interruttore "Notifiche" SPENTO => nessuna registrazione.
     // (Rende la scelta del cliente stabile anche ai successivi login.)
     if (!(await promemoriaAttivi())) {
       console.log('[PUSH] notifiche SPENTE da Impostazioni: registrazione saltata');
-      return;
+      return false;
     }
 
     const authStatus = await messaging().requestPermission();
@@ -147,10 +214,17 @@ export async function registerPushForCurrentUser(): Promise<void> {
     if (!enabled) {
       pushState.error = 'Permesso notifiche negato';
       console.log('[PUSH] permesso negato');
-      return;
+      return false;
     }
 
     const token = await messaging().getToken();
+    if (!token) {
+      // v4.112: Firebase ha risposto SENZA token: registrare '' sarebbe
+      // registrare nessun indirizzo (e il catch qui sotto lo nascondeva).
+      pushState.error = 'Token di notifica non disponibile';
+      console.error('[PUSH] getToken ha restituito un token vuoto');
+      return false;
+    }
     pushState.token = token;
     pushState.error = '';
 
@@ -161,9 +235,11 @@ export async function registerPushForCurrentUser(): Promise<void> {
 
     // v4.51: listener di rinnovo attaccato una sola volta (vedi sopra)
     attaccaListenerRinnovoToken();
+    return true;
   } catch (err) {
     pushState.error = err instanceof Error ? err.message : String(err);
     console.error('[PUSH] errore registrazione:', err);
+    return false;
   }
 }
 
@@ -184,9 +260,36 @@ export async function registerPushForCurrentUser(): Promise<void> {
  */
 export async function riRegistraPushSilenziosa(): Promise<void> {
   try {
-    if (!(await promemoriaAttivi())) {
+    // v4.112: PRIMA DI TUTTO, la deregistrazione pendente (interruttore
+    // spento mentre il telefono era offline): il server ha ancora il token
+    // e le push continuerebbero. Con l'interruttore ACCESO il flag non ha
+    // senso (il telefono deve stare nel registro) e viene semplicemente
+    // tolto; con l'interruttore SPENTO si completa l'uscita dal registro
+    // e la ri-registrazione non parte affatto.
+    const attivi = await promemoriaAttivi();
+    const pendente = await AsyncStorage.getItem(FCM_DEREGISTRAZIONE_KEY).catch(() => null);
+    if (!attivi) {
+      if (pendente) {
+        const token = await tokenConRiserva();
+        if (!token) {
+          console.log('[PUSH] deregistrazione pendente rimandata (token non ottenibile, rete giù?)');
+          return; // si riprova al prossimo avvio/foreground
+        }
+        try {
+          await api.push.fcmUnregister(token);
+          await AsyncStorage.removeItem(FCM_DEREGISTRAZIONE_KEY).catch(() => {});
+          pushState.registered = false;
+          console.log('[PUSH] deregistrazione pendente COMPLETATA (spegnimento fatto offline)');
+        } catch {
+          console.log('[PUSH] deregistrazione pendente rimandata (server non raggiungibile)');
+          return;
+        }
+      }
       console.log('[PUSH] auto-riparazione saltata (notifiche SPENTE)');
       return;
+    }
+    if (pendente) {
+      await AsyncStorage.removeItem(FCM_DEREGISTRAZIONE_KEY).catch(() => {});
     }
     const perm = await messaging().hasPermission();
     const giaAutorizzato =
@@ -199,6 +302,12 @@ export async function riRegistraPushSilenziosa(): Promise<void> {
       return;
     }
     const token = await messaging().getToken();
+    if (!token) {
+      // v4.112: senza token la registrazione al server è inutile: niente
+      // chiamata con indirizzo vuoto. Il prossimo giro riproverà.
+      console.log('[PUSH] auto-riparazione saltata (getToken vuoto)');
+      return;
+    }
     const device = Platform.OS === 'ios' ? 'iOS' : 'Android';
     await api.push.fcmRegister(token, device);
     pushState.token = token;

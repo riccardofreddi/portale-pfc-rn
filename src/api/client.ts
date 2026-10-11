@@ -3,6 +3,7 @@
  */
 
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { useAppStore } from '@/store/auth';
 import type {
   AuditEntry,
   CassettoFile,
@@ -21,6 +22,28 @@ import type {
 
 const API_BASE_URL = 'https://portale-pfc-v2.vercel.app';
 const SESSION_COOKIE_KEY = 'pfc_session_cookie';
+
+// v4.112: TIMEOUT su ogni richiesta. Prima nessun AbortController: con la
+// rete piantata (WiFi agganciato senza internet, server che non risponde)
+// la fetch restava appesa ALL'INFINITO e la schermata con lei. 20 secondi
+// e' la soglia: piu' che abbondante anche su rete lenta, prima dell'appeso.
+const TIMEOUT_RICHIESTA_MS = 20_000;
+
+/**
+ * v4.112: errore con lo STATUS HTTP allegato. Prima gli errori portavano
+ * solo il messaggio: il resto dell'app non poteva distinguere "sessione
+ * scaduta" (401) da "rete assente" (niente risposta). Chi serve lo status
+ * lo legge da err.status (0 = non e' mai arrivata una risposta).
+ */
+export class ApiError extends Error {
+  status: number;
+
+  constructor(message: string, status: number) {
+    super(message);
+    this.name = 'ApiError';
+    this.status = status;
+  }
+}
 
 let cachedSessionCookie: string | null = null;
 
@@ -72,11 +95,29 @@ async function apiFetch<T = unknown>(
   }
 
   const url = path.startsWith('http') ? path : `${API_BASE_URL}${path}`;
-  const res = await fetch(url, {
-    ...rest,
-    headers,
-    credentials: 'include',
-  });
+  // v4.112: abort automatico dopo TIMEOUT_RICHIESTA_MS (se il chiamante non
+  // porta gia' il suo signal, che resta il padrone).
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), TIMEOUT_RICHIESTA_MS);
+  let res: Response;
+  try {
+    res = await fetch(url, {
+      ...rest,
+      headers,
+      credentials: 'include',
+      signal: (rest.signal as AbortSignal | undefined) ?? controller.signal,
+    });
+  } catch (err) {
+    clearTimeout(timer);
+    if (err instanceof Error && (err.name === 'AbortError' || err.name === 'TimeoutError')) {
+      throw new ApiError(
+        'La rete non risponde: controlla la connessione e riprova',
+        0,
+      );
+    }
+    throw err;
+  }
+  clearTimeout(timer);
 
   if (path === '/api/auth/login' && res.ok) {
     const setCookie = res.headers.get('set-cookie');
@@ -90,13 +131,22 @@ async function apiFetch<T = unknown>(
 
   if (res.status === 401 && auth) {
     await setSessionCookie(null);
+    // v4.112: il 401 e' la sessione VERAMENTE scaduta: l'app deve tornare
+    // al login PULITA, non restare mezza sloggata. Prima qui si toglieva
+    // SOLO il cookie: lo store restava pieno (utente, badge, pending...)
+    // e le schermate continuavano a girare su API morte. reset() e' lo
+    // stesso ripristino del logout manuale. Il login chiama con auth:false:
+    // non passa da qui, e le richieste senza sessione (manutenzione) neanche.
+    useAppStore.getState().reset();
   }
 
   const data = (await res.json().catch(() => ({}))) as unknown;
 
   if (!res.ok) {
     const msg = (data as { error?: string }).error ?? `Errore ${res.status}`;
-    throw new Error(msg);
+    // v4.112: ApiError con lo status (vedi sopra): il messaggio resta
+    // identico a prima per chi lo mostra.
+    throw new ApiError(msg, res.status);
   }
 
   return data as T;

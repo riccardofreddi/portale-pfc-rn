@@ -54,6 +54,8 @@ import { api } from '@/api/client';
 import { APP_VERSION, CODICE_INTERFACCIA } from '@/lib/updates';
 import { useAppStore } from '@/store/auth';
 import {
+  annullaDeregistrazionePendente,
+  deregistraPushDaServer,
   pushState,
   registerPushForCurrentUser,
   resetStatoPushLocale,
@@ -118,29 +120,44 @@ export function SettingsModal() {
     await aggiornaPromemoriaScadenze();
 
     if (valore) {
+      // v4.112: riaccendere cancella l'eventuale promemoria di
+      // deregistrazione pendente (il telefono deve STARE nel registro).
+      await annullaDeregistrazionePendente();
       // Riaggancia il telefono al registro del server (token FCM): da
-      // questo momento arrivano TUTTI gli avvisi come da logica. Se la
-      // rete manca, l'app si riaggiungira' da sola al prossimo avvio.
-      await registerPushForCurrentUser();
-      toast.success(
-        'Notifiche attive',
-        'Arriveranno documenti, messaggi e scadenze dello studio.',
-      );
+      // questo momento arrivano TUTTI gli avvisi come da logica.
+      // v4.112: ORA SI SA se e' riuscita (registerPush ritorna l'esito):
+      // prima il toast diceva "Notifiche attive" anche con permesso negato
+      // o rete giu'. Gli allarmi locali della scadenza sono comunque a
+      // posto (aggiornaPromemoriaScadenze qui sopra); la riparazione
+      // silenziosa riprovera' da sola al prossimo avvio/foreground.
+      const registrato = await registerPushForCurrentUser();
+      if (registrato) {
+        toast.success(
+          'Notifiche attive',
+          'Arriveranno documenti, messaggi e scadenze dello studio.',
+        );
+      } else {
+        toast.warning(
+          'Notifiche non ancora attive',
+          `${pushState.error || 'Registrazione allo studio non riuscita'}. Riproveremo da soli al prossimo avvio.`,
+        );
+      }
     } else {
       // Toglie il telefono dal registro del server (endpoint esistente,
       // nessuna modifica al backend): da adesso non arriva piu' niente,
       // nemmeno a app chiusa. Gli allarmi locali sono gia' stati tolti.
-      try {
-        if (pushState.token) {
-          await api.push.fcmUnregister(pushState.token);
-        }
-      } catch {
-        // offline: non importa, la registrazione resta comunque saltata
-      }
-      pushState.registered = false;
+      // v4.112: deregistraPushDaServer usa anche il TOKEN DI RISERVA
+      // (chiesto a Firebase se la memoria lo ha perso al riavvio) e se la
+      // chiamata fallisce (offline) lascia un PROMEMORIA PERSISTENTE su
+      // disco: l'uscita dal registro si completera' da sola al ritorno
+      // della rete (prima il telefono RESTAVA nel registro: le push
+      // continuavano ad arrivare a interruttore spento).
+      const uscito = await deregistraPushDaServer();
       toast.info(
         'Notifiche spente',
-        'Non arriveranno più avvisi su questo telefono.',
+        uscito
+          ? 'Non arriveranno più avvisi su questo telefono.'
+          : 'Spente su questo telefono: l\'uscita dal registro dello studio si completerà appena torna la rete.',
       );
     }
   }
