@@ -8,7 +8,7 @@ Documenti, messaggi e scadenze in un unico posto — con notifiche che aprono
 subito il contenuto giusto, anche a telefono bloccato.
 
 ![CI](https://github.com/riccardofreddi/portale-pfc-rn/actions/workflows/ci.yml/badge.svg)
-![Versione](https://img.shields.io/badge/versione-1.88.4-1E3A5F)
+![Versione](https://img.shields.io/badge/versione-1.88.17-1E3A5F)
 ![Piattaforma](https://img.shields.io/badge/Android-APK%20diretto-3DDC84?logo=android&logoColor=white)
 
 </div>
@@ -100,11 +100,11 @@ Ogni versione ha tre nomi che dicono la stessa cosa:
 
 | Dove la vedi | Esempio | Cosa indica |
 |---|---|---|
-| Tacca in **Impostazioni** | `1.88.4 / js4101` | La versione che gira davvero sul telefono |
-| Pagina **Releases** | `Versione: 1.88.4` | L'ultima APK pubblicata |
-| Messaggio di commit | `v4.101` | Il numero progressivo delle versioni |
+| Tacca in **Impostazioni** | `1.88.17 / js4115` | La versione che gira davvero sul telefono |
+| Pagina **Releases** | `Versione: 1.88.17` | L'ultima APK pubblicata |
+| Messaggio di commit | `v4.115` | Il numero progressivo delle versioni |
 
-La corrispondenza è fissa: **v4.101 ↔ build 101 ↔ js4101 ↔ 1.88.4**.
+La corrispondenza è fissa: **v4.115 ↔ build 115 ↔ js4115 ↔ 1.88.17**.
 La versione tecnica sale di spuntino (`1.88.3 → 1.88.4`); quando la coda
 arriva a 9 rotola (`1.88.9 → 1.89.0`).
 
@@ -112,14 +112,18 @@ arriva a 9 rotola (`1.88.9 → 1.89.0`).
 
 ## 🏷️ Versione attuale
 
-**v4.101** (1.88.4) — questo README, riscritto per tutti. Nessun cambiamento
-per i clienti: la release serve anche da **prova dal vivo
-dell'aggiornamento automatico** introdotto con la v4.100.
+**v4.115** (1.88.17) — versione di pulizia interna: niente di nuovo a
+schermo, l'app resta esattamente quella che conosci (i dettagli stanno nei
+messaggi di commit e nelle note della release).
 
 Ultime pubblicazioni:
 
 | Versione | Novità principale |
 |---|---|
+| v4.115 | Pulizia interna: niente di nuovo a schermo |
+| v4.113 | Archivio/Cassetto: "Seleziona tutto" più preciso, Preferiti in blocco senza sorprese, download senza omonimi sovrascritti |
+| v4.112 | Affidabilità: sessione e notifiche più robuste, IBAN protetto |
+| v4.111 | Attività: voce rinomina pulita; toast di condivisione al momento giusto |
 | v4.101 | README rifatto; prova dal vivo dell'aggiornamento automatico |
 | v4.100 | L'aggiornamento fa tutto da solo: download in-app con percentuale e installer che si apre da solo |
 | v4.99 | La condivisione porta il nome vero del file (niente più ".bin") |

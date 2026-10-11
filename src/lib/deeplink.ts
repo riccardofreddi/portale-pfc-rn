@@ -21,6 +21,13 @@
 
 import type { ClienteTab } from '@/store/auth';
 
+/** v4.115: i tab che l'app ha davvero (la lista di ClienteTab in store/auth).
+ * Il tab arriva da una query string (notifiche del server, URL esterni):
+ * prima veniva castato SENZA controllo, cosi' un valore strano (es.
+ * "?tab=pippo") finiva nello store e nel navigatore come rotta senza nome.
+ * Ora solo questi nomi passano; tutto il resto viene ignorato. */
+const TAB_VALIDI: readonly string[] = ['archivio', 'messaggi', 'cassetto', 'attivita'];
+
 export interface DeepLinkTarget {
   tab?: ClienteTab;
   anno?: string;
@@ -43,7 +50,9 @@ export function parseDeepLink(url: string | undefined | null): DeepLinkTarget | 
       : new URL(url, 'https://placeholder.com');
     const params = urlObj.searchParams;
 
-    const tab = params.get('tab') as ClienteTab | null;
+    const tabGrezzo = params.get('tab');
+    const tab =
+      tabGrezzo && TAB_VALIDI.includes(tabGrezzo) ? (tabGrezzo as ClienteTab) : null;
     const anno = params.get('anno') ?? undefined;
     const cartella = params.get('cartella') ?? undefined;
     const documento = params.get('documento') ?? undefined;

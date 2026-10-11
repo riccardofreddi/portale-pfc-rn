@@ -61,8 +61,9 @@
  *   nell'app della banca o dove serve: scaricare un .txt di due righe era il
  *   passo inutile del giro. Il testo copiato e' IDENTICO a quello di
  *   "Condividi" e se i dati non sono in memoria l'app li rilegge freschi dal
- *   server prima di copiare. Clipboard e' nel cuore di React Native (zero
- *   dipendenze nuove) e scrivere negli appunti non richiede permessi.
+ *   server prima di copiare. Appunti gestiti da expo-clipboard (il modulo
+ *   ufficiale Expo, v4.115: rimpiazza la Clipboard di React Native ormai
+ *   deprecata) e scrivere negli appunti non richiede permessi.
  *   "Scarica" resta per tutti gli altri documenti del Cassetto.
  * v4.72 — RISOLTO DEFINITIVAMENTE il mistero dell'anteprima "vecchia":
  * - CAUSA VERA: la copia locale usata dall'anteprima si chiamava solo
@@ -166,7 +167,6 @@ import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   BackHandler,
-  Clipboard,
   FlatList,
   Pressable,
   RefreshControl,
@@ -178,6 +178,7 @@ import {
   View,
 } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import * as Clipboard from 'expo-clipboard';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import Svg, { Defs, Rect, LinearGradient, Stop } from 'react-native-svg';
@@ -793,7 +794,7 @@ export default function CassettoScreen() {
       return;
     }
     try {
-      Clipboard.setString(
+      await Clipboard.setStringAsync(
         `Coordinate bancarie\n\nIntestatario: ${dato.intestatario}\nIBAN: ${formattaIban(dato.iban)}`,
       );
       haptics.success();
