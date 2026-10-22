@@ -376,7 +376,10 @@ export function setupPushListeners(
   });
 
   // Background/quit: tap su notifica che apre l'app
-  messaging().onNotificationOpenedApp((remoteMessage) => {
+  // v4.116: l'unsubscribe si SALVA e si stacca nel cleanup: prima il
+  // listener restava attaccato dopo lo smontaggio (a ogni rimontaggio
+  // se ne aggiungeva uno e un tap poteva essere gestito piu' volte).
+  const unsub2 = messaging().onNotificationOpenedApp((remoteMessage) => {
     const dati = remoteMessage?.data ?? {};
     console.log(
       '[PUSH] tap notifica (background):',
@@ -444,6 +447,7 @@ export function setupPushListeners(
 
   return () => {
     unsub1();
+    unsub2();
     staccaTocco();
     listenersAttached = false;
   };

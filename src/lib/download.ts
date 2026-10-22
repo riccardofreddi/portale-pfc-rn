@@ -25,7 +25,8 @@
  */
 import { DeviceEventEmitter } from 'react-native';
 import ReactNativeBlobUtil from 'react-native-blob-util';
-import { api } from '@/api/client';
+import { api, __internal } from '@/api/client';
+import { useAppStore } from '@/store/auth';
 import type { SearchResult } from '@/types/api';
 
 const MIME: Record<string, string> = {
@@ -77,11 +78,30 @@ async function fetchConControllo(
       }
     });
   }
-  const res = await task;
-  const status = res.info().status;
-  if (status === 401 || status === 403) {
+  const res = await task.catch(async (err: unknown) => {
+    // v4.116: se la fetch LANCIA (rete caduta a meta'), il file parziale
+    // sul percorso di destinazione va CANCELLATO subito: il ritento parte
+    // da zero e in cache non restano file troncati riusabili.
     await ReactNativeBlobUtil.fs.unlink(path).catch(() => {});
+    throw err;
+  });
+  const status = res.info().status;
+  if (status === 401) {
+    // v4.116: i download non passano da apiFetch, quindi il 401 qui non
+    // ripuliva NIENTE: la sessione restava in memoria e l'app continuava
+    // a girare mezza sloggata. Ora come lì: cookie via, store resettato,
+    // torna il login.
+    await ReactNativeBlobUtil.fs.unlink(path).catch(() => {});
+    await __internal.setSessionCookie(null);
+    useAppStore.getState().reset();
     throw new Error("Sessione scaduta: rientra nell'app e riprova");
+  }
+  if (status === 403) {
+    // v4.116: il 403 e' "non hai i permessi", non "sessione scaduta":
+    // il messaggio unico mandava l'utente a rifare il login senza
+    // motivo (e il rientro non risolveva: il 403 restava).
+    await ReactNativeBlobUtil.fs.unlink(path).catch(() => {});
+    throw new Error('Non hai i permessi per questo documento');
   }
   if (status < 200 || status >= 300) {
     await ReactNativeBlobUtil.fs.unlink(path).catch(() => {});
@@ -162,7 +182,21 @@ export async function scaricaInDownload(
   // v4.113: il percorso si SCEGLIE prima del download e resta libero
   // (mai sopra un file che esiste gia': gli omonimi non si cancellano piu').
   const path = await percorsoLibero(nomeFileSicuro(nome));
-  const salvato = await fetchConControllo(url, cookie, path, onProgress);
+  // v4.116: si scarica su un file PROVVISORIO .part e si rinomina SOLO a
+  // download riuscito: prima il download andava dritto sul nome
+  // definitivo e, se la rete cadeva a meta', restava un file PARZIALE col
+  // nome vero, che all'apertura dava "file corrotto".
+  const pathPart = `${path}.part`;
+  await ReactNativeBlobUtil.fs.unlink(pathPart).catch(() => {});
+  await fetchConControllo(url, cookie, pathPart, onProgress);
+  try {
+    await ReactNativeBlobUtil.fs.mv(pathPart, path);
+  } catch (err) {
+    // v4.116: mv fallito: il parziale non deve restare lì a fare rumore.
+    await ReactNativeBlobUtil.fs.unlink(pathPart).catch(() => {});
+    throw err;
+  }
+  const salvato = path;
   // v3.7: la notifica di sistema "Download completato" in alto + file
   // registrato nell'app File del telefono (sezione Download). Mai un
   // errore in piu': se il sistema rifiuta si prosegue come prima.
@@ -206,8 +240,24 @@ export async function scaricaInCache(
   const path = `${ReactNativeBlobUtil.fs.dirs.CacheDir}/${nomeCache}`;
   const giaPresente = await ReactNativeBlobUtil.fs.exists(path).catch(() => false);
   if (giaPresente) return path;
+  // v4.116 — BUG "PDF corrotto in anteprima": prima si scaricava
+  // DIRETTAMENTE su path; se la rete cadeva a meta', il file PARZIALE
+  // restava al suo posto e al tentativo dopo "gia presente" lo
+  // restituiva come VALIDO: anteprima PDF corrotta finche' il file non
+  // cambiava versione. Ora si scarica su path.part e si rinomina SOLO a
+  // download riuscito: un parziale non puo' piu' passare per buono.
+  const pathPart = `${path}.part`;
+  await ReactNativeBlobUtil.fs.unlink(pathPart).catch(() => {});
   const url = api.documenti.previewUrl(key);
-  return fetchConControllo(url, cookie, path);
+  await fetchConControllo(url, cookie, pathPart);
+  try {
+    await ReactNativeBlobUtil.fs.mv(pathPart, path);
+  } catch (err) {
+    // v4.116: mv fallito: il parziale non deve restare lì a fare rumore.
+    await ReactNativeBlobUtil.fs.unlink(pathPart).catch(() => {});
+    throw err;
+  }
+  return path;
 }
 
 /**
@@ -418,5 +468,35 @@ export async function apriConApp(path: string, nome: string): Promise<boolean> {
     return true;
   } catch {
     return false;
+  }
+}
+
+/**
+ * v4.116 — Pulizia della cache dell'utente al LOGOUT (telefono
+ * condiviso): cancella le copie dei documenti in cache (pfc_*) e le
+ * copie pronte per la condivisione (cartella condividi/). PRIMA il
+ * logout chiudeva solo la sessione: i PDF restavano sul telefono e chi
+ * prendeva il dispositivo li poteva aprire dall'app File senza password.
+ * L'APK dell'aggiornamento (pfc_aggiornamento.apk) NON si tocca: non
+ * contiene dati dell'utente e cancellarlo costringerebbe a riscaricare
+ * ~100 MB chi sta solo aggiornando. Tutto best-effort: ogni errore
+ * viene ignorato (l'uscita non si blocca per un file indietreggiato).
+ */
+export async function puliziaCacheUtente(): Promise<void> {
+  const cache = ReactNativeBlobUtil.fs.dirs.CacheDir;
+  await ReactNativeBlobUtil.fs.unlink(`${cache}/condividi`).catch(() => {});
+  // v4.116: anche l'IBAN scritto a mano (piccolo .txt in cache con nome
+  // "pfc-iban-manuale.txt", con il TRATTINO: il filtro qui sotto su
+  // "pfc_" non lo prenderebbe).
+  await ReactNativeBlobUtil.fs.unlink(`${cache}/pfc-iban-manuale.txt`).catch(() => {});
+  try {
+    const file = await ReactNativeBlobUtil.fs.ls(cache);
+    for (const f of file) {
+      if (f.startsWith('pfc_') && f !== 'pfc_aggiornamento.apk') {
+        await ReactNativeBlobUtil.fs.unlink(`${cache}/${f}`).catch(() => {});
+      }
+    }
+  } catch {
+    // cache non leggibile: si riprova al prossimo logout
   }
 }

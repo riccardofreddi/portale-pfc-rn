@@ -5,8 +5,16 @@ on:
     branches: ["**"]
   workflow_dispatch:
 
+# v4.116: permessi MINIMI di default; la scrittura serve solo al job che
+# pubblica la release.
 permissions:
-  contents: write
+  contents: read
+
+# v4.116: un push nuovo sullo stesso branch annulla la build precedente
+# (su main NO: la release non viene mai lasciata a meta')
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
 
 jobs:
   verify:
@@ -35,6 +43,8 @@ jobs:
     name: Build release APK
     needs: verify
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
     steps:
       - name: Checkout
         uses: actions/checkout@v4

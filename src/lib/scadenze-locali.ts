@@ -199,8 +199,20 @@ function urlDaFilePath(filePath: string): string | undefined {
   return undefined;
 }
 
-/** Converte una data ISO in Date; null se non valida. */
+/** Converte una data ISO in Date; null se non valida.
+ * v4.116: qui interessa il GIORNO DI CALENDARIO, non l'istante. Le date
+ * del server arrivano come mezzanotte UTC ("2026-11-05T00:00:00.000Z"
+ * o "2026-11-05"): con new Date() un telefono a OVEST di Greenwich le
+ * legge come il giorno PRIMA e il promemoria finiva il giorno sbagliato.
+ * Se il testo comincia con YYYY-MM-DD costruiamo la data LOCALE di quel
+ * giorno. In Italia (est di Greenwich) il risultato non cambia: gli
+ * stessi giorni di sempre. */
 function dataDaIso(iso: string): Date | null {
+  const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(iso);
+  if (m) {
+    const d = new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3]));
+    return isNaN(d.getTime()) ? null : d;
+  }
   const d = new Date(iso);
   return isNaN(d.getTime()) ? null : d;
 }
@@ -264,124 +276,141 @@ export async function aggiornaPromemoriaScadenze(): Promise<number> {
     const adesso = new Date();
     let numero = 0;
     for (const scadenza of scadenze) {
-      if (scadenza.pagata) continue;
-      const scade = dataDaIso(scadenza.dataScadenza);
-      if (!scade) continue;
+      // v4.116: un errore su UNA scadenza (storage pieno, momento
+      // invalido...) non deve piu' interrompere le altre: prima il catch
+      // esterno a fine funzione fermava il ciclo e azzera l'intera
+      // sincronizzazione (segnali anti-doppione compresi).
+      try {
+        if (scadenza.pagata) continue;
+        const scade = dataDaIso(scadenza.dataScadenza);
+        if (!scade) continue;
 
-      const quando = new Date(
-        scade.getFullYear(),
-        scade.getMonth(),
-        scade.getDate(),
-        ORA_PROMEMORIA,
-        MINUTI_PROMEMORIA,
-        0,
-        0,
-      );
-
-      const url = urlDaFilePath(scadenza.filePath);
-      const dati = url ? { url } : {};
-      const contenuto = {
-        title: '⏰ Scadenza oggi',
-        body: `"${scadenza.titolo}" scade OGGI (${scade.toLocaleDateString('it-IT')}). Aprilo dall'archivio.`,
-        data: dati,
-      };
-      const identifier = PREFISSO_ID + scadenza.id;
-      // v4.57/v4.75: chiavi dei segnali anti-doppione per QUESTA scadenza.
-      const chiaveArmato = PREFISSO_ARMATO + scadenza.id;
-      const chiaveErogato = PREFISSO_EROGATO + scadenza.id;
-      const giorno = giornoIso(scade);
-
-      if (quando.getTime() > adesso.getTime()) {
-        // Caso normale: promemoria programmato alle 08:30 del giorno
-        // di scadenza (allarme esatto di Android: arriva anche a app
-        // chiusa, schermo spento e telefono in risparmio energetico).
-        await Notifications.scheduleNotificationAsync({
-          identifier,
-          content: contenuto,
-          trigger: {
-            type: Notifications.SchedulableTriggerInputTypes.CALENDAR,
-            year: quando.getFullYear(),
-            month: quando.getMonth() + 1,
-            day: quando.getDate(),
-            hour: ORA_PROMEMORIA,
-            minute: MINUTI_PROMEMORIA,
-            channelId: CANALE,
-            repeats: false,
-          },
-        });
-        // v4.57: segnala "sveglia armata per questo giorno".
-        // v4.75: questo segnale NON e' piu' un blocco: se la sveglia verra'
-        // persa, la rete di sicurezza del ramo qui sotto la ripara. Armiamo
-        // solo se l'avviso non e' gia' stato EROGATO oggi (difensivo).
-        const giaErogato = await AsyncStorage.getItem(chiaveErogato).catch(
-          () => null,
+        const quando = new Date(
+          scade.getFullYear(),
+          scade.getMonth(),
+          scade.getDate(),
+          ORA_PROMEMORIA,
+          MINUTI_PROMEMORIA,
+          0,
+          0,
         );
-        if (giaErogato !== giorno) {
-          await AsyncStorage.setItem(chiaveArmato, giorno).catch(() => {});
-        }
-        numero++;
-      } else {
-        // v4.75 — IL BUCO CHIUSO. Il momento e' gia' passato ma la scadenza
-        // e' ancora valida (il server non la darebbe piu' a lista dopo
-        // mezzanotte). Prima: un solo segnale per "programmato" ed "erogato",
-        // quindi una sveglia PERSA silenziava anche l'avviso di recupero.
-        // Ora:
-        //   1. avviso gia' EROGATO oggi -> vero doppione, ci fermiamo;
-        //   2. sveglia ARMATA e notifica ancora NEL VASSOIO -> l'allarme ha
-        //      scattato e l'utente ce l'ha davanti: nessun nuovo avviso,
-        //      segna erogato;
-        //   3. altrimenti (allarme perso, o nessun segno) -> avviso
-        //      immediato SUBITO, una volta sola, e segna erogato.
-        const giaErogato = await AsyncStorage.getItem(chiaveErogato).catch(
-          () => null,
-        );
-        if (giaErogato === giorno) {
-          console.log(
-            '[SCADENZE-LOCALI] avviso gia erogato oggi per',
-            scadenza.titolo,
-            ': salto',
+
+        const url = urlDaFilePath(scadenza.filePath);
+        const dati = url ? { url } : {};
+        const contenuto = {
+          title: '⏰ Scadenza oggi',
+          body: `"${scadenza.titolo}" scade OGGI (${scade.toLocaleDateString('it-IT')}). Aprilo dall'archivio.`,
+          data: dati,
+        };
+        const identifier = PREFISSO_ID + scadenza.id;
+        // v4.57/v4.75: chiavi dei segnali anti-doppione per QUESTA scadenza.
+        const chiaveArmato = PREFISSO_ARMATO + scadenza.id;
+        const chiaveErogato = PREFISSO_EROGATO + scadenza.id;
+        const giorno = giornoIso(scade);
+
+        if (quando.getTime() > adesso.getTime()) {
+          // Caso normale: promemoria programmato alle 08:30 del giorno
+          // di scadenza (allarme esatto di Android: arriva anche a app
+          // chiusa, schermo spento e telefono in risparmio energetico).
+          await Notifications.scheduleNotificationAsync({
+            identifier,
+            content: contenuto,
+            trigger: {
+              // v4.116 — IL BUG DELLA VITA REALE: era CALENDAR, che in
+              // expo-notifications esiste SOLO su iOS (il tipo e' marcato
+              // "@platform ios"). Android rifiutava la schedulazione, il
+              // catch esterno nascondeva l'errore e i promemoria a app
+              // CHIUSA non sono MAI partiti (funzionava solo l'avviso
+              // immediato ad app aperta). Il trigger DATE (il momento come
+              // Date) e' supportato da entrambe le piattaforme e arriva
+              // allo stesso minuto del giorno di scadenza, via allarme
+              // esatto di Android: anche a telefono addormentato.
+              type: Notifications.SchedulableTriggerInputTypes.DATE,
+              date: quando,
+              channelId: CANALE,
+            },
+          });
+          // v4.57: segnala "sveglia armata per questo giorno".
+          // v4.75: questo segnale NON e' piu' un blocco: se la sveglia verra'
+          // persa, la rete di sicurezza del ramo qui sotto la ripara. Armiamo
+          // solo se l'avviso non e' gia' stato EROGATO oggi (difensivo).
+          const giaErogato = await AsyncStorage.getItem(chiaveErogato).catch(
+            () => null,
           );
-          continue;
-        }
-
-        // Il vassoio dice se la sveglia e' SCATTATA (notifica presente).
-        // API mancante o errore = non sappiamo: comportamento sicuro,
-        // l'avviso immediato esce comunque (mai piu' il silenzio totale).
-        let svegliaNelVassoio = false;
-        try {
-          if (
-            Notifications.getPresentedNotificationsAsync &&
-            typeof Notifications.getPresentedNotificationsAsync === 'function'
-          ) {
-            const presentate = await Notifications.getPresentedNotificationsAsync();
-            svegliaNelVassoio = presentate.some(
-              (n: { request?: { identifier?: string } }) =>
-                n?.request?.identifier === identifier,
-            );
+          if (giaErogato !== giorno) {
+            await AsyncStorage.setItem(chiaveArmato, giorno).catch(() => {});
           }
-        } catch {
-          // Vassoio non leggibile: prosegui con l'avviso immediato.
-        }
-
-        if (svegliaNelVassoio) {
-          // L'allarme e' scattato: l'avviso e' gia' davanti all'utente.
-          await AsyncStorage.setItem(chiaveErogato, giorno).catch(() => {});
-          console.log(
-            '[SCADENZE-LOCALI] sveglia scattata nel vassoio per',
-            scadenza.titolo,
-            ': nessun doppione',
+          numero++;
+        } else {
+          // v4.75 — IL BUCO CHIUSO. Il momento e' gia' passato ma la scadenza
+          // e' ancora valida (il server non la darebbe piu' a lista dopo
+          // mezzanotte). Prima: un solo segnale per "programmato" ed "erogato",
+          // quindi una sveglia PERSA silenziava anche l'avviso di recupero.
+          // Ora:
+          //   1. avviso gia' EROGATO oggi -> vero doppione, ci fermiamo;
+          //   2. sveglia ARMATA e notifica ancora NEL VASSOIO -> l'allarme ha
+          //      scattato e l'utente ce l'ha davanti: nessun nuovo avviso,
+          //      segna erogato;
+          //   3. altrimenti (allarme perso, o nessun segno) -> avviso
+          //      immediato SUBITO, una volta sola, e segna erogato.
+          const giaErogato = await AsyncStorage.getItem(chiaveErogato).catch(
+            () => null,
           );
-          continue;
-        }
+          if (giaErogato === giorno) {
+            console.log(
+              '[SCADENZE-LOCALI] avviso gia erogato oggi per',
+              scadenza.titolo,
+              ': salto',
+            );
+            continue;
+          }
 
-        // Allarme perso (o mai armato): avviso immediato SUBITO.
-        await Notifications.scheduleNotificationAsync({
-          identifier,
-          content: contenuto,
-          trigger: null,
-        });
-        await AsyncStorage.setItem(chiaveErogato, giorno).catch(() => {});
-        numero++;
+          // Il vassoio dice se la sveglia e' SCATTATA (notifica presente).
+          // API mancante o errore = non sappiamo: comportamento sicuro,
+          // l'avviso immediato esce comunque (mai piu' il silenzio totale).
+          let svegliaNelVassoio = false;
+          try {
+            if (
+              Notifications.getPresentedNotificationsAsync &&
+              typeof Notifications.getPresentedNotificationsAsync === 'function'
+            ) {
+              const presentate = await Notifications.getPresentedNotificationsAsync();
+              svegliaNelVassoio = presentate.some(
+                (n: { request?: { identifier?: string } }) =>
+                  n?.request?.identifier === identifier,
+              );
+            }
+          } catch {
+            // Vassoio non leggibile: prosegui con l'avviso immediato.
+          }
+
+          if (svegliaNelVassoio) {
+            // L'allarme e' scattato: l'avviso e' gia' davanti all'utente.
+            await AsyncStorage.setItem(chiaveErogato, giorno).catch(() => {});
+            console.log(
+              '[SCADENZE-LOCALI] sveglia scattata nel vassoio per',
+              scadenza.titolo,
+              ': nessun doppione',
+            );
+            continue;
+          }
+
+          // Allarme perso (o mai armato): avviso immediato SUBITO.
+          await Notifications.scheduleNotificationAsync({
+            identifier,
+            content: contenuto,
+            trigger: null,
+          });
+          await AsyncStorage.setItem(chiaveErogato, giorno).catch(() => {});
+          numero++;
+        }
+      } catch (err) {
+        // v4.116: questa scadenza salta, le altre proseguono.
+        console.log(
+          '[SCADENZE-LOCALI] errore su una scadenza, continuo con le altre:',
+          scadenza?.titolo,
+          err instanceof Error ? err.message : err,
+        );
       }
     }
 

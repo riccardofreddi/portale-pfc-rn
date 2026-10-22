@@ -59,14 +59,19 @@ export default function LoginScreen() {
   const [loading, setLoading] = useState(false);
 
   async function handleLogin() {
-    if (!username || !password) {
+    // v4.116: lo spazio finale dal completamento automatico della
+    // tastiera faceva fallire il login con un errore incomprensibile:
+    // lo username si RIPULISCE; la password NO (puo' contenere spazi veri).
+    const utente = username.trim();
+    if (!utente || !password) {
       toast.warning('Inserisci username e password');
       return;
     }
+    if (loading) return; // v4.116: anti doppio tocco
     setLoading(true);
     haptics.impact();
     try {
-      const res = await api.auth.login(username, password);
+      const res = await api.auth.login(utente, password);
       if (!res.ok) {
         haptics.error();
         toast.error('Login fallito', res.error ?? 'Credenziali non valide');

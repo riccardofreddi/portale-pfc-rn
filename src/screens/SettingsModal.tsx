@@ -50,6 +50,7 @@ import { Modal } from '@/components/Modal';
 import { confirmDialog } from '@/components/ConfirmDialog';
 import { toast } from '@/components/Toaster';
 import { haptics } from '@/lib/haptics';
+import { puliziaCacheUtente } from '@/lib/download';
 import { api } from '@/api/client';
 import { APP_VERSION, CODICE_INTERFACCIA } from '@/lib/updates';
 import { useAppStore } from '@/store/auth';
@@ -186,6 +187,11 @@ export function SettingsModal() {
     }
     setVisible(false);
     setUser(null);
+    // v4.116: la cache dei documenti NON resta piu' sul telefono dopo
+    // l'uscita (telefono condiviso): PDF in cache e copie pronte per la
+    // condivisione vengono cancellati qui, senza bloccare l'uscita
+    // (la funzione e' tutta best-effort).
+    void puliziaCacheUtente();
   }
 
   // v4.12: conferma prima di uscire (come l'AlertDialog della app v4)

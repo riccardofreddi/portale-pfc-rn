@@ -92,9 +92,14 @@ export default function App() {
     const username = user.username;
 
     let cancelled = false;
+    // v4.116: due giri in fila possono superare i 30 s (richieste da 20 s
+    // su rete lenta): senza guardia i giri si accavallavano e un esito
+    // VECCHIO poteva sovrascrivere uno piu' nuovo. Uno alla volta.
+    let inCorso = false;
 
     async function poll() {
-      if (cancelled) return;
+      if (cancelled || inCorso) return;
+      inCorso = true;
       try {
         const notifRes = await api.notifiche.list();
         if (cancelled) return;
@@ -109,15 +114,27 @@ export default function App() {
         setNMessaggiNonLetti(unreadMsg);
       } catch {
         // silent
+      } finally {
+        inCorso = false;
       }
     }
 
     pollRef.current = poll;
     poll();
-    const interval = setInterval(poll, 30_000);
+    // v4.116: niente richieste a app in BACKGROUND (batteria e traffico
+    // inutili): al ritorno in primo piano l'ascoltatore 'active' gia'
+    // presente in App lancia il giro suo. Il ritmo resta 30 s, ma solo
+    // quando l'app e' davvero davanti all'utente.
+    const interval = setInterval(() => {
+      if (AppState.currentState === 'active') void poll();
+    }, 30_000);
     return () => {
       cancelled = true;
       clearInterval(interval);
+      // v4.116: smontato l'effetto, pollRef non deve puntare a un poll
+      // morto (cambiate uscita/entrata: chi lo chiama fuori trova la no-op,
+      // non una closure con le sue variabili smontate).
+      pollRef.current = async () => {};
     };
   }, [user, setNNotifiche, setNMessaggiNonLetti]);
 

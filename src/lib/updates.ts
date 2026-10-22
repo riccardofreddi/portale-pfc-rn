@@ -107,7 +107,7 @@ export const APP_VERSION: string =
 /** Sigillo dell'interfaccia JS: cambia a ogni release e viaggia
  *  col codice, non col build (segue il versionCode: 4101 = versionCode
  *  100). Unica fonte: la tacca di versione, ora in Impostazioni. */
-export const CODICE_INTERFACCIA = 4115;
+export const CODICE_INTERFACCIA = 4116;
 
 interface ReleaseInfo {
   version: string | null;
@@ -267,11 +267,34 @@ export async function scaricaAggiornamentoAPK(
       }
     });
   }
-  const res = await task;
+  const res = await task.catch(async (err: unknown) => {
+    // v4.116: download interrotto (rete caduta): il parziale in cache va
+    // cancellato subito, il ritento parte da zero.
+    await ReactNativeBlobUtil.fs.unlink(destinazione).catch(() => {});
+    throw err;
+  });
   const status = res.info().status;
   if (status < 200 || status >= 300) {
     await ReactNativeBlobUtil.fs.unlink(destinazione).catch(() => {});
     throw new Error(`Errore del server (HTTP ${status})`);
+  }
+  // v4.116: sanita' del file scaricato. Un captive portal (WiFi di hotel,
+  // alberghi, aeroporti) risponde 200 con una PAGINA HTML di pochi KB:
+  // prima l'app aprirebbe l'installer su quella e Android rispondeva solo
+  // "App non installata", senza spiegazioni. Un APK vero del portale e'
+  // ~100 MB: sotto 1 MB non puo' essere il nostro. E se la rete dichiara
+  // la dimensione (content-length), il file deve arrivare INTERO: un
+  // corpo troncato non deve mai arrivare all'installer.
+  const stat = await ReactNativeBlobUtil.fs.stat(res.path()).catch(() => null);
+  const peso = stat ? Number((stat as { size?: number | string }).size ?? 0) : 0;
+  const intestazioni = (res.info().headers ?? {}) as Record<string, string>;
+  const chiaveCl = Object.keys(intestazioni).find(
+    (k) => k.toLowerCase() === 'content-length',
+  );
+  const totale = chiaveCl ? Number(intestazioni[chiaveCl]) : NaN;
+  if (peso < 1_000_000 || (!isNaN(totale) && totale > 0 && peso < totale)) {
+    await ReactNativeBlobUtil.fs.unlink(destinazione).catch(() => {});
+    throw new Error('Download incompleto: controlla la connessione e riprova');
   }
   return res.path();
 }

@@ -29,6 +29,13 @@ const SESSION_COOKIE_KEY = 'pfc_session_cookie';
 // e' la soglia: piu' che abbondante anche su rete lenta, prima dell'appeso.
 const TIMEOUT_RICHIESTA_MS = 20_000;
 
+// v4.116: gli UPLOAD (risposte ai messaggi, Cassetto) portano file fino
+// a 50 MB: su una rete lenta 20 secondi non bastavano e il caricamento
+// si interrompeva sempre a meta'. Il timeout da 20 s resta per le
+// richieste normali; per quelle che portano un FormData (upload) sale a
+// 3 minuti, piu' che abbondante anche su rete debole.
+const TIMEOUT_UPLOAD_MS = 180_000;
+
 /**
  * v4.112: errore con lo STATUS HTTP allegato. Prima gli errori portavano
  * solo il messaggio: il resto dell'app non poteva distinguere "sessione
@@ -89,26 +96,67 @@ async function apiFetch<T = unknown>(
     ...(customHeaders as Record<string, string>),
   };
 
+  const url = path.startsWith('http') ? path : `${API_BASE_URL}${path}`;
+
+  // v4.116: il cookie di sessione va SOLO al nostro backend. Prima veniva
+  // allegato a QUALUNQUE richiesta, anche se il path era un URL assoluto
+  // verso un dominio terzo: oggi nessuna chiamata esce dal portale, ma
+  // bastava un domani con un URL esterno per spedire la sessione a un
+  // host estraneo. La guardia: solo URL relativi o assoluti verso
+  // API_BASE_URL (con lo slash finale, per non accettare host fatti come
+  // "...vercel.app.malvagio.com").
   const cookie = await getSessionCookie();
   if (cookie && auth) {
-    headers.Cookie = cookie;
+    const stessaOrigine =
+      !path.startsWith('http') ||
+      url === API_BASE_URL ||
+      url.startsWith(`${API_BASE_URL}/`);
+    if (stessaOrigine) {
+      headers.Cookie = cookie;
+    }
   }
 
-  const url = path.startsWith('http') ? path : `${API_BASE_URL}${path}`;
-  // v4.112: abort automatico dopo TIMEOUT_RICHIESTA_MS (se il chiamante non
-  // porta gia' il suo signal, che resta il padrone).
+  // v4.116: timeout pieno (20 s) per le chiamate normali, 3 minuti per
+  // gli upload con FormData (i 20 s tagliavano i file grandi).
+  // v4.116: se il chiamante porta il SUO signal, ora si COMBINA col
+  // timeout (prima lo sostituiva e il timer spariva): scatta il primo
+  // dei due. Combinazione manuale perche' AbortSignal.any non esiste
+  // su Hermes.
   const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), TIMEOUT_RICHIESTA_MS);
+  const callerSignal = rest.signal as AbortSignal | undefined;
+  const onCallerAbort = () => controller.abort();
+  if (callerSignal) {
+    if (callerSignal.aborted) {
+      controller.abort();
+    } else {
+      callerSignal.addEventListener('abort', onCallerAbort);
+    }
+  }
+  const timeoutMs =
+    rest.body instanceof FormData ? TIMEOUT_UPLOAD_MS : TIMEOUT_RICHIESTA_MS;
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  // v4.116: il timer resta acceso finche' il CORPO non e' letto (prima
+  // veniva spento appena arrivavano gli header: un server che moriva a
+  // meta' risposta lasciava la richiesta appesa all'infinito).
+  const pulisci = () => {
+    clearTimeout(timer);
+    callerSignal?.removeEventListener('abort', onCallerAbort);
+  };
   let res: Response;
+  let data: unknown;
   try {
     res = await fetch(url, {
       ...rest,
       headers,
       credentials: 'include',
-      signal: (rest.signal as AbortSignal | undefined) ?? controller.signal,
+      signal: controller.signal,
     });
+    data = await res.json().catch(() => ({}));
   } catch (err) {
-    clearTimeout(timer);
+    pulisci();
+    // v4.116: annullata VOLUTAMENTE dal chiamante (il suo signal): a lui
+    // torna l'errore originale, non e' un problema di rete.
+    if (callerSignal?.aborted) throw err;
     if (err instanceof Error && (err.name === 'AbortError' || err.name === 'TimeoutError')) {
       throw new ApiError(
         'La rete non risponde: controlla la connessione e riprova',
@@ -117,7 +165,7 @@ async function apiFetch<T = unknown>(
     }
     throw err;
   }
-  clearTimeout(timer);
+  pulisci();
 
   if (path === '/api/auth/login' && res.ok) {
     const setCookie = res.headers.get('set-cookie');
@@ -140,10 +188,16 @@ async function apiFetch<T = unknown>(
     useAppStore.getState().reset();
   }
 
-  const data = (await res.json().catch(() => ({}))) as unknown;
-
   if (!res.ok) {
-    const msg = (data as { error?: string }).error ?? `Errore ${res.status}`;
+    // v4.116: data puo' essere null o un tipo inatteso (JSON VALIDO ma
+    // diverso da quello atteso): prima `(null as {...}).error` lanciava
+    // TypeError e MASCHERAVA lo status HTTP vero.
+    const errore =
+      data && typeof data === 'object'
+        ? (data as { error?: unknown }).error
+        : undefined;
+    const msg =
+      typeof errore === 'string' && errore ? errore : `Errore ${res.status}`;
     // v4.112: ApiError con lo status (vedi sopra): il messaggio resta
     // identico a prima per chi lo mostra.
     throw new ApiError(msg, res.status);
@@ -286,11 +340,17 @@ export const api = {
     },
 
     async archivia(id: string): Promise<void> {
-      await apiFetch('/api/messaggi?id=' + id + '&action=archivia', { method: 'PATCH' });
+      await apiFetch(
+        '/api/messaggi?id=' + encodeURIComponent(id) + '&action=archivia',
+        { method: 'PATCH' },
+      );
     },
 
     async dearchivia(id: string): Promise<void> {
-      await apiFetch('/api/messaggi?id=' + id + '&action=dearchivia', { method: 'PATCH' });
+      await apiFetch(
+        '/api/messaggi?id=' + encodeURIComponent(id) + '&action=dearchivia',
+        { method: 'PATCH' },
+      );
     },
   },
 

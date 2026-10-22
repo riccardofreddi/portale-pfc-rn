@@ -597,6 +597,13 @@ export function AppNavigator() {
     }
     let vivo = true;
     async function controlla() {
+      // v4.116: niente richieste ogni 10 s (e /auth/me) con l'app in
+      // BACKGROUND: batteria e traffico sprecati per un esito che l'utente
+      // non vede. Al ritorno in primo piano l'ascoltatore AppState sotto
+      // lancia il giro suo.
+      if (AppState.currentState !== 'active') {
+        return;
+      }
       try {
         const res = await api.sistema.manutenzione();
         if (!vivo) {
