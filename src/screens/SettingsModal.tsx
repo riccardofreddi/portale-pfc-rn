@@ -37,6 +37,7 @@
  */
 import React, { useEffect, useState } from 'react';
 import {
+  Linking,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -63,9 +64,11 @@ import {
 } from '@/lib/push';
 import {
   aggiornaPromemoriaScadenze,
+  cancellaPromemoriaLocali,
   promemoriaAttivi,
   setPromemoriaAttivi,
 } from '@/lib/scadenze-locali';
+import { caricaModuloNotifiche } from '@/lib/notifiche';
 import { spacing, typography, useColors, useTheme, type ThemeColors, type ThemeMode } from '@/theme';
 
 const THEME_OPTIONS: Array<{ value: ThemeMode; label: string; icon: 'phone-portrait-outline' | 'sunny-outline' | 'moon-outline' }> = [
@@ -100,10 +103,85 @@ export function SettingsModal() {
   // Default ATTIVO (il comportamento di sempre per chi non tocca nulla).
   const [notificheOn, setNotificheOn] = useState(true);
 
+  // v4.118 — STATO REALE (non solo l'interruttore):
+  // - permessoSistema: il telefono concede DAVVERO le notifiche? (null =
+  //   non noto, es. moduli nativi mancanti su copie vecchie)
+  // - diagnostica: token FCM presente, esito dell'ultima registrazione,
+  //   quanti promemoria sono programmati nell'orologio di Android.
+  // Finora la pillola "Attivo" diceva che tutto andava anche con il
+  // permesso negato per sempre, e l'utente non aveva NESSUNA via
+  // d'uscita se non capire da solo dove battere.
+  const [permessoSistema, setPermessoSistema] = useState<boolean | null>(null);
+  const [diagnostica, setDiagnostica] = useState<{
+    token: boolean;
+    registrato: boolean;
+    errore: string;
+    promemoria: number | null;
+  } | null>(null);
+  const [testInCorso, setTestInCorso] = useState(false);
+
+  async function leggiStatoNotifiche() {
+    promemoriaAttivi().then(setNotificheOn);
+    const Notifications = await caricaModuloNotifiche();
+    if (!Notifications) {
+      setPermessoSistema(null);
+      setDiagnostica(null);
+      return;
+    }
+    try {
+      const perm = await Notifications.getPermissionsAsync();
+      setPermessoSistema(Boolean(perm.granted));
+    } catch {
+      setPermessoSistema(null);
+    }
+    let promemoria: number | null = null;
+    try {
+      const tutti = await Notifications.getAllScheduledNotificationsAsync();
+      promemoria = tutti.filter((n) => n.identifier.startsWith('pfc-scad-')).length;
+    } catch {
+      promemoria = null;
+    }
+    setDiagnostica({
+      token: Boolean(pushState.token),
+      registrato: pushState.registered,
+      errore: pushState.error,
+      promemoria,
+    });
+  }
+
   useEffect(() => {
     if (!visible) return;
-    promemoriaAttivi().then(setNotificheOn);
+    void leggiStatoNotifiche();
   }, [visible]);
+
+  // v4.118: invia una notifica DI PROVA dal server (endpoint esistente,
+  // usato finora solo dalla diagnostica web): la prova vera e propria
+  // che il telefono è agganciato e che la push arriva fin qui.
+  async function inviaNotificaDiTest() {
+    haptics.tap();
+    setTestInCorso(true);
+    try {
+      const res = await api.push.fcmTest();
+      if (res.ok) {
+        toast.success(
+          'Notifica di test inviata',
+          'Arriva in pochi secondi: guarda la barra di stato.',
+        );
+      } else {
+        toast.warning(
+          'Notifica non inviata',
+          res.msg || 'Il telefono non risulta registrato per le notifiche.',
+        );
+      }
+    } catch (err) {
+      toast.error(
+        'Errore',
+        err instanceof Error ? err.message : 'Invio di prova non riuscito',
+      );
+    } finally {
+      setTestInCorso(false);
+    }
+  }
 
   function handleThemeSelect(m: ThemeMode) {
     haptics.tap();
@@ -192,6 +270,11 @@ export function SettingsModal() {
     // condivisione vengono cancellati qui, senza bloccare l'uscita
     // (la funzione e' tutta best-effort).
     void puliziaCacheUtente();
+    // v4.118: gli ALLARMI LOCALI di scadenza fanno la stessa fine
+    // (appartengono all'account uscito; LoginScreen li cancella comunque
+    // al rientro, qui è la via diretta). I segnali anti-doppione si
+    // puliscono da soli alla prima sync dell'account nuovo.
+    void cancellaPromemoriaLocali();
   }
 
   // v4.12: conferma prima di uscire (come l'AlertDialog della app v4)
@@ -213,6 +296,12 @@ export function SettingsModal() {
     .trim()
     .slice(0, 2)
     .toUpperCase() || 'PF';
+
+  // v4.118: la pillola ora dice la verità: "Permesso negato" quando il
+  // telefono blocca le notifiche anche a interruttore acceso (null =
+  // stato non conoscibile: restiamo sul vecchio comportamento).
+  const pillolaNegato = notificheOn && permessoSistema === false;
+  const pillolaOk = notificheOn && permessoSistema !== false;
 
   return (
     <Modal visible={visible} onClose={() => setVisible(false)} style={{ paddingBottom: 0 }}>
@@ -264,26 +353,72 @@ export function SettingsModal() {
             <View
               style={[
                 styles.statusPill,
-                notificheOn ? styles.statusPillOk : styles.statusPillWarn,
+                pillolaOk
+                  ? styles.statusPillOk
+                  : pillolaNegato
+                    ? styles.statusPillDanger
+                    : styles.statusPillWarn,
               ]}
             >
-              <View style={[styles.statusDot, notificheOn ? styles.statusDotOk : styles.statusDotWarn]} />
+              <View
+                style={[
+                  styles.statusDot,
+                  pillolaOk
+                    ? styles.statusDotOk
+                    : pillolaNegato
+                      ? styles.statusDotDanger
+                      : styles.statusDotWarn,
+                ]}
+              />
               <Text
                 style={[
                   styles.statusPillText,
-                  notificheOn ? styles.statusPillTextOk : styles.statusPillTextWarn,
+                  pillolaOk
+                    ? styles.statusPillTextOk
+                    : pillolaNegato
+                      ? styles.statusPillTextDanger
+                      : styles.statusPillTextWarn,
                 ]}
               >
-                {notificheOn ? 'Attivo' : 'Non attivo'}
+                {pillolaNegato ? 'Permesso negato' : notificheOn ? 'Attivo' : 'Non attivo'}
               </Text>
             </View>
           </View>
 
           <Text style={styles.helpText}>
-            {notificheOn
-              ? 'Il telefono è agganciato all\'account: gli avvisi arrivano anche a app chiusa.'
-              : 'Nessun avviso arriverà su questo telefono finché non riaccendi l\'interruttore.'}
+            {!notificheOn
+              ? 'Nessun avviso arriverà su questo telefono finché non riaccendi l\'interruttore.'
+              : pillolaNegato
+                ? 'Il telefono NEGA il permesso di mostrare notifiche: finché non riattivato non ne arriva nessuna, anche con l\'interruttore acceso.'
+                : 'Il telefono è agganciato all\'account: gli avvisi arrivano anche a app chiusa.'}
           </Text>
+
+          {/* v4.118: quando il permesso è NEGATO, la via d'uscita diretta:
+              un tocco apre le impostazioni notifiche dell'app nel sistema. */}
+          {pillolaNegato && (
+            <Pressable
+              onPress={() => {
+                haptics.tap();
+                Linking.openSettings().catch(() => {
+                  toast.error('Errore', 'Impossibile aprire le impostazioni del telefono');
+                });
+              }}
+              style={styles.apriImpostazioni}
+              accessibilityRole="button"
+              accessibilityLabel="Apri le impostazioni del telefono"
+            >
+              <Ionicons name="settings-outline" size={18} color={colors.danger} />
+              <View style={styles.switchText}>
+                <Text style={[styles.switchTitle, { color: colors.danger }]}>
+                  Apri impostazioni
+                </Text>
+                <Text style={styles.switchSub}>
+                  Notifiche → attiva "Tutte le notifiche"
+                </Text>
+              </View>
+              <Ionicons name="chevron-forward" size={18} color={colors.textTertiary} />
+            </Pressable>
+          )}
 
           <View style={styles.divider} />
           <View style={styles.switchRow}>
@@ -303,6 +438,53 @@ export function SettingsModal() {
               accessibilityLabel="Notifiche attive o spente"
             />
           </View>
+
+          {/* v4.118: blocco diagnostica discreto: dice la VERITÀ su token,
+              ultima registrazione e promemoria programmati (prima era
+              tutto invisibile: "attivo" anche quando non lo era). */}
+          {diagnostica && (
+            <View style={styles.diagBox}>
+              <Text style={styles.diagRiga}>
+                Telefono registrato: {diagnostica.registrato ? 'sì' : 'no'}
+                {!diagnostica.registrato && diagnostica.errore
+                  ? ` (${diagnostica.errore})`
+                  : ''}
+              </Text>
+              <Text style={styles.diagRiga}>
+                Token di notifica: {diagnostica.token ? 'presente' : 'assente'}
+              </Text>
+              <Text style={styles.diagRiga}>
+                Promemoria scadenze programmati:{' '}
+                {diagnostica.promemoria === null ? 'sconosciuto' : diagnostica.promemoria}
+              </Text>
+              <Pressable
+                onPress={inviaNotificaDiTest}
+                disabled={testInCorso}
+                style={({ pressed }) => [
+                  styles.testBtn,
+                  pressed && styles.testBtnPressed,
+                  testInCorso && { opacity: 0.6 },
+                ]}
+                accessibilityRole="button"
+                accessibilityLabel="Invia una notifica di prova"
+              >
+                <Ionicons name="paper-plane-outline" size={16} color={colors.primaryText} />
+                <Text style={styles.testBtnText}>
+                  {testInCorso ? 'Invio…' : 'Invia notifica di prova'}
+                </Text>
+              </Pressable>
+            </View>
+          )}
+
+          {/* v4.118: i produttori (Xiaomi, Huawei, Samsung, Oppo) fermano
+              gli allarmi per "risparmiare batteria" ANCHE con il permesso
+              concesso: la risposta ai "non ricevo gli avvisi". */}
+          <Text style={styles.helpText}>
+            Se gli avvisi non arrivano a telefono spento: Impostazioni del
+            telefono → App → Portale Studio → Batteria → "Senza restrizioni".
+            Alcuni telefoni (Xiaomi, Huawei, Samsung, Oppo) fermano gli
+            allarmi per risparmiare batteria.
+          </Text>
         </View>
 
         {/* --- Card ASPETTO (v4.13: tolta la riga versione) --- */}
@@ -435,12 +617,52 @@ const makeStyles = (colors: ThemeColors) =>
     statusPill: { flexDirection: 'row', alignItems: 'center', gap: 5, paddingHorizontal: spacing.md, paddingVertical: spacing.xs, borderRadius: 999 },
     statusPillOk: { backgroundColor: colors.successSoft },
     statusPillWarn: { backgroundColor: colors.warningSoft },
+    statusPillDanger: { backgroundColor: colors.dangerSoft },
     statusDot: { width: 6, height: 6, borderRadius: 3 },
     statusDotOk: { backgroundColor: colors.success },
     statusDotWarn: { backgroundColor: colors.warning },
+    statusDotDanger: { backgroundColor: colors.danger },
     statusPillText: { ...typography.labelSmall, fontSize: 10.5, fontWeight: '800' },
     statusPillTextOk: { color: colors.success },
     statusPillTextWarn: { color: colors.warning },
+    statusPillTextDanger: { color: colors.danger },
+
+    // v4.118 — riga "Apri impostazioni" quando il permesso è negato
+    apriImpostazioni: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 12,
+      minHeight: 54,
+      borderRadius: 12,
+      backgroundColor: colors.surface,
+      borderWidth: 1,
+      borderColor: colors.danger,
+      paddingHorizontal: spacing.md,
+    },
+    // v4.118 — blocco diagnostica + notifica di prova
+    diagBox: {
+      backgroundColor: colors.surface,
+      borderWidth: 1,
+      borderColor: colors.border,
+      borderRadius: 12,
+      padding: spacing.md,
+      gap: 4,
+    },
+    diagRiga: { ...typography.caption, color: colors.textSecondary },
+    testBtn: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'center',
+      gap: 6,
+      minHeight: 42,
+      borderRadius: 10,
+      borderWidth: 1.5,
+      borderColor: colors.accent,
+      backgroundColor: colors.accentSoft,
+      marginTop: 6,
+    },
+    testBtnPressed: { opacity: 0.8, transform: [{ scale: 0.99 }] },
+    testBtnText: { ...typography.caption, color: colors.primaryText, fontWeight: '800' },
 
     // Interruttore / righe
     divider: { borderTopWidth: 1, borderTopColor: colors.border, marginTop: spacing.xs },

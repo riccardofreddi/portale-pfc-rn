@@ -77,6 +77,18 @@ export const useAppStore = create<AppState>((set) => ({
   setUser: (u) =>
     set((s) => {
       if (s.user?.username !== u?.username) {
+        // v4.7: NON cancellare il deep-link pendente QUANDO L'APP PARTE DA
+        // UN TAP SU NOTIFICA: il tap arriva PRIMA della verifica della
+        // sessione (getInitialNotification e' locale e veloce,
+        // api.auth.me() passa dalla rete): da nessun utente a utente
+        // collegato e' il percorso freddo, e lì il deep-link va tenuto.
+        //
+        // v4.118 — MA in ogni ALTRO cambio d'account (logout, altro
+        // cliente che entra) il deep-link pendente è l'indirizzo del
+        // vecchio account: portare il nuovo cliente in anno/cartella
+        // del precedente è una fuga di dati (per quanto piccola). Se
+        // c'era già un utente collegato, l'indirizzo va BUTTATO.
+        const avvioFreddo = s.user === null;
         return {
           user: u,
           loadingUser: false,
@@ -90,14 +102,7 @@ export const useAppStore = create<AppState>((set) => ({
           settingsOpen: false,
           introRipassoOpen: false,
           clienteTab: 'archivio',
-          // v4.7: NON cancellare il deep-link pendente. Quando l'app parte
-          // da una notifica toccata a telefono chiuso, il tap arriva PRIMA
-          // della verifica della sessione (getInitialNotification e' locale
-          // e veloce, api.auth.me() passa dalla rete): se qui lo azzerassimo,
-          // l'app si aprirebbe senza portare l'utente nel contenuto giusto.
-          // Lo teniamo e lo consumera' la tab bar appena montata; a fine
-          // consumazione viene pulito dal consumatore del deep-link.
-          pendingDeepLink: s.pendingDeepLink,
+          pendingDeepLink: avvioFreddo ? s.pendingDeepLink : null,
         };
       }
       return { user: u };

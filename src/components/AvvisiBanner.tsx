@@ -135,9 +135,16 @@ export function AvvisiBanner() {
     );
     // Tap sulla push "Nuovo avviso" => il pannello si apre da solo (nome
     // storico dell'evento lasciato intatto: lo emette push.ts).
+    // v4.118: il listener CONSUMA ANCHE il flag dell'avvio a freddo:
+    // prima segnalaTapAvviso() lo accendeva e l'emissione dell'evento
+    // lo lasciava acceso (il listener non lo toccava). Resta acceso =>
+    // alla prossima variazione di avvisi.length (nuovo avviso mentre
+    // l'app è aperta) l'effetto qui sotto lo consumava e il pannello si
+    // RIAPREVA da solo, senza che nessuno avesse toccato nulla.
     const subBacheca = DeviceEventEmitter.addListener(
       'pfc-apri-bacheca',
       () => {
+        prendiTapAvvisoPendente();
         apriLista();
       },
     );

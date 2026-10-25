@@ -43,16 +43,23 @@
  *   esattamente sul documento/messaggio giusto (deep-link).
  *
  * Novita' v4.2 (arrivi IMMEDIATI, via il secondo di attesa):
- * - mostraAvvisoLocale ora pubblica la notifica SUBITO (trigger null):
- *   prima c'era un timer di 1 secondo per agganciare il canale giusto.
- *   Verificato nel codice Kotlin della libreria (BaseNotificationBuilder):
- *   le notifiche immediate finiscono nel canale di riserva
- *   "expo_notifications_fallback_notification_channel", che la libreria
- *   crea con IMPORTANCE_HIGH, vibrazione e badge: STESSO effetto a
- *   schermo (popup in alto, suono, vibrazione) ma ZERO attesa.
- * - Il canale "pfc-alerts-v2" resta creato: serve alle push del server
- *   quando l'app e' CHIUSA (e' Android a mostrarle, col canale che il
- *   server indica nel messaggio).
+ * - mostraAvvisoLocale ora pubblica la notifica SUBITO (niente timer di
+ *   1 secondo per agganciare il canale giusto).
+ * - v4.118 CORREZIONE: il vecchio commento diceva "la libreria non
+ *   permette il canale nelle richieste immediate" — FALSO per la
+ *   versione in uso (expo-notifications 0.29: il tipo
+ *   ChannelAwareTriggerInput = { channelId } e' esattamente la
+ *   richiesta immediata col canale). Prima si usava trigger null e le
+ *   notifiche immediate finivano nel canale di riserva
+ *   "expo_notifications_fallback_notification_channel": se l'utente
+ *   silenziava "Avvisi del portale", i locali immediati non rispettavano
+ *   la scelta. Ora indicano ESPLICITAMENTE "pfc-alerts-v2".
+ * - Il canale "pfc-alerts-v2" serve anche alle push del server quando
+ *   l'app e' CHIUSA (e' Android a mostrarle, col canale che il server
+ *   indica nel messaggio), ed e' creato ADESSO ANCHE NATIVO da
+ *   MainActivity.kt a processo avviato: la prima push dopo
+ *   l'installazione trova il canale anche se JavaScript non e' mai
+ *   partito.
  *
  * Novita' v4.3 (promemoria scadenze che arrivano ANCHE a app chiusa):
  * - esposto caricaModuloNotifiche(): il nuovo modulo scadenze-locali.ts
@@ -89,7 +96,14 @@ const MODULI_NATIVI_RICHIESTI = [
  * Gate silenzioso: true solo se TUTTI i pezzi nativi esistono.
  * requireOptionalNativeModule restituisce null senza errori se il
  * modulo manca; non scrive nulla nei log.
+ *
+ * v4.118: se manca un pezzo, lo diciamo UNA VOLTA nei log con il NOME
+ * preciso del modulo assente. Prima il gate taceva del tutto: un nome
+ * sbagliato (o un dev client non ricostruito) spegneva TUTTE le
+ * notifiche locali senza lasciare la minima traccia di dove cercare.
  */
+const moduliMancantiGiaSegnalati = new Set<string>();
+
 function moduliNativiPresenti(): boolean {
   if (Platform.OS !== 'android') {
     return false;
@@ -97,6 +111,12 @@ function moduliNativiPresenti(): boolean {
   try {
     for (const nome of MODULI_NATIVI_RICHIESTI) {
       if (!requireOptionalNativeModule(nome)) {
+        if (!moduliMancantiGiaSegnalati.has(nome)) {
+          moduliMancantiGiaSegnalati.add(nome);
+          console.warn(
+            `[NOTIFICHE] modulo nativo mancante: ${nome} — notifiche locali disattivate su questa copia (ricostruire il dev client / verificare il nome)`,
+          );
+        }
         return false;
       }
     }
@@ -107,7 +127,18 @@ function moduliNativiPresenti(): boolean {
 }
 
 let gestorePronto = false;
-let permessoChiesto = false;
+/**
+ * v4.118: memoria dell'ESITO del permesso (prima si ricordava solo CHE
+ * era stato chiesto). Con il vecchio flag, un permesso NEGATO alla prima
+ * chiamata restituiva false, ma DALLA SECONDA in poi il blocco veniva
+ * saltato del tutto e la funzione restituiva true SENZA permesso: chi
+ * chiamava credeva di aver programmato promemoria che non sarebbero mai
+ * comparsi. Ora: se non è ancora TRUE si rilegge il permesso reale del
+ * sistema a ogni chiamata — se l'utente lo concede dopo (dalle
+ * impostazioni), la funzione si riprende da sola; se resta negato,
+ * restituisce false SEMPRE.
+ */
+let permessoOk: boolean | null = null;
 let categoriaPronta = false;
 
 /** Carica il modulo solo se i pezzi nativi ci sono tutti; null altrimenti. */
@@ -147,6 +178,12 @@ export async function preparaNotifiche(): Promise<boolean> {
     if (!gestorePronto) {
       Notifications.setNotificationHandler({
         handleNotification: async () => ({
+          // v4.118: su questa versione della libreria (0.29) il campo
+          // corretto resta shouldShowAlert. Dalla 0.30 (Expo SDK 53) il
+          // type lo marca deprecato in favore di shouldShowBanner +
+          // shouldShowList: AL PASSAGGIO DI SDK qui vanno aggiunti i due
+          // campi nuovi (banner: true, list: true) prima di togliere
+          // questo, altrimenti a schermo non compare piu' niente.
           shouldShowAlert: true,
           shouldPlaySound: false,
           shouldSetBadge: false,
@@ -155,22 +192,31 @@ export async function preparaNotifiche(): Promise<boolean> {
       gestorePronto = true;
     }
 
-    if (!permessoChiesto) {
-      permessoChiesto = true;
+    if (permessoOk !== true) {
       const stato = await Notifications.getPermissionsAsync();
-      if (!stato.granted) {
+      if (stato.granted) {
+        permessoOk = true;
+      } else if (permessoOk === null) {
         // Su Android 13+ apre la finestra di sistema "Consenti notifiche"
-        // una volta sola: serve per vedere le notifiche in alto.
-        const dopo = await Notifications.requestPermissionsAsync();
-        if (!dopo.granted) return false;
+        // UNA volta sola nella vita dell'app: serve per vedere le
+        // notifiche in alto. Se viene negato, qui sotto restiamo a false
+        // e le chiamate successive NON insistono (nessuna finestra che
+        // riappare): rileggono solo lo stato, così se l'utente concede
+        // dopo dalle impostazioni del telefono, tutto riparte da solo.
+        permessoOk = (await Notifications.requestPermissionsAsync()).granted;
+        if (!permessoOk) return false;
+      } else {
+        // Già chiesto e negato: niente finestra, niente canali spacciati
+        // per pronti. False onesto.
+        return false;
       }
     }
 
-    // Canale Android: categoria "Download" nelle impostazioni notifiche.
-    await Notifications.setNotificationChannelAsync('download', {
-      name: 'Download di documenti',
-      importance: Notifications.AndroidImportance.HIGH,
-    });
+    // v4.118: il canale "download" non esiste più: la sua unica
+    // utente (notificaDownload, rimossa — codice morto) non lo indicava
+    // mai veramente (le notifiche immediate finivano nel canale di
+    // riserva della libreria). Sui telefoni dove era già stato creato
+    // viene cancellato da MainActivity.kt all'avvio.
 
     // v4.0: canale degli AVVISI del portale. Il server (push FCM di
     // nuovi documenti, messaggi e scadenze) usa proprio questo id:
@@ -220,26 +266,6 @@ export async function preparaNotifiche(): Promise<boolean> {
 }
 
 /**
- * Publica la notifica "file scaricato" nella barra di stato.
- * Ritorna true se la notifica e' stata davvero creata, false se le
- * notifiche non sono ancora attive (o il permesso e' stato negato).
- */
-export async function notificaDownload(titolo: string, corpo: string): Promise<boolean> {
-  try {
-    if (!(await preparaNotifiche())) return false;
-    const Notifications = await caricaModulo();
-    if (!Notifications) return false;
-    await Notifications.scheduleNotificationAsync({
-      content: { title: titolo, body: corpo },
-      trigger: null, // subito
-    });
-    return true;
-  } catch {
-    return false;
-  }
-}
-
-/**
  * v4.0: publica un AVVISO del portale (nuovo documento, messaggio,
  * scadenza) nella barra di stato, per gli arrivi mentre l'app e' APERTA
  * (a app chiusa e' Android che mostra da solo le push del server).
@@ -266,12 +292,13 @@ export async function mostraAvvisoLocale(
         data: dati ?? {},
         categoryIdentifier: 'pfc-avviso',
       },
-      // v4.2: SUBITO. La libreria non permette il canale nelle richieste
-      // immediate, ma le manda nel suo canale di riserva che e' gia'
-      // IMPORTANCE_HIGH (popup, vibrazione, badge: verificato nel sorgente
-      // Kotlin BaseNotificationBuilder.kt). Il canale "pfc-alerts-v2"
-      // resta per le push a app CHIUSA (che mostra Android da solo).
-      trigger: null,
+      // v4.2: SUBITO. v4.118: con il canale ESPLICITO: prima (trigger
+      // null) la richiesta immediata finiva nel canale di riserva della
+      // libreria e non rispettava il silenziamento del canale giusto.
+      // Il canale esiste per costruzione: preparaNotifiche (righe sopra)
+      // lo crea/verifica prima di arrivare qui, e da v4.118 lo crea
+      // anche MainActivity.kt a processo avviato.
+      trigger: { channelId: 'pfc-alerts-v2' },
     });
     return true;
   } catch {

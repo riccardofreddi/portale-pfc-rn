@@ -96,3 +96,29 @@ export function dataGentile(date: Date | string | null): string {
   const mese = MESI[d.getMonth()] ?? '';
   return `${d.getDate()} ${mese} · ${hhmm}`;
 }
+/**
+ * v4.118: converte una data ISO nel GIORNO DI CALENDARIO (locale) come
+ * Date a mezzanotte locale; null se non valida. Trasferita qui da
+ * scadenze-locali.ts perché è utility pura e ora la usa anche
+ * etichettaScadenza in ArchivioScreen (bug "SCADENZA" invece di
+ * "SCADE OGGI" tra mezzanotte e l'una del mattino: il confronto era a
+ * giorni UTC, l'allarme locale usa il giorno locale).
+ *
+ * CONTRATTO con il server (portale-pfc-v2, api/documenti/scadenza/
+ * route.ts): il form web manda "YYYY-MM-DD" (input type=date) e il
+ * server la normalizza a MEZZANOTTE UTC con new Date(); l'ISO che gira
+ * al telefono inizia SEMPRE con il giorno giusto. Prendere il giorno
+ * scritto e' quindi robusto PER COSTRUZIONE. Se mai il server mandasse
+ * date con fuso reale (es. mezzanotte italiana = "T22:00:00.000Z" del
+ * giorno prima), QUESTA funzione va aggiornata: oggi quel caso non puo'
+ * verificarsi.
+ */
+export function dataDaIso(iso: string): Date | null {
+  const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(iso);
+  if (m) {
+    const d = new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3]));
+    return isNaN(d.getTime()) ? null : d;
+  }
+  const d = new Date(iso);
+  return isNaN(d.getTime()) ? null : d;
+}

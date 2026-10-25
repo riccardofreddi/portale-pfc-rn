@@ -88,6 +88,7 @@ import {
   caricaModuloNotifiche,
   preparaNotifiche,
 } from '@/lib/notifiche';
+import { dataDaIso } from '@/lib/utils';
 import { partiFilePath } from '@/lib/deeplink';
 
 /** Prefisso dell'identificativo dei promemoria scadenze (per cancellarli). */
@@ -137,6 +138,87 @@ function confermaAllarmeAlServer(scadenzaId: string, giorno: string): void {
   api.scadenze.confermaAllarme(scadenzaId).catch(() => {
     giaConfermatiAlServer.delete(segno); // riprova alla prossima sync
   });
+}
+
+/**
+ * v4.119 (audit) — Preallarmi: oltre alla sveglia del giorno stesso (08:30
+ * del giorno di scadenza) l'app programma i promemoria a N giorni, SEMPRE
+ * alle 08:30. Finora l'unico preavviso locale era la sveglia del giorno
+ * stesso e il preavviso "vero" dipendeva dal cron del server: con i
+ * preallarmi locali la rete non dipende più dal server NE' per il giorno
+ * stesso NE' per l'anticipo.
+ *
+ * Gli identificatori portano il suffisso: pfc-scad-<id>-p10, -p3, -p1
+ * (quello del giorno stesso resta pfc-scad-<id>, com'era, per non
+ * rompere i segnali ARMATO/EROGATO già scritti). I preallarmi non
+ * hanno segnali propri: scattano una volta sola al loro giorno, e se
+ * Android li perde coprono comunque i successivi (p1 prima di p10, e
+ * la sveglia del giorno stesso resta l'ultima rete). Se il loro momento
+ * è già passato quando arriva la sync (es. anticipo dello studio minore
+ * di N: la scadenza entra nella lista del server solo dentro il
+ * preavviso) vengono semplicemente saltati.
+ */
+const PREALLARMI = [10, 3, 1] as const;
+
+/**
+ * v4.119 (audit) — La push "Scade OGGI" del server è arrivata a APP APERTA:
+ * il cliente sta già vedendo l'avviso. La sveglia locale delle 08:30 dello
+ * stesso documento (se c'era) viene TOGLIATA dall'orologio di Android e il
+ * segnale EROGATO = oggi viene scritto SEMPRE — anche se la sveglia non era
+ * armata (telefono non riaperto da giorni). È veritiero in ogni caso:
+ * l'avviso di oggi l'utente L'HA avuto (la push), quindi né il recupero
+ * "immediato" né la riarmatura devono ripetere la notizia. La conferma al
+ * server (confermaAllarmeAlServer) NON parte qui: il server SA già di aver
+ * mandato la push — è la sveglia locale che va tacitata, non la push.
+ * Best-effort, silenzioso.
+ */
+export async function segnaPushScadenzaOggiEroga(scadenzaId: string): Promise<void> {
+  try {
+    if (!scadenzaId) return;
+    const oggi = giornoIso(new Date());
+    await AsyncStorage.setItem(PREFISSO_EROGATO + scadenzaId, oggi).catch(() => {});
+    const Notifications = await caricaModuloNotifiche();
+    if (Notifications) {
+      await Notifications.cancelScheduledNotificationAsync(PREFISSO_ID + scadenzaId).catch(
+        () => {},
+      );
+    }
+    console.log(
+      '[SCADENZE-LOCALI] push "Scade OGGI" arrivata: avviso di oggi erogato via push per',
+      scadenzaId,
+    );
+  } catch {
+    // best-effort: al peggio la sveglia suona ancora una volta
+  }
+}
+
+/**
+ * v4.119 (audit) — CANCELLA TUTTI i promemoria locali (allarmi pfc-scad-*),
+ * senza toccare i segnali ARMATO/EROGATO: quelli si puliscono da soli alla
+ * prima sync dell'account nuovo (il set "validi" scarta gli id del vecchio
+ * account). Serve al rientro al LOGIN e al logout: gli allarmi appartengono
+ * all'account che era dentro prima; se entra un cliente diverso, gli allarmi
+ * del vecchio non devono più scattare sul telefono (privacy); se rientra lo
+ * stesso cliente, la sync che parte subito al login riarma TUTTO da solo.
+ * Le push del server intanto continuano come sempre (il token resta
+ * registrato: scelta v4.4). Best-effort totale: mai un errore al login.
+ */
+export async function cancellaPromemoriaLocali(): Promise<void> {
+  try {
+    const Notifications = await caricaModuloNotifiche();
+    if (Notifications) {
+      const presenti = await Notifications.getAllScheduledNotificationsAsync().catch(() => []);
+      for (const notifica of presenti) {
+        if (notifica.identifier.startsWith(PREFISSO_ID)) {
+          await Notifications.cancelScheduledNotificationAsync(notifica.identifier).catch(
+            () => {},
+          );
+        }
+      }
+    }
+  } catch {
+    // storage/libreria indisponibile: niente da fare qui
+  }
 }
 
 /**
@@ -239,31 +321,9 @@ function urlDaFilePath(filePath: string): string | undefined {
   return undefined;
 }
 
-/** Converte una data ISO in Date; null se non valida.
- * v4.116: qui interessa il GIORNO DI CALENDARIO, non l'istante. Le date
- * del server arrivano come mezzanotte UTC ("2026-11-05T00:00:00.000Z"
- * o "2026-11-05"): con new Date() un telefono a OVEST di Greenwich le
- * legge come il giorno PRIMA e il promemoria finiva il giorno sbagliato.
- * Se il testo comincia con YYYY-MM-DD costruiamo la data LOCALE di quel
- * giorno. In Italia (est di Greenwich) il risultato non cambia: gli
- * stessi giorni di sempre.
- * v4.117 — CONTRATTO con il server, verificato su portale-pfc-v2
- * (api/documenti/scadenza/route.ts): il form web manda "YYYY-MM-DD"
- * (input type=date) e il server la normalizza a MEZZANOTTE UTC con
- * new Date(); l'ISO che gira al telefono inizia SEMPRE con il giorno
- * giusto. Prendere il giorno scritto e' quindi robusto PER
- * COSTRUZIONE. Se mai il server mandasse date con fuso reale (es.
- * mezzanotte italiana = "T22:00:00.000Z" del giorno prima), QUESTA
- * funzione va aggiornata: oggi quel caso non puo' verificarsi. */
-function dataDaIso(iso: string): Date | null {
-  const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(iso);
-  if (m) {
-    const d = new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3]));
-    return isNaN(d.getTime()) ? null : d;
-  }
-  const d = new Date(iso);
-  return isNaN(d.getTime()) ? null : d;
-}
+// v4.119 (audit): dataDaIso vive in src/lib/utils.ts (una sola copia, con
+// il CONTRATTO col server documentato lì): la usa anche l'etichetta della
+// scadenza in ArchivioScreen per confrontare i giorni come fa la sveglia.
 
 /** v4.57 — Giorno locale "YYYY-MM-DD" di una Date (chiave del segnale). */
 function giornoIso(d: Date): string {
@@ -276,8 +336,23 @@ function giornoIso(d: Date): string {
  * Sincronizza i promemoria scadenze con lo stato del server.
  * Ritorna il numero di promemoria schedulati (0 = niente da ricordare
  * oppure notifiche non ancora attive: in entrambi i casi nessun errore).
+ *
+ * v4.119 (audit) — UN GIRO ALLA VOLTA, A LIVELLO DI MODULO. La sync parte
+ * da App.tsx (login, ritorno a primo piano — con il flag anti-corsa v4.118
+ * che resta), da Impostazioni (interruttore) e dall'Archivio (pagamento):
+ * il flag di App non copre le chiamate INCROCIATE (App + Impostazioni
+ * insieme). Qui i giri si mettono in CODA: ognuno parte alla fine del
+ * precedente, nessun cancel-e-ricrea che pesta l'altro.
  */
-export async function aggiornaPromemoriaScadenze(): Promise<number> {
+let codaSync: Promise<number> = Promise.resolve(0);
+
+export function aggiornaPromemoriaScadenze(): Promise<number> {
+  const prossimo = codaSync.catch(() => 0).then(() => syncPromemoriaScadenze());
+  codaSync = prossimo.catch(() => 0);
+  return prossimo;
+}
+
+async function syncPromemoriaScadenze(): Promise<number> {
   try {
     // Gate silenzioso + permessi + canale (idempotente).
     const Notifications = await caricaModuloNotifiche();
@@ -357,6 +432,51 @@ export async function aggiornaPromemoriaScadenze(): Promise<number> {
         const chiaveArmato = PREFISSO_ARMATO + scadenza.id;
         const chiaveErogato = PREFISSO_EROGATO + scadenza.id;
         const giorno = giornoIso(scade);
+        const oggiLocale = giornoIso(adesso);
+
+        // v4.119 (audit) — PREALLARMI (a N giorni, sempre alle 08:30). Solo
+        // se il loro momento è ancora FUTURO: se è passato (scadenza entrata
+        // tardi nella lista, o sync del giorno stesso) si salta e basta:
+        // niente recupero, il giorno stesso ha la sua rete dedicata.
+        for (const giorniPrima of PREALLARMI) {
+          const quandoPre = new Date(
+            scade.getFullYear(),
+            scade.getMonth(),
+            scade.getDate() - giorniPrima,
+            ORA_PROMEMORIA,
+            MINUTI_PROMEMORIA,
+            0,
+            0,
+          );
+          if (quandoPre.getTime() <= adesso.getTime()) continue;
+          // L'anticipo scelto nello studio resta il limite: una scadenza
+          // con anticipo 3 non deve far partire "Scade tra 10 giorni".
+          if (giorniPrima > scadenza.anticipoGiorni) continue;
+          const titoloPre =
+            giorniPrima === 1 ? '⏰ Scade domani' : `⏰ Scade tra ${giorniPrima} giorni`;
+          try {
+            await Notifications.scheduleNotificationAsync({
+              identifier: `${PREFISSO_ID}${scadenza.id}-p${giorniPrima}`,
+              content: {
+                title: titoloPre,
+                body: `"${scadenza.titolo}" scade il ${scade.toLocaleDateString('it-IT')}. Aprilo dall'archivio.`,
+                data: dati,
+              },
+              trigger: {
+                type: Notifications.SchedulableTriggerInputTypes.DATE,
+                date: quandoPre,
+                channelId: CANALE,
+              },
+            });
+            numero++;
+          } catch (errPre) {
+            // Un preallarme fallito non tocca né il giorno stesso né le altre
+            console.log(
+              '[SCADENZE-LOCALI] preallarme p' + giorniPrima + ' non schedulato:',
+              errPre instanceof Error ? errPre.message : errPre,
+            );
+          }
+        }
 
         // v4.118 — se la scadenza e' OGGI e l'avviso risulta EROGATO,
         // dillo al server (la sua push di riserva tace). Chiamato nei punti
@@ -398,12 +518,22 @@ export async function aggiornaPromemoriaScadenze(): Promise<number> {
           // v4.75: questo segnale NON e' piu' un blocco: se la sveglia verra'
           // persa, la rete di sicurezza del ramo qui sotto la ripara. Armiamo
           // solo se l'avviso non e' gia' stato EROGATO oggi (difensivo).
-          const giaErogato = await AsyncStorage.getItem(chiaveErogato).catch(
+          // v4.119 (audit) — REGOLA UNICA: se l'avviso per OGGI è già stato
+          // erogato (es. la push "Scade OGGI" del server è arrivata a app
+          // aperta e ha tacitato la sveglia via segnaPushScadenzaOggiEroga),
+          // la sveglia NON si riarma e non si rischedula: un avviso solo.
+          const giaErogatoOra = await AsyncStorage.getItem(chiaveErogato).catch(
             () => null,
           );
-          if (giaErogato !== giorno) {
-            await AsyncStorage.setItem(chiaveArmato, giorno).catch(() => {});
+          if (giaErogatoOra === giorno) {
+            console.log(
+              '[SCADENZE-LOCALI] avviso già erogato oggi per',
+              scadenza.titolo,
+              ': sveglia non riarmata',
+            );
+            continue;
           }
+          await AsyncStorage.setItem(chiaveArmato, giorno).catch(() => {});
           numero++;
         } else {
           // v4.75 — IL BUCO CHIUSO. Il momento e' gia' passato ma la scadenza
@@ -417,6 +547,22 @@ export async function aggiornaPromemoriaScadenze(): Promise<number> {
           //      segna erogato;
           //   3. altrimenti (allarme perso, o nessun segno) -> avviso
           //      immediato SUBITO, una volta sola, e segna erogato.
+          //
+          // v4.119 (audit) — MA se il giorno di scadenza scritto dall'ISO è
+          // PRIMA di oggi (telefono locale): è una scadenza SUPERATA che il
+          // server consegna ancora nella finestra di cambio giorno (tra
+          // mezzanotte e l'una italiane il "giorno del server" resta quello
+          // di ieri). Dirle "scade OGGI" era falso: si salta e basta (fra
+          // un'oretta esce da sola dalla lista).
+          if (giorno < oggiLocale) {
+            console.log(
+              '[SCADENZE-LOCALI] scadenza già passata (giorno',
+              giorno,
+              ', oggi', oggiLocale + '): salto',
+              scadenza.titolo,
+            );
+            continue;
+          }
           const giaErogato = await AsyncStorage.getItem(chiaveErogato).catch(
             () => null,
           );
@@ -466,10 +612,13 @@ export async function aggiornaPromemoriaScadenze(): Promise<number> {
           }
 
           // Allarme perso (o mai armato): avviso immediato SUBITO.
+          // v4.119 (audit): nel canale GIUSTO (prima trigger null = canale
+          // di riserva della libreria: silenziando "Avvisi del portale" il
+          // recupero non rispettava la scelta dell'utente).
           await Notifications.scheduleNotificationAsync({
             identifier,
             content: contenuto,
-            trigger: null,
+            trigger: { channelId: CANALE },
           });
           await AsyncStorage.setItem(chiaveErogato, giorno).catch(() => {});
           // v4.118: l'avviso di recupero e' erogato ADESSO: feedback al

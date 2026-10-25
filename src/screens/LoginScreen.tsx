@@ -37,6 +37,7 @@ import { api } from '@/api/client';
 import { useAppStore } from '@/store/auth';
 import { registerPushForCurrentUser } from '@/lib/push';
 import { puliziaCacheUtente } from '@/lib/download';
+import { cancellaPromemoriaLocali } from '@/lib/scadenze-locali';
 import { shadow, spacing, typography, useColors, type ThemeColors } from '@/theme';
 // v4.65: il logo PF dorato e' un PNG vero (stessa grafica dell'icona app):
 // cosi' la schermata di login mostra ESATTAMENTE quello che il titolare vede
@@ -60,8 +61,17 @@ export default function LoginScreen() {
   // manuale (che la pulisce gia' da Impostazioni) qui non trova nulla
   // da fare. Il semplice LOCK/UNLOCK non passa di qui: l'utente
   // loggato torna e la sua cache e' la sua.
+  // v4.118: anche gli ALLARMI LOCALI di scadenza (pfc-scad-*) appartengono
+  // all'account che era dentro prima: al rientro al login vengono
+  // cancellati (privacy su telefono condiviso: gli allarmi del vecchio
+  // account non devono più scattare). Se rientra lo stesso cliente, la
+  // sync che parte subito dopo il login li riarma da solo in un attimo.
+  // I segnali anti-doppione restano: si puliscono da soli alla prima
+  // sync del nuovo account e evitano un falso ripetuto dello stesso
+  // giorno. Le push del server intanto continuano come sempre (v4.4).
   useEffect(() => {
     void puliziaCacheUtente();
+    void cancellaPromemoriaLocali();
   }, []);
 
   const insets = useSafeAreaInsets();

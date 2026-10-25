@@ -31,7 +31,7 @@ import { api } from '@/api/client';
 import { useAppStore } from '@/store/auth';
 import type { DeepLinkTarget } from '@/lib/deeplink';
 import { partiFilePath } from '@/lib/deeplink';
-import { formatDate } from '@/lib/utils';
+import { dataGentile } from '@/lib/utils';
 import type { Notifica, TipoNotifica } from '@/types/api';
 import { spacing, typography, useColors, type ThemeColors } from '@/theme';
 
@@ -267,7 +267,7 @@ export function NotificheModal() {
                   {n.corpo ? (
                     <Text style={styles.notifCorpo} numberOfLines={2}>{n.corpo}</Text>
                   ) : null}
-                  <Text style={styles.notifDate}>{formatDate(n.dataCreazione)}</Text>
+                  <Text style={styles.notifDate}>{dataGentile(n.dataCreazione)}</Text>
                 </View>
                 {!n.letta && (
                   <Pressable

@@ -69,6 +69,35 @@
             <category android:name="android.intent.category.DEFAULT" />
         </intent-filter>
       </activity>
+      <!-- v4.118: CONFLITTO MESSAGING_EVENT RISOLTO D'AUTHORITÀ. Nel
+           manifest unito arrivano DUE FirebaseMessagingService: quello di
+           expo-notifications (ExpoFirebaseMessagingService, dichiarato con
+           intent-filter priority="-1") e quello di @react-native-firebase/
+           messaging (ReactNativeFirebaseMessagingService, priority 0).
+           Finora vinceva quello di RN Firebase SOLO perché ha priorità più
+           alta: un rimescolamento del merge (o un aggiornamento della
+           libreria) poteva spegnere onMessage/onTokenRefresh senza dire
+           niente. L'app non usa MAI i token Expo (getToken viene da RN
+           Firebase): il servizio di Expo si toglie dal merge, e il
+           handler MESSAGING_EVENT resta uno solo, quello giusto. -->
+      <service
+        android:name="expo.modules.notifications.service.ExpoFirebaseMessagingService"
+        tools:node="remove" />
+
+      <!-- v4.118: icona e colore di default delle push che ANDROID mostra
+           quando l'app è CHIUSA (notification payload FCM): senza questi
+           meta-data la barra di stato mostrava il quadratino bianco/grigio
+           dell'icona launcher. L'icona è la silhouette bianca
+           ic_stat_notification (in res/drawable-*), il colore è l'oro del
+           brand. tools:replace serve perché @react-native-firebase/messaging
+           dichiara già default_notification_color col suo placeholder. -->
+      <meta-data
+        android:name="com.google.firebase.messaging.default_notification_icon"
+        android:resource="@drawable/ic_stat_notification" />
+      <meta-data
+        android:name="com.google.firebase.messaging.default_notification_color"
+        android:resource="@color/notifica_oro"
+        tools:replace="android:resource" />
       <meta-data
         android:name="com.google.firebase.messaging.default_notification_channel_id"
         android:value="pfc-alerts-v2"

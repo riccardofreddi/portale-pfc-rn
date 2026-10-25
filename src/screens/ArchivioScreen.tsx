@@ -479,6 +479,7 @@ import {
 } from '@/lib/download';
 import { condividiDocumento } from '@/lib/condividi';
 import { aggiornaPromemoriaScadenze } from '@/lib/scadenze-locali';
+import { dataDaIso } from '@/lib/utils';
 import { confirmDialog } from '@/components/ConfirmDialog';
 import type { Cartella, FileItem, ScadenzaDocumento, SearchResult } from '@/types/api';
 import { radius, shadow, spacing, typography, useColors, type ThemeColors } from '@/theme';
@@ -607,20 +608,38 @@ const STATO_BADGE: Record<
 };
 
 /**
- * v4.55: targhetta della scadenza sulla riga del documento. Giorni calcolati
- * come sul server (differenza di giorni UTC): scaduta/oggi = rosso, nel
- * periodo di preavviso = ambra, oltre = neutra, pagata = verde.
+ * v4.55: targhetta della scadenza sulla riga del documento. Pagata =
+ * verde, scaduta/oggi = rosso, nel periodo di preavviso = ambra, oltre
+ * = neutra.
+ *
+ * v4.118 — I giorni si confrontano come GIORNO DI CALENDARIO LOCALE
+ * (stessa regola della sveglia locale, dataDaIso): prima la differenza
+ * era calcolata a giorni UTC e tra mezzanotte e l'una/le due italiane
+ * una scadenza DI OGGI compariva ancora come "⏰ SCADENZA gg/mm"
+ * invece di "⏰ SCADE OGGI", mentre l'allarme locale la chiamava oggi:
+ * due verità diverse nello stesso momento. Math.round rende il conteggio
+ * robusto anche nei giorni di cambio ora (23 e 25 ore).
  */
 function etichettaScadenza(s: ScadenzaDocumento): { label: string; variant: 'danger' | 'neutral' | 'success' | 'warning' } {
   const msAlGiorno = 24 * 60 * 60 * 1000;
-  const giorni =
-    Math.floor(new Date(s.dataScadenza).getTime() / msAlGiorno) -
-    Math.floor(Date.now() / msAlGiorno);
-  const dataTxt = new Date(s.dataScadenza).toLocaleDateString('it-IT', { day: '2-digit', month: '2-digit' });
+  const scade = dataDaIso(s.dataScadenza);
+  const adesso = new Date();
+  const inizioOggiLocale = new Date(
+    adesso.getFullYear(),
+    adesso.getMonth(),
+    adesso.getDate(),
+  );
+  const giorni = scade
+    ? Math.round((scade.getTime() - inizioOggiLocale.getTime()) / msAlGiorno)
+    : null;
+  const dataTxt = (scade ?? new Date(s.dataScadenza)).toLocaleDateString('it-IT', {
+    day: '2-digit',
+    month: '2-digit',
+  });
   if (s.pagata) {
     return { label: '✓ PAGATA', variant: 'success' };
   }
-  if (giorni < 0) {
+  if (giorni === null || giorni < 0) {
     return { label: `⏰ SCADUTA ${dataTxt}`, variant: 'danger' };
   }
   if (giorni === 0) {

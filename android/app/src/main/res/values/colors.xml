@@ -1,4 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <color name="ic_launcher_background">#D4AF37</color>
+    <!-- v4.118: colore di default delle push FCM a app chiusa
+         (meta-data default_notification_color nel manifest): l'oro del brand. -->
+    <color name="notifica_oro">#D4AF37</color>
 </resources>

@@ -41,7 +41,11 @@ import { DeviceEventEmitter, Platform } from 'react-native';
 import { api } from '@/api/client';
 import { parseDeepLink, type DeepLinkTarget } from '@/lib/deeplink';
 import { mostraAvvisoLocale, sulToccoNotifica, togliNotifica } from '@/lib/notifiche';
-import { promemoriaAttivi, segnaSvegliaVistaDaNotifica } from '@/lib/scadenze-locali';
+import {
+  promemoriaAttivi,
+  segnaPushScadenzaOggiEroga,
+  segnaSvegliaVistaDaNotifica,
+} from '@/lib/scadenze-locali';
 import { toast } from '@/components/Toaster';
 
 /**
@@ -134,13 +138,19 @@ export async function deregistraPushDaServer(): Promise<boolean> {
 }
 
 /**
- * v4.20: la push di un AVVISO PUBBLICO dello studio e' riconoscibile dal
- * titolo: il server la manda con title "Nuovo avviso dallo studio"
- * (duplicato anche nel data payload, vedi lib/fcm.ts del backend). Il suo
- * url e' "/" che il deep-link scarta: invece di non fare NIENTE come fino
- * alla v4.19, ora il tap apre direttamente la Bacheca delle Comunicazioni.
+ * v4.20: la push di un AVVISO PUBBLICO dello studio e' riconoscibile.
+ * v4.118: prima si cercava la stringa "Nuovo avviso" nel TITOLO: cambiare
+ * il testo sul server rompeva in silenzio l'apertura della Bacheca. Ora
+ * il server mette TIPO 'avviso' nel data della push (api/avvisi) e quello
+ * fa fede; il titolo resta solo come riconoscimento di riserva per le
+ * push vecchie ancora in giro (già consegnate / server non aggiornato).
  */
-function eAvvisoPubblico(titolo: unknown): boolean {
+function eAvvisoPubblico(
+  dati: Record<string, unknown>,
+  titoloDiRiserva?: unknown,
+): boolean {
+  if (dati.tipo === 'avviso') return true;
+  const titolo = dati.title ?? titoloDiRiserva;
   return String(titolo ?? '').includes('Nuovo avviso');
 }
 
@@ -162,6 +172,19 @@ function segnalaTapAvviso(): void {
   tapAvvisoPendente = true;
   DeviceEventEmitter.emit('pfc-apri-bacheca');
 }
+
+/**
+ * v4.118: quando l'ultima registrazione al server è RIUSCITA (epoch ms).
+ * La usano insieme registerPushForCurrentUser (login, interruttore) e
+ * riRegistraPushSilenziosa (avvio/foreground): chi registra con successo
+ * alza il freno per entrambe. Serve perché al login manuale partivano
+ * DUE registrazioni in fila (quella sonora di LoginScreen e quella
+ * silenziosa dell'effetto sull'utente in App.tsx) e all'avvio con
+ * sessione ripristinata anche la chiamata del bootstrap duplicava
+ * quella dell'effetto: due POST identici al server, ogni volta.
+ */
+let ultimaRegistrazioneRiuscita = 0;
+const FREQ_REGISTRAZIONE = 10 * 60 * 1000;
 
 /**
  * v4.51: il listener di rinnovo del token si attacca UNA SOLA VOLTA per
@@ -235,6 +258,9 @@ export async function registerPushForCurrentUser(): Promise<boolean> {
 
     // v4.51: listener di rinnovo attaccato una sola volta (vedi sopra)
     attaccaListenerRinnovoToken();
+    // v4.118: registrazione riuscita = freno alzato anche per quella
+    // silenziosa (niente doppione immediata dal percorso [user]).
+    ultimaRegistrazioneRiuscita = Date.now();
     return true;
   } catch (err) {
     pushState.error = err instanceof Error ? err.message : String(err);
@@ -252,9 +278,11 @@ export async function registerPushForCurrentUser(): Promise<boolean> {
  * - se l'interruttore "Notifiche" è SPENTO non fa nulla (v4.13);
  * - ogni errore viene ingoiato: riproverà alla prossima apertura.
  *
- * Chiamata da App.tsx in due momenti: (1) all'avvio, quando il
- * bootstrap ripristina una sessione valida; (2) ogni volta che l'app
- * torna in primo piano (throttle 10 minuti). Se Google rinnova il
+ * Chiamata da App.tsx (effetto sull'utente): (1) al login/ripristino
+ * sessione, (2) ogni volta che l'app torna in primo piano (throttle
+ * 10 minuti). v4.118: la chiamata duplicata del bootstrap è stata
+ * TOLTA, e qui dentro un secondo freno (ultimaRegistrazioneRiuscita)
+ * evita il doppione col login manuale di LoginScreen. Se Google rinnova il
  * token mentre l'app è chiusa, alla riapertura il server si aggiorna
  * da solo e le notifiche ripartono senza che il cliente tocchi niente.
  */
@@ -291,6 +319,17 @@ export async function riRegistraPushSilenziosa(): Promise<void> {
     if (pendente) {
       await AsyncStorage.removeItem(FCM_DEREGISTRAZIONE_KEY).catch(() => {});
     }
+
+    // v4.118: FRENO ANTI-DOPPIONI. Se una registrazione è riuscita da
+    // meno di 10 minuti (login sonoro, interruttore riattivato, o una
+    // passata precedente di QUESTA funzione), non si ripete: la rimozione
+    // della chiamata duplicata del bootstrap in App.tsx copre l'avvio,
+    // questo copre il login manuale e i ritorni ravvicinati.
+    if (Date.now() - ultimaRegistrazioneRiuscita < FREQ_REGISTRAZIONE) {
+      console.log('[PUSH] auto-riparazione saltata (registrato da pochi minuti)');
+      return;
+    }
+
     const perm = await messaging().hasPermission();
     const giaAutorizzato =
       perm === messaging.AuthorizationStatus.AUTHORIZED ||
@@ -308,11 +347,18 @@ export async function riRegistraPushSilenziosa(): Promise<void> {
       console.log('[PUSH] auto-riparazione saltata (getToken vuoto)');
       return;
     }
+    // v4.118: il listener di rinnovo del token prima era agganciato SOLO
+    // dalla registrazione sonora (registerPushForCurrentUser): con la
+    // sessione ripristinata all'avvio partiva solo questa funzione, e il
+    // rinnovo del token durante la vita dell'app arrivava al server solo
+    // al prossimo foreground (fino a 10 minuti di ritardo).
+    attaccaListenerRinnovoToken();
     const device = Platform.OS === 'ios' ? 'iOS' : 'Android';
     await api.push.fcmRegister(token, device);
     pushState.token = token;
     pushState.registered = true;
     pushState.error = '';
+    ultimaRegistrazioneRiuscita = Date.now();
     console.log('[PUSH] auto-riparazione OK:', token.slice(0, 20) + '...');
   } catch (err) {
     // Silenzioso di proposito: il prossimo avvio/foreground riproverà.
@@ -347,14 +393,48 @@ export function setupPushListeners(
     const url = typeof urlRaw === 'string' ? urlRaw : '';
     const tipoRaw = datiMsg.tipo;
     const tipo = typeof tipoRaw === 'string' ? tipoRaw : '';
+    const idRaw = datiMsg.id;
+    const idNotifica = typeof idRaw === 'string' ? idRaw : '';
+
+    // v4.118: con l'INTERRUTTORE SPENTO (o deregistrazione pendente mentre
+    // il telefono era offline) può ancora arrivare una push residua: il
+    // cliente la ha esplicitamente negate, quindi niente avviso in barra
+    // e niente toast. L'evento resta: la campanella sul server esiste e
+    // i badge devono restare veritieri.
+    if (!(await promemoriaAttivi())) {
+      console.log('[PUSH] foreground con notifiche SPENTE: solo badge:', title);
+      DeviceEventEmitter.emit('pfc-push-ricevuta', { url, title });
+      return;
+    }
+
+    // v4.118 (regola unica, parte client): se arriva a app APERTA la push
+    // "Scade OGGI" del server, la sveglia locale delle 08:30 dello stesso
+    // documento non serve più: viene segnata erogata e TOGLIATA
+    // dall'orologio di Android, così il cliente non riceve due volte lo
+    // stesso avviso. Silenzioso: se non c'era nessuna sveglia di oggi
+    // non cambia nulla. (Il caso push a app CHIUSA + sveglia resta:
+    // chiudere quello richiede una regola lato server.)
+    if (tipo === 'scadenza_oggi') {
+      const scadenzaIdRaw = datiMsg.scadenzaId;
+      if (typeof scadenzaIdRaw === 'string' && scadenzaIdRaw) {
+        void segnaPushScadenzaOggiEroga(scadenzaIdRaw);
+      }
+    }
+
     // v4.6: nell'avviso locale entriamo anche il tipo, cosi' se il cliente
     // lo TOCCA sappiamo che e' una scadenza e possiamo aprire il file.
+    // v4.118: entra anche l'ID DELLA CAMPANELLA sul server: serve al
+    // pulsante "Segna come letto" (vedi sulToccoNotifica) per segnare
+    // SOLO questa notifica invece di tutta la campanella.
     const datiAvviso: Record<string, string> = {};
     if (url) datiAvviso.url = url;
     if (tipo) datiAvviso.tipo = tipo;
+    if (idNotifica) datiAvviso.id = idNotifica;
     // v4.20: se e' la push di un avviso pubblico, il titolo viaggia anche
     // nei dati: al tocco sull'avviso locale la Bacheca si apre da sola.
-    if (eAvvisoPubblico(title)) datiAvviso.title = title;
+    if (eAvvisoPubblico(datiMsg as Record<string, unknown>, title)) {
+      datiAvviso.title = title;
+    }
     const mostrata = await mostraAvvisoLocale(
       title,
       body,
@@ -367,11 +447,15 @@ export function setupPushListeners(
     }
 
     // v4.5: con l'app aperta il cliente deve VEDERE l'arrivo SUBITO.
-    // (1) avviso in-app a schermo (il sistema con app aperta puo' restare
-    // silenzioso, quindi aggiungiamo il toast sempre); (2) evento interno:
-    // chi lo ascolta (App.tsx per i badge, MessaggiScreen per la lista)
-    // si aggiorna in tempo reale, senza aspettare il polling dei 30 secondi.
-    toast.info(title, body);
+    // v4.118: UN SOLO AVVISO. Se l'avviso di sistema è riuscito (barra di
+    // stato + popup heads-up), il toast in-app era la copia identica
+    // impilata sopra: resta il toast SOLO come ripiego quando la
+    // notifica non è possibile (permesso negato, moduli mancanti).
+    // L'evento interno resta sempre: chi lo ascolta (App.tsx per i
+    // badge, MessaggiScreen per la lista) si aggiorna in tempo reale.
+    if (!mostrata) {
+      toast.info(title, body);
+    }
     DeviceEventEmitter.emit('pfc-push-ricevuta', { url, title });
   });
 
@@ -387,7 +471,7 @@ export function setupPushListeners(
     );
     // v4.20: tap sulla push di un avviso pubblico => Bacheca (il titolo sta
     // nel data, con la notification del messaggio come seconda possibilita')
-    if (eAvvisoPubblico(dati.title ?? remoteMessage?.notification?.title)) {
+    if (eAvvisoPubblico(dati as Record<string, unknown>, remoteMessage?.notification?.title)) {
       segnalaTapAvviso();
     }
     const target = targetDaDati(dati.url, dati.tipo);
@@ -407,7 +491,7 @@ export function setupPushListeners(
         // v4.20: avvio FREDDO dal tap sulla push di un avviso pubblico:
         // il flag resta acceso e la Bacheca lo consuma appena montata.
         if (
-          eAvvisoPubblico(dati.title ?? remoteMessage.notification?.title)
+          eAvvisoPubblico(dati as Record<string, unknown>, remoteMessage.notification?.title)
         ) {
           segnalaTapAvviso();
         }
@@ -420,10 +504,15 @@ export function setupPushListeners(
   // stessa navigazione delle push di sistema (deep-link al documento).
   // v4.6: legge anche il tipo ("scadenza") per il risolutore del file.
   // v4.54: se il tocco e' il PULSANTE "Segna come letto" (come sulla web
-  // app), NON naviga: segna TUTTE le notifiche come lette sul server,
-  // aggiorna la campanella all'istante (evento di sempre) e toglie
-  // l'avviso dalla barra di stato. Il pulsante "Apri" invece fa la
-  // stessa cosa del tocco sul corpo: naviga al contenuto giusto.
+  // app), NON naviga: segna la notifica come letta sul server, aggiorna
+  // la campanella all'istante (evento di sempre) e toglie l'avviso dalla
+  // barra di stato. Il pulsante "Apri" invece fa la stessa cosa del
+  // tocco sul corpo: naviga al contenuto giusto.
+  // v4.118: il pulsante segna SOLO la notifica toccata (id server nel
+  // data della push). Prima chiamava segnaLette() senza id: sparivano
+  // TUTTE le non lette della campanella, anche quelle mai viste. Se il
+  // server non ha mandato l'id (push vecchia), non tocchiamo niente:
+  // l'avviso sparisce dalla barra e basta (mai più campanella azzerata).
   const staccaTocco = sulToccoNotifica((dati, azione, notifId) => {
     // v4.76: il tocco su una sveglia scadenze e' la prova che l'utente l'ha
     // vista: segna EROGATO cosi' la sync non ripete l'avviso (serve da quando
@@ -431,16 +520,19 @@ export function setupPushListeners(
     // Silenzioso e filtrato: identifier non pfc-scad-* = non fa nulla.
     void segnaSvegliaVistaDaNotifica(notifId);
     if (azione === 'segna_lette') {
-      api.notifiche
-        .segnaLette()
-        .then(() => toast.success('Notifiche segnate come lette'))
-        .catch(() => {});
+      const idCampanella = typeof dati.id === 'string' ? dati.id : '';
+      if (idCampanella) {
+        api.notifiche
+          .segnaLetta(idCampanella)
+          .then(() => toast.success('Notifica segnata come letta'))
+          .catch(() => {});
+      }
       if (notifId) void togliNotifica(notifId);
       DeviceEventEmitter.emit('pfc-push-ricevuta', { url: '', title: '' });
       return;
     }
     // v4.20: tocco sull'avviso LOCALE di un avviso pubblico => Bacheca
-    if (eAvvisoPubblico(dati.title)) segnalaTapAvviso();
+    if (eAvvisoPubblico(dati)) segnalaTapAvviso();
     const target = targetDaDati(dati.url, dati.tipo);
     onNotificationTap?.(target);
   });

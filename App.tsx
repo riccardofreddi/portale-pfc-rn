@@ -16,7 +16,6 @@ import { api, ApiError } from '@/api/client';
 import { useAppStore } from '@/store/auth';
 import { riRegistraPushSilenziosa, setupPushListeners } from '@/lib/push';
 import { aggiornaPromemoriaScadenze } from '@/lib/scadenze-locali';
-import { preparaNotifiche } from '@/lib/notifiche';
 import { AppNavigator } from '@/navigation/AppNavigator';
 import { Toaster, toast } from '@/components/Toaster';
 import { ThemeProvider } from '@/theme/ThemeContext';
@@ -34,20 +33,22 @@ export default function App() {
   // Bootstrap: verifica sessione persistente
   useEffect(() => {
     async function bootstrap() {
-      // v4.58: creo SUBITO i canali Android (tra cui pfc-alerts-v2) cosi'
-      // anche la prima push del server, arrivata quando l'app e' appena
-      // stata chiusa, suona con il canale giusto (alta importanza).
-      void preparaNotifiche();
+      // v4.119 (audit): preparaNotifiche() ALL'AVVIO NON ESISTE PIU'. Prima
+      // faceva due danni: (1) creava i canali solo da JavaScript (ora li
+      // crea MainActivity.kt a processo avviato: copertura totale); (2)
+      // sulla schermata di LOGIN faceva comparire subito il dialogo di
+      // sistema "Consenti notifiche" PRIMA che il cliente sapesse nemmeno
+      // a chi stava dando il permesso: la richiesta giusta arriva col
+      // login (registerPushForCurrentUser dopo l'accesso riuscito).
       try {
         const me = await api.auth.me();
         if (me.user && me.user.role === 'client') {
           setUser(me.user);
           // v4.51: sessione ripristinata => l'app si ri-presenta al server
           // da sola (token FCM aggiornato, zero prompt, zero schermate).
-          // Prima questo avveniva SOLO al login: se Google rinnovava il
-          // token tra due login, il server busava alla porta vecchia e le
-          // notifiche sparivano. Non blocca il bootstrap: vola e basta.
-          void riRegistraPushSilenziosa();
+          // v4.119 (audit): la chiamata QUI è STATA TOLTA: l'effetto su
+          // [user] sotto fa la stessa cosa (prima le due chiamate partivano
+          // insieme: due POST identici a ogni avvio con sessione valida).
         } else {
           setUser(null);
         }
