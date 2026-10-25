@@ -102,5 +102,21 @@
         android:name="com.google.firebase.messaging.default_notification_channel_id"
         android:value="pfc-alerts-v2"
         tools:replace="android:value" />
+
+      <!-- v4.120: STESSA CAMPANA anche per le notifiche LOCALI di
+           expo-notifications (arrivi a app APERTA, preallarmi
+           "Scade tra N giorni", sveglia "Scade OGGI", recupero).
+           La libreria NON legge i meta-data Firebase qui sopra: ha
+           i SUOI nomi (expo.modules.notifications.*) e senza questi
+           ricadeva sull'icona launcher, che in barra di stato appare
+           come il solito quadratino bianco senza logo. Con questi
+           due meta-data anche le notifiche locali portano la
+           silhouette bianca ic_stat_notification e l'accento oro. -->
+      <meta-data
+        android:name="expo.modules.notifications.default_notification_icon"
+        android:resource="@drawable/ic_stat_notification" />
+      <meta-data
+        android:name="expo.modules.notifications.default_notification_color"
+        android:resource="@color/notifica_oro" />
     </application>
 </manifest>

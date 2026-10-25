@@ -8,7 +8,7 @@ Documenti, messaggi e scadenze in un unico posto — con notifiche che aprono
 subito il contenuto giusto, anche a telefono bloccato.
 
 ![CI](https://github.com/riccardofreddi/portale-pfc-rn/actions/workflows/ci.yml/badge.svg)
-![Versione](https://img.shields.io/badge/versione-1.88.21-1E3A5F)
+![Versione](https://img.shields.io/badge/versione-1.88.22-1E3A5F)
 ![Piattaforma](https://img.shields.io/badge/Android-APK%20diretto-3DDC84?logo=android&logoColor=white)
 
 </div>
@@ -100,11 +100,11 @@ Ogni versione ha tre nomi che dicono la stessa cosa:
 
 | Dove la vedi | Esempio | Cosa indica |
 |---|---|---|
-| Tacca in **Impostazioni** | `1.88.21 / js4119` | La versione che gira davvero sul telefono |
-| Pagina **Releases** | `Versione: 1.88.21` | L'ultima APK pubblicata |
-| Messaggio di commit | `v4.119` | Il numero progressivo delle versioni |
+| Tacca in **Impostazioni** | `1.88.22 / js4120` | La versione che gira davvero sul telefono |
+| Pagina **Releases** | `Versione: 1.88.22` | L'ultima APK pubblicata |
+| Messaggio di commit | `v4.120` | Il numero progressivo delle versioni |
 
-La corrispondenza è fissa: **v4.119 ↔ build 119 ↔ js4119 ↔ 1.88.21**.
+La corrispondenza è fissa: **v4.120 ↔ build 120 ↔ js4120 ↔ 1.88.22**.
 La versione tecnica sale di spuntino (`1.88.3 → 1.88.4`); quando la coda
 arriva a 9 rotola (`1.88.9 → 1.89.0`).
 
