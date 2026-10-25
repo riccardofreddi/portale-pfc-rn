@@ -166,6 +166,55 @@ export async function caricaModuloNotifiche(): Promise<ModuloNotifiche | null> {
 }
 
 /**
+ * v4.121 — UNA SOLA FINESTRA "Consenti notifiche" PER TUTTA L'APP.
+ *
+ * Il problema reale: al login il permesso veniva chiesto DUE volte quasi
+ * insieme, da due librerie diverse — registerPushForCurrentUser lo chiedeva
+ * con Firebase (messaging().requestPermission) e, un attimo dopo, la sync
+ * delle scadenze lo richiedeva di nuovo con expo (preparaNotifiche). Su
+ * Android 13+ due richieste POST_NOTIFICATIONS ravvicinate possono farne
+ * ignorare una e registrare l'esito come NEGATO anche quando l'utente ha
+ * detto sì alla prima finestra: il permesso sembrava perso finché l'utente
+ * non lo ridava a mano dalle impostazioni.
+ *
+ * Ora tutti i percorsi passano da qui: chi arriva mentre la richiesta è in
+ * volo riceve la STESSA Promise (mutex) — un dialogo solo, un esito solo.
+ * Semantica invariata rispetto a v4.118: la finestra si apre UNA volta sola
+ * nella vita dell'app; se negata, le chiamate successive NON insistono (si
+ * rilegge solo lo stato del sistema, così se l'utente concede dopo dalle
+ * impostazioni, tutto riparte da solo).
+ */
+let richiestaPermessoInCorso: Promise<boolean> | null = null;
+
+export function assicuraPermessoNotifiche(): Promise<boolean> {
+  if (permessoOk === true) return Promise.resolve(true);
+  if (richiestaPermessoInCorso) return richiestaPermessoInCorso;
+  richiestaPermessoInCorso = (async () => {
+    try {
+      const Notifications = await caricaModulo();
+      if (!Notifications) return false;
+      const stato = await Notifications.getPermissionsAsync();
+      if (stato.granted) {
+        permessoOk = true;
+        return true;
+      }
+      if (permessoOk === null) {
+        // Prima richiesta della vita dell'app: apre il dialogo di sistema.
+        permessoOk = (await Notifications.requestPermissionsAsync()).granted;
+        return permessoOk;
+      }
+      // Già chiesto e negato: niente finestra, false onesto.
+      return false;
+    } catch {
+      return false;
+    } finally {
+      richiestaPermessoInCorso = null;
+    }
+  })();
+  return richiestaPermessoInCorso;
+}
+
+/**
  * Prepara tutto il necessario (gestore, permesso, canale "Download").
  * Idempotente: si puo' chiamare a ogni download senza sprechi.
  * Ritorna true se le notifiche sono realmente disponibili.
@@ -192,25 +241,14 @@ export async function preparaNotifiche(): Promise<boolean> {
       gestorePronto = true;
     }
 
-    if (permessoOk !== true) {
-      const stato = await Notifications.getPermissionsAsync();
-      if (stato.granted) {
-        permessoOk = true;
-      } else if (permessoOk === null) {
-        // Su Android 13+ apre la finestra di sistema "Consenti notifiche"
-        // UNA volta sola nella vita dell'app: serve per vedere le
-        // notifiche in alto. Se viene negato, qui sotto restiamo a false
-        // e le chiamate successive NON insistono (nessuna finestra che
-        // riappare): rileggono solo lo stato, così se l'utente concede
-        // dopo dalle impostazioni del telefono, tutto riparte da solo.
-        permessoOk = (await Notifications.requestPermissionsAsync()).granted;
-        if (!permessoOk) return false;
-      } else {
-        // Già chiesto e negato: niente finestra, niente canali spacciati
-        // per pronti. False onesto.
-        return false;
-      }
-    }
+    // v4.121: il permesso passa dal MUTEX condiviso (assicuraPermessoNotifiche
+    // qui sopra): stessa semantica di prima — la finestra di sistema si apre
+    // UNA volta sola, poi solo rilettura dello stato — ma se il login sta
+    // GIÀ chiedendo il permesso (registerPushForCurrentUser usa la stessa
+    // funzione), qui non si apre un secondo dialogo: si aspetta l'esito di
+    // quello già aperto (prima due richieste ravvicinate potevano farne
+    // ignorare una e registrare un "negato" falso).
+    if (!(await assicuraPermessoNotifiche())) return false;
 
     // v4.118: il canale "download" non esiste più: la sua unica
     // utente (notificaDownload, rimossa — codice morto) non lo indicava
@@ -321,6 +359,13 @@ export function sulToccoNotifica(
   cb: (dati: Record<string, unknown>, azione?: string, notifId?: string) => void,
 ): () => void {
   let stacca: (() => void) | null = null;
+  // v4.121: se il cleanup arriva PRIMA che caricaModulo() risolva (in dev
+  // capita a ogni rimontaggio rapido: lo smontaggio corre più veloce del
+  // import dinamico), "stacca" era ancora null e il listener restava
+  // attaccato PER SEMPRE — a ogni remount se ne aggiungeva uno nuovo e un
+  // tocco sull'avviso veniva gestito più volte. Ora il segno "già staccato"
+  // sopravvive all'attesa: il listener nato tardi viene rimosso subito.
+  let giaStaccato = false;
   caricaModulo()
     .then((Notifications) => {
       if (!Notifications) return;
@@ -335,6 +380,10 @@ export function sulToccoNotifica(
         },
       );
       stacca = () => sub.remove();
+      if (giaStaccato) {
+        stacca();
+        return;
+      }
       // Avvio "freddo": se l'app era CHIUSA e il cliente ha aperto
       // toccando l'avviso, lo intercettiamo qui (una sola volta).
       Notifications.getLastNotificationResponseAsync()
@@ -351,6 +400,7 @@ export function sulToccoNotifica(
     })
     .catch(() => {});
   return () => {
+    giaStaccato = true;
     if (stacca) stacca();
   };
 }

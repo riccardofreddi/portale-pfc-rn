@@ -40,7 +40,14 @@ import messaging from '@react-native-firebase/messaging';
 import { DeviceEventEmitter, Platform } from 'react-native';
 import { api } from '@/api/client';
 import { parseDeepLink, type DeepLinkTarget } from '@/lib/deeplink';
-import { mostraAvvisoLocale, sulToccoNotifica, togliNotifica } from '@/lib/notifiche';
+// v4.121: entra assicuraPermessoNotifiche (il permesso è UNO per tutta
+// l'app, chiesto con finestra sola e mutex condiviso — vedi notifiche.ts).
+import {
+  assicuraPermessoNotifiche,
+  mostraAvvisoLocale,
+  sulToccoNotifica,
+  togliNotifica,
+} from '@/lib/notifiche';
 import {
   promemoriaAttivi,
   segnaPushScadenzaOggiEroga,
@@ -229,12 +236,17 @@ export async function registerPushForCurrentUser(): Promise<boolean> {
       return false;
     }
 
-    const authStatus = await messaging().requestPermission();
-    const enabled =
-      authStatus === messaging.AuthorizationStatus.AUTHORIZED ||
-      authStatus === messaging.AuthorizationStatus.PROVISIONAL;
-
-    if (!enabled) {
+    // v4.121: UNA SOLA finestra "Consenti notifiche". Prima qui il permesso
+    // si chiedeva con Firebase E, quasi nello stesso istante, la sync delle
+    // scadenze lo richiedeva con expo (preparaNotifiche -> requestPermissions):
+    // su Android 13+ due richieste POST_NOTIFICATIONS ravvicinate possono
+    // farne ignorare una e registrare l'esito come negato anche quando
+    // l'utente aveva detto sì (il permesso sembrava perso finché non lo
+    // ridava a mano). Ora si passa dal MUTEX condiviso di notifiche.ts: il
+    // secondo chiamante aspetta l'esito della prima finestra, senza aprirne
+    // altre. Firebase legge lo stesso stato del sistema: nessun controllo
+    // in più necessario qui.
+    if (!(await assicuraPermessoNotifiche())) {
       pushState.error = 'Permesso notifiche negato';
       console.log('[PUSH] permesso negato');
       return false;

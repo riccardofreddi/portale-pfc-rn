@@ -288,6 +288,10 @@ export const api = {
         dataScadenza: String(s.dataScadenza ?? ''),
         anticipoGiorni: Number(s.anticipoGiorni ?? 10),
         pagata: Boolean(s.pagata),
+        // v4.121: la push "Scade OGGI" del server è già stata consegnata
+        // oggi? (assente/false = non noto: il recupero locale procede come
+        // sempre — mai il silenzio per un campo mancante).
+        pushInviataOggi: s.pushInviataOggi === true,
       }));
       return { scadenze: mapped };
     },

@@ -578,6 +578,27 @@ async function syncPromemoriaScadenze(): Promise<number> {
             continue;
           }
 
+          // v4.121 — IL RECUPERO NON RIPETE QUANTO IL SERVER HA GIÀ DETTO.
+          // Il caso comune che restava scoperto: sveglia scattata alle 08:30,
+          // push di riserva del server arrivata dopo le 08:35, l'utente ha
+          // SVAZZATO via gli avvisi e riapre l'app alle 09:15: il vassoio è
+          // vuoto (il controllo qui sotto non vede più nulla) e il recupero
+          // ripeteva l'avviso = doppione garantito proprio per chi svuota
+          // il vassoio al mattino. Ora il server dice in LISTA se la push
+          // "Scade OGGI" di oggi è già stata consegnata (campo
+          // pushInviataOggi): in quel caso l'utente l'avviso L'HA avuto —
+          // si segna erogato e si tace. Se il server è vecchio (campo
+          // assente = false) il comportamento resta quello di prima.
+          if (giorno === oggiLocale && scadenza.pushInviataOggi === true) {
+            await AsyncStorage.setItem(chiaveErogato, giorno).catch(() => {});
+            console.log(
+              '[SCADENZE-LOCALI] push "Scade OGGI" già consegnata dal server per',
+              scadenza.titolo,
+              ': niente recupero',
+            );
+            continue;
+          }
+
           // Il vassoio dice se la sveglia e' SCATTATA (notifica presente).
           // API mancante o errore = non sappiamo: comportamento sicuro,
           // l'avviso immediato esce comunque (mai piu' il silenzio totale).

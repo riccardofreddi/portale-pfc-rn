@@ -15,7 +15,11 @@ import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { api, ApiError } from '@/api/client';
 import { useAppStore } from '@/store/auth';
 import { riRegistraPushSilenziosa, setupPushListeners } from '@/lib/push';
-import { aggiornaPromemoriaScadenze } from '@/lib/scadenze-locali';
+// v4.121: entra promemoriaAttivi (il toast "notifiche spente" al login).
+import {
+  aggiornaPromemoriaScadenze,
+  promemoriaAttivi,
+} from '@/lib/scadenze-locali';
 import { AppNavigator } from '@/navigation/AppNavigator';
 import { Toaster, toast } from '@/components/Toaster';
 import { ThemeProvider } from '@/theme/ThemeContext';
@@ -174,7 +178,26 @@ export default function App() {
 
     const sincronizza = () => {
       const ora = Date.now();
-      if (ora - ultimaSyncScadenze.current < 30 * 60 * 1000) return;
+      if (ora - ultimaSyncScadenze.current < 30 * 60 * 1000) {
+        // v4.121: il freno di 30 minuti NON deve far dormire il recupero
+        // della sveglia persa. Caso reale: aperta alle 08:10 (sync partita),
+        // sveglia delle 08:30 persa da Android, riaperta alle 08:35: il
+        // freno (scaduto alle 08:40) taceva e l'avviso "Scade oggi" recuperato
+        // ritardava fino a mezz'ora — proprio nella finestra che conta. Se
+        // tra l'ultima sync e adesso è PASSATO il confine delle 08:30 di
+        // oggi, il giro parte lo stesso (poi il freno torna a valere:
+        // il confine non si ripassa due volte nello stesso giorno).
+        const confine = new Date();
+        confine.setHours(8, 30, 0, 0);
+        if (
+          !(
+            ultimaSyncScadenze.current < confine.getTime() &&
+            ora >= confine.getTime()
+          )
+        ) {
+          return;
+        }
+      }
       // v4.118 — CONTATORE ONESTO: prima il momento veniva segnato PRIMA di
       // chiamare la sync, che e' asincrona e non veniva attesa: una sync
       // lunga (rete lenta) spostava la successiva a "30 minuti + durata
@@ -198,6 +221,38 @@ export default function App() {
       if (stato === 'active') sincronizza();
     });
     return () => sub.remove();
+  }, [user]);
+
+  // v4.121: L'INTERRUTTORE NOTIFICHE È DEL TELEFONO, NON DELL'ACCOUNT
+  // (scelta v4.12/v4.13: una sola chiave su AsyncStorage, nessun tracciamento
+  // per utente). Contropartita: se A lo spegne e poi entra B sullo stesso
+  // telefono, B non riceve niente SENZA saperne il motivo (la registrazione
+  // al login salta in silenzio). Ora al login (e al ripristino di sessione)
+  // l'app lo DICE: un toast, una volta per sessione, solo se l'interruttore
+  // è spento. Il permesso negato invece NON viene anticipato qui: al login
+  // la finestra di sistema sta per comparire — scriverlo prima sarebbe solo
+  // rumore (lo stato vero resta leggibile in Impostazioni, ormai live).
+  const toastSpenteMostrato = useRef(false);
+  useEffect(() => {
+    if (!user) {
+      toastSpenteMostrato.current = false;
+      return;
+    }
+    if (toastSpenteMostrato.current) return;
+    toastSpenteMostrato.current = true;
+    // Piccola pausa: il toast di benvenuto ha già la scena (due toast
+    // sovrapposti si coprono a vicenda e l'importante resta invisibile).
+    const timer = setTimeout(() => {
+      void promemoriaAttivi().then((attivi) => {
+        if (!attivi) {
+          toast.info(
+            'Notifiche spente su questo telefono',
+            'Se ti aspettavi avvisi dello studio, riaccendile in Impostazioni → Notifiche.',
+          );
+        }
+      });
+    }, 2500);
+    return () => clearTimeout(timer);
   }, [user]);
 
   // v4.51: auto-riparazione notifiche. Al login e a ogni ritorno sull'app

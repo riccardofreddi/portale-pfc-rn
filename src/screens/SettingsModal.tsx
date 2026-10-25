@@ -37,6 +37,10 @@
  */
 import React, { useEffect, useState } from 'react';
 import {
+  // v4.121: serve per rileggere lo stato al RIENTRO nel pannello (l'utente
+  // concede il permesso dalle impostazioni di sistema e torna: il rientro è
+  // un evento 'active') e per aggiornare la diagnostica dopo il toggle.
+  AppState,
   Linking,
   Pressable,
   ScrollView,
@@ -154,6 +158,22 @@ export function SettingsModal() {
     void leggiStatoNotifiche();
   }, [visible]);
 
+  // v4.121: il pannello NON resta più appeso allo stato di minuti prima.
+  // Due casi reali: (1) l'utente tocca "Apri impostazioni", concede il
+  // permesso e torna: il rientro è un evento 'active' e qui lo stato si
+  // rilegge, così la pillola passa subito a "Permesso concesso" senza
+  // chiudere e riaprire il pannello (prima leggiStatoNotifiche girava SOLO
+  // all'apertura: il pannello diceva "Permesso negato" anche dopo averlo
+  // concesso); (2) la diagnostica si aggiorna da sola anche se lo stato
+  // cambia mentre il pannello sta aperto.
+  useEffect(() => {
+    if (!visible) return;
+    const sub = AppState.addEventListener('change', (stato) => {
+      if (stato === 'active') void leggiStatoNotifiche();
+    });
+    return () => sub.remove();
+  }, [visible]);
+
   // v4.118: invia una notifica DI PROVA dal server (endpoint esistente,
   // usato finora solo dalla diagnostica web): la prova vera e propria
   // che il telefono è agganciato e che la push arriva fin qui.
@@ -239,6 +259,14 @@ export function SettingsModal() {
           : 'Spente su questo telefono: l\'uscita dal registro dello studio si completerà appena torna la rete.',
       );
     }
+
+    // v4.121: la diagnostica si RILEGGE dopo il toggle: prima restava il
+    // vecchio esito ("Telefono registrato: no" anche dopo una riuscita,
+    // pillola del permesso ferma al vecchio stato) e il pannello sembrava
+    // dire che nulla funzionava anche quando invece era andato tutto a
+    // posto. Il rientro 'active' (effetto qui sotto) non basta: il pannello
+    // resta 'active' durante il toggle.
+    void leggiStatoNotifiche();
   }
 
   // v4.83: riapre la guida introduttiva (la intro della prima volta),

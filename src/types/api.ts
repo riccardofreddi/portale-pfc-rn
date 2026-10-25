@@ -179,4 +179,12 @@ export interface ScadenzaItem {
   dataScadenza: string;
   anticipoGiorni: number;
   pagata: boolean;
+  /**
+   * v4.121: true se il server ha GIÀ consegnato oggi la push "Scade OGGI"
+   * per questa scadenza: il telefono non deve ripetere l'avviso di recupero
+   * (l'utente l'avviso l'ha avuto, anche se ha svuotato il vassoio).
+   * Opzionale: un server vecchio non lo manda (undefined = comportamento
+   * di prima: il recupero parte come sempre).
+   */
+  pushInviataOggi?: boolean;
 }
