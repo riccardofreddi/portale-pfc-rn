@@ -87,9 +87,11 @@
       <!-- v4.118: icona e colore di default delle push che ANDROID mostra
            quando l'app è CHIUSA (notification payload FCM): senza questi
            meta-data la barra di stato mostrava il quadratino bianco/grigio
-           dell'icona launcher. L'icona è la silhouette bianca
-           ic_stat_notification (in res/drawable-*), il colore è l'oro del
-           brand. tools:replace serve perché @react-native-firebase/messaging
+           dell'icona launcher. L'icona è il logo PF monocromo bianco
+           ic_stat_notification (in res/drawable-*: fino alla v4.121 era
+           una campana, dalla v4.122 è il glifo PF del brand), il colore
+           è l'oro del brand. tools:replace serve perché
+           @react-native-firebase/messaging
            dichiara già default_notification_color col suo placeholder. -->
       <meta-data
         android:name="com.google.firebase.messaging.default_notification_icon"
@@ -103,20 +105,30 @@
         android:value="pfc-alerts-v2"
         tools:replace="android:value" />
 
-      <!-- v4.120: STESSA CAMPANA anche per le notifiche LOCALI di
+      <!-- v4.120: STESSO LOGO anche per le notifiche LOCALI di
            expo-notifications (arrivi a app APERTA, preallarmi
            "Scade tra N giorni", sveglia "Scade OGGI", recupero).
            La libreria NON legge i meta-data Firebase qui sopra: ha
            i SUOI nomi (expo.modules.notifications.*) e senza questi
            ricadeva sull'icona launcher, che in barra di stato appare
            come il solito quadratino bianco senza logo. Con questi
-           due meta-data anche le notifiche locali portano la
-           silhouette bianca ic_stat_notification e l'accento oro. -->
+           due meta-data anche le notifiche locali portano il glifo
+           PF bianco ic_stat_notification e l'accento oro. -->
       <meta-data
         android:name="expo.modules.notifications.default_notification_icon"
         android:resource="@drawable/ic_stat_notification" />
       <meta-data
         android:name="expo.modules.notifications.default_notification_color"
         android:resource="@color/notifica_oro" />
+
+      <!-- v4.122: LOGO PF A COLORI come icona GRANDE nelle notifiche
+           locali (il riquadro oro con PF bianco, identico all'icona
+           dell'app). expo-notifications legge questo meta-data e chiama
+           setLargeIcon (verificato nel sorgente 0.29.14:
+           META_DATA_LARGE_ICON_KEY). Nella tendina il logo si vede in
+           pieno colore accanto al testo della notifica. -->
+      <meta-data
+        android:name="expo.modules.notifications.large_notification_icon"
+        android:resource="@drawable/ic_notification_large" />
     </application>
 </manifest>
