@@ -193,6 +193,19 @@ const ORO_CHIARO = '#F7E7B4';
 
 type Tab = 'attivi' | 'archiviati';
 
+/**
+ * v4.117b — Le righe della lista diventano DUE cose diverse: le schede
+ * dei messaggi (come sempre) e le TARGHETTE di blocco ("DA LEGGERE" /
+ * "GIÀ LETTI") che separano visivamente i due mondi. Prima la lista era
+ * un'unica fila di schede quasi identiche: la scritta "Nuovo" era l'unica
+ * differenza percepibile ("sembrano tutti uguali"). Ora quando c'e'
+ * qualcosa da leggere quello che conta sta IN UN BLOCCO SU, tutto oro;
+ * cio' che e' gia' stato letto sta sotto, sobrio.
+ */
+type RigaMessaggi =
+  | { kind: 'sezione'; chiave: string; label: string; tono: 'nuovo' | 'letto' }
+  | { kind: 'msg'; msg: Messaggio; eNuovo: boolean };
+
 // v4.40: mesi brevi ("15 set 2026 alle 14:32"): la riga della data
 // respira anche sugli schermi stretti e con i testi ingranditi.
 const MESI = [
@@ -480,7 +493,33 @@ export default function MessaggiScreen() {
 
   const attivi = messaggi.filter((m) => !m.archiviato);
   const archiviati = messaggi.filter((m) => m.archiviato);
-  const displayList = tab === 'attivi' ? attivi : archiviati;
+
+  // v4.117b — I DUE BLOCCHI della tab Attivi. La definizione di "nuovo"
+  // e' la STESSA di sempre (v4.24 fotografia + v4.50 chi ha risposto non
+  // e' nuovo): cambia DOVE sta la scheda, non chi e' nuovo. Con zero
+  // messaggi nuovi la lista resta una fila semplice, senza targhette:
+  // quando non c'e' niente da leggere non si aggiunge rumore.
+  const eNuovoDi = (m: Messaggio): boolean =>
+    !m.archiviato && !m.haRisposta && (!m.letto || nuoviIds.includes(m.id));
+  const righe: RigaMessaggi[] = (() => {
+    if (tab === 'archiviati') {
+      return archiviati.map((msg): RigaMessaggi => ({ kind: 'msg', msg, eNuovo: false }));
+    }
+    const nuovi = attivi.filter(eNuovoDi);
+    if (nuovi.length === 0) {
+      return attivi.map((msg): RigaMessaggi => ({ kind: 'msg', msg, eNuovo: false }));
+    }
+    const letti = attivi.filter((m) => !eNuovoDi(m));
+    const out: RigaMessaggi[] = [
+      { kind: 'sezione', chiave: 'da-leggere', label: `Da leggere (${nuovi.length})`, tono: 'nuovo' },
+      ...nuovi.map((msg): RigaMessaggi => ({ kind: 'msg', msg, eNuovo: true })),
+    ];
+    if (letti.length > 0) {
+      out.push({ kind: 'sezione', chiave: 'gia-letti', label: `Già letti (${letti.length})`, tono: 'letto' });
+      out.push(...letti.map((msg): RigaMessaggi => ({ kind: 'msg', msg, eNuovo: false })));
+    }
+    return out;
+  })();
   const unreadCount = attivi.filter((m) => !m.letto).length;
 
   async function handleSegnaLetti() {
@@ -559,9 +598,12 @@ export default function MessaggiScreen() {
     // e' nuovo e' troppo scuro"): tinta navy soft + lettera navy, la stessa
     // lingua soft di verde/ambra. Resta ben distinto dal letto (oro) e
     // reggono la segnalazione fondo tinto + titolo grassetto + pill rossa.
+    // v4.117b: L'ECCEZIONE SULL'ECCEZIONE: con i blocchi "Da leggere"
+    // sopra, il nuovo DEVE sembrare il pezzo importante della pagina:
+    // lettera PLENA (non outline) su tondo ORO PIENO, il colore firma
+    // dell'app usato a piena forza, non in filigrana.
     if (msg.haRisposta) return { icon: 'checkmark-circle', color: colors.success, bg: `${colors.success}26` };
-    // v4.98: primaryText — il navy su fondo notte era invisibile.
-    if (eNuovo) return { icon: 'mail-unread-outline', color: colors.primaryText, bg: `${colors.primaryText}1A` };
+    if (eNuovo) return { icon: 'mail-unread', color: colors.primary, bg: colors.accent };
     // v4.27: richiesta documento = busta AMBRA (via la nuvola)
     if (msg.richiedeUpload) return { icon: 'mail-unread-outline', color: colors.warning, bg: `${colors.warning}26` };
     // v4.25: i messaggi letti prendono la tinta ORO della Bacheca (era grigio)
@@ -639,8 +681,10 @@ export default function MessaggiScreen() {
       <FlatList
         style={styles.list}
         contentContainerStyle={styles.listContent}
-        data={loading && !refreshing ? [] : displayList}
-        keyExtractor={(item) => item.id}
+        data={loading && !refreshing ? [] : righe}
+        keyExtractor={(item) =>
+          item.kind === 'sezione' ? `sec-${item.chiave}` : item.msg.id
+        }
         // v4.27: la scheda si APRE BENE al primo colpo. Su Android la lista
         // di default "taglia" i pezzi fuori schermo (removeClippedSubviews):
         // con le schede animate questo taglia disegna le card storte finche'
@@ -672,14 +716,27 @@ export default function MessaggiScreen() {
             </View>
           ) : null
         }
-        renderItem={({ item: msg, index }) => {
-          // v4.24: "Nuovo" = non letto ORA oppure era nella fotografia
-          // (il segna-letti automatico non spegne la segnalazione finche'
-          // l'utente non la chiude).
-          // v4.50: chi ha gia' una risposta non puo' essere "Nuovo" anche se
-          // resta in fotografia (doppio stato): vince il verde "inviato".
-          const eNuovo =
-            !msg.archiviato && !msg.haRisposta && (!msg.letto || nuoviIds.includes(msg.id));
+        renderItem={({ item, index }) => {
+          // v4.117b: le targhette di blocco sono righe a se': chiudono
+          // l'occhio sul fatto che la lista sotto e' messaggi.
+          if (item.kind === 'sezione') {
+            const eBloccoNuovo = item.tono === 'nuovo';
+            return (
+              <View style={styles.sezRiga} accessibilityRole="header">
+                <Text
+                  style={eBloccoNuovo ? styles.sezNuovo : styles.sezLetto}
+                  accessibilityLabel={item.label}
+                >
+                  {item.label.toUpperCase()}
+                </Text>
+                <View
+                  style={[styles.sezLinea, eBloccoNuovo ? styles.sezLineaNuovo : styles.sezLineaLetto]}
+                />
+              </View>
+            );
+          }
+          const msg = item.msg;
+          const eNuovo = item.eNuovo;
           const ic = iconaStato(msg, eNuovo);
           // v4.26: il corpo mostrato non ripete il titolo (via il doppione)
           // v4.95: il titolo VISIBILE della scheda e' la PRIMA RIGA INTERA,
@@ -718,7 +775,10 @@ export default function MessaggiScreen() {
                       <Text style={styles.msgStudio}>STUDIO PFC</Text>
                       <TestoConLink
                         testo={titoloIntero}
-                        stileTesto={[styles.msgTitle, eNuovo && styles.msgTitleUnread]}
+                        // v4.117b: il titolo del nuovo e' nero e grassetto,
+                        // quello del letto scende a grigio: anche la
+                        // tipografia dice chi e' ancora da leggere.
+                        stileTesto={[styles.msgTitle, eNuovo ? styles.msgTitleUnread : styles.msgTitleRead]}
                         stileLink={styles.corpoLink}
                       />
                       {/* v4.40: la data sta da sola, sotto il titolo: tutta
@@ -732,8 +792,11 @@ export default function MessaggiScreen() {
                   {/* Pillole di stato (come i badge dell'app v4) */}
                   <View style={styles.badgeRow}>
                     {eNuovo && (
-                      <View style={[styles.pill, { backgroundColor: colors.dangerSoft }]}>
-                        <Text style={[styles.pillText, { color: colors.danger }]}>Nuovo</Text>
+                      /* v4.117b: pillola PIENA oro, scritta navy: la stessa
+                       * forma piena dei badge di sistema, illeggibile e
+                       * invisibile no, evidente senza urlare. */
+                      <View style={styles.pillNuovo}>
+                        <Text style={styles.pillNuovoText}>Nuovo</Text>
                       </View>
                     )}
                     {msg.richiedeUpload && !msg.haRisposta && (
@@ -764,7 +827,9 @@ export default function MessaggiScreen() {
                     <View style={styles.corpoBox}>
                       <TestoConLink
                         testo={corpoMostrato}
-                        stileTesto={styles.corpo}
+                        // v4.117b: il corpo del LETTO scende a grigio, come
+                        // il suo titolo: il messaggio letto si ritira.
+                        stileTesto={[styles.corpo, !eNuovo && styles.corpoRead]}
                         stileLink={styles.corpoLink}
                         stilePremuto={styles.corpoBoxPressed}
                       />
@@ -929,10 +994,11 @@ const makeStyles = (colors: ThemeColors) =>
       borderWidth: 1,
       borderColor: colors.borderStrong,
     },
-    // v4.117: il non letto porta BORDO ORO + FONDO ORO CALDO (la firma
-    // dell'app): la coppia frame+sfondo si riconosce prima ancora di
-    // leggere il titolo o la pillola "Nuovo" (che resta, decisione v4.50)
-    msgCardUnread: { backgroundColor: colors.accentSoft, borderColor: colors.accent },
+    // v4.117b: il non letto porta FONDO ORO PIENO (accentCard: si Vede che
+    // e' un fondo colorato, accentSoft si confondeva col bianco) + bordo
+    // oro; il LETTO resta bianco col bordo che ogni blocco si merita:
+    // la distinzione la fa il fondo, il confine resta leggibile su tutti.
+    msgCardUnread: { backgroundColor: colors.accentCard, borderColor: colors.accent },
     msgInner: { flex: 1, padding: 18, gap: 12 },
     msgHeader: { flexDirection: 'row', alignItems: 'flex-start', gap: 12 },
     msgIcon: { width: 40, height: 40, borderRadius: 20, alignItems: 'center', justifyContent: 'center' },
@@ -948,16 +1014,35 @@ const makeStyles = (colors: ThemeColors) =>
     msgDate: { ...typography.caption, color: colors.textSecondary, fontSize: 12.5, marginTop: 1 },
     msgTitle: { ...typography.body, color: colors.textPrimary, fontWeight: '500', fontSize: 15.5 },
     msgTitleUnread: { fontWeight: '800' },
+    // v4.117b: il titolo del LETTO si smorza (grigio): chi viene dopo
+    // deve sembrare venuto dopo, senza perdere leggibilita'.
+    msgTitleRead: { color: colors.textSecondary },
     // v4.82: via la capsula con la freccia in alto a destra: la testata
     // e' solo intestazione, il messaggio si legge SEMPRE per intero
     // senza toccare nulla.
     badgeRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
     pill: { flexDirection: 'row', alignItems: 'center', gap: 4, borderRadius: 999, paddingHorizontal: 8, paddingVertical: 3 },
     pillText: { fontSize: 11, fontWeight: '700' },
+    // v4.117b: la pillola "Nuovo" PIENA oro con scritta navy: prima era
+    // scritta rossa su fondo rosso pallido, si perdeva dentro la card oro;
+    // piena come i badge delle notifiche del telefono, si trova a colpo
+    // d'occhio anche scorrendo veloce.
+    pillNuovo: { flexDirection: 'row', alignItems: 'center', gap: 4, borderRadius: 999, backgroundColor: colors.accent, paddingHorizontal: 10, paddingVertical: 4 },
+    pillNuovoText: { fontSize: 11, fontWeight: '800', color: colors.primary, letterSpacing: 0.3 },
+    // v4.117b: le targhette dei due blocchi (lettering caps + filetto).
+    sezRiga: { flexDirection: 'row', alignItems: 'center', gap: 10, marginTop: 4 },
+    sezNuovo: { ...typography.caption, fontSize: 11.5, fontWeight: '900', letterSpacing: 1.3, color: colors.accentDark },
+    sezLetto: { ...typography.caption, fontSize: 11.5, fontWeight: '800', letterSpacing: 1.3, color: colors.textTertiary },
+    sezLinea: { flex: 1, height: 1 },
+    sezLineaNuovo: { backgroundColor: `${colors.accent}66` },
+    sezLineaLetto: { backgroundColor: colors.border },
     // v4.31: VIA il bordo anche dal riquadro del testo (il contorno grigio
     // interno): il testo si stacca dal fondo senza cornici.
     corpoBox: { backgroundColor: colors.surfaceAlt, borderRadius: 14, padding: 14 },
     corpo: { ...typography.bodySmall, color: colors.textPrimary, lineHeight: 21 },
+    // v4.117b: il corpo del LETTO smorza a grigio (resta leggibile: 6:1 sul
+    // fondo dei box): anche il testo dice "questo messaggio e' storia".
+    corpoRead: { color: colors.textSecondary },
     // v4.19: i link nel corpo del messaggio si Vedono e si toccano (aprono il browser)
     // v4.23: link in oro, stessa lingua della Bacheca
     corpoLink: { color: colors.accentDark, fontWeight: '700', textDecorationLine: 'underline' },

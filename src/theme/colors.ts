@@ -26,6 +26,12 @@ export interface ThemeColors {
   // === Accent ===
   accent: string;
   accentSoft: string;
+  // v4.117b: la tinta piena delle CARD "da leggere". accentSoft (#FFF7E6)
+  // era nato per tocchi leggeri: come FONDO di una scheda intera contro
+  // il bianco si distingueva a malapena ("sembrano tutti uguali").
+  // accentCard e' un gradino piu' saturo: si vede che e' un fondo
+  // colorato, ma resta chiaro quanto basta per il testo scuro.
+  accentCard: string;
   accentDark: string;
 
   // === Stato ===
@@ -82,6 +88,10 @@ const lightColors: ThemeColors = {
 
   accent: '#D4AF37',
   accentSoft: '#FFF7E6',
+  // v4.117b: oro caldo pieno ma chiaro (fondo scheda "da leggere"):
+  // distanza netta dal bianco #FFFFFF e dal fondo pagina #F8FAFC,
+  // testo navy e testi scuri sempre sopra il 4.5:1.
+  accentCard: '#FAE9C4',
   accentDark: '#996515',
 
   success: '#10B981',
@@ -132,6 +142,9 @@ const darkColors: ThemeColors = {
 
   accent: '#D4AF37',
   accentSoft: 'rgba(212, 175, 55, 0.15)',
+  // v4.117b: nel tema scuro accentSoft (0.15) era troppo vicino al pannello:
+  // la card "da leggere" sale a 0.30, l'oro si Vede e resta leggibile.
+  accentCard: 'rgba(212, 175, 55, 0.30)',
   accentDark: '#F7E7B4',
 
   // v4.97: xxxText = xxx (nel tema scuro la scritta e l'icona stanno
