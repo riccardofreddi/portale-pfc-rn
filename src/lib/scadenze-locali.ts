@@ -206,7 +206,15 @@ function urlDaFilePath(filePath: string): string | undefined {
  * legge come il giorno PRIMA e il promemoria finiva il giorno sbagliato.
  * Se il testo comincia con YYYY-MM-DD costruiamo la data LOCALE di quel
  * giorno. In Italia (est di Greenwich) il risultato non cambia: gli
- * stessi giorni di sempre. */
+ * stessi giorni di sempre.
+ * v4.117 — CONTRATTO con il server, verificato su portale-pfc-v2
+ * (api/documenti/scadenza/route.ts): il form web manda "YYYY-MM-DD"
+ * (input type=date) e il server la normalizza a MEZZANOTTE UTC con
+ * new Date(); l'ISO che gira al telefono inizia SEMPRE con il giorno
+ * giusto. Prendere il giorno scritto e' quindi robusto PER
+ * COSTRUZIONE. Se mai il server mandasse date con fuso reale (es.
+ * mezzanotte italiana = "T22:00:00.000Z" del giorno prima), QUESTA
+ * funzione va aggiornata: oggi quel caso non puo' verificarsi. */
 function dataDaIso(iso: string): Date | null {
   const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(iso);
   if (m) {

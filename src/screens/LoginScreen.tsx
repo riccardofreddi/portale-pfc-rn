@@ -15,7 +15,7 @@
  * sotto al logo un solo titolo: "Accesso Portale" (prima c'erano
  * "PORTALE" + "Accesso Archivio"). Il resto della schermata e' identico.
  */
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import {
   Image,
   KeyboardAvoidingView,
@@ -36,6 +36,7 @@ import { haptics } from '@/lib/haptics';
 import { api } from '@/api/client';
 import { useAppStore } from '@/store/auth';
 import { registerPushForCurrentUser } from '@/lib/push';
+import { puliziaCacheUtente } from '@/lib/download';
 import { shadow, spacing, typography, useColors, type ThemeColors } from '@/theme';
 // v4.65: il logo PF dorato e' un PNG vero (stessa grafica dell'icona app):
 // cosi' la schermata di login mostra ESATTAMENTE quello che il titolare vede
@@ -50,6 +51,18 @@ const ORO_CHIARO = '#F7E7B4';
 export default function LoginScreen() {
   const colors = useColors();
   const styles = makeStyles(colors);
+
+  // v4.117: il rientro al login NON arriva solo dal pulsante "Esci":
+  // anche il 401 (sessione scaduta) e l'uscita verso il login dal
+  // blocco atterrano QUI. La cache dei documenti dell'utente
+  // precedente non deve restare sul telefono (telefono condiviso):
+  // si cancella al mount, best-effort e idempotente — dopo il logout
+  // manuale (che la pulisce gia' da Impostazioni) qui non trova nulla
+  // da fare. Il semplice LOCK/UNLOCK non passa di qui: l'utente
+  // loggato torna e la sua cache e' la sua.
+  useEffect(() => {
+    void puliziaCacheUtente();
+  }, []);
 
   const insets = useSafeAreaInsets();
   const setUser = useAppStore((s) => s.setUser);

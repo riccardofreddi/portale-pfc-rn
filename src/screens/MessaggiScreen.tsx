@@ -875,7 +875,14 @@ const makeStyles = (colors: ThemeColors) =>
     segnaLettiPillText: { color: colors.accentDark, fontSize: 12, fontWeight: '800' },
 
     list: { flex: 1 },
-    listContent: { padding: spacing.lg, gap: 14, paddingBottom: spacing.xxl },
+    // v4.117: il "tutti sequenziali" — le schede si fondono in un muro:
+    // da v4.32 (redesign a pannello) la card era BIANCA su fondo
+    // quasi-bianco, senza ne bordo ne ombra, e ogni messaggio non
+    // esisteva visivamente come blocco. Torna il bordo netto promesso
+    // dal commento v4.28 ("la scheda si definisce col bordo netto,
+    // zero ombre"): zero ombre STANNO (lezione v4.27: elevation +
+    // animazione d'ingresso = alone storto su Android, sempre).
+    listContent: { padding: spacing.lg, gap: 16, paddingBottom: spacing.xxl },
     skeletonInList: { paddingVertical: spacing.sm },
 
     // v4.49 — Hero dell'intestazione: STESSA firma di Cassetto (vaultHero),
@@ -900,8 +907,32 @@ const makeStyles = (colors: ThemeColors) =>
     // si definiscono col fondo e con lo spazio; i nuovi si riconoscono dal
     // fondo leggermente tinto, dal titolo in grassetto e dalla pillola
     // "Nuovo" (nessun contorno perimetrale, nessuna barra laterale).
-    msgCard: { flexDirection: 'row', borderRadius: 20, backgroundColor: colors.surface, overflow: 'hidden' },
-    msgCardUnread: { backgroundColor: `${colors.primary}0D` },
+    // v4.117: IL CONTORNO TORNA, su richiesta esplicita del titolare
+    // ("ogni messaggio deve essere ben distinto, ora sembrano tutti
+    // sequenziali"): da v4.31 le schede bianche sul fondo quasi-bianco
+    // SENZA bordo si fondevano in un flusso unico e ogni messaggio non
+    // esisteva visivamente come blocco. E' un bordo SOTTILE (1px),
+    // diverso dal contorno spesso di v4.31, e NON e' un'ombra: la
+    // lezione v4.28 resta (zero elevation, zero aloni).
+    // LEZIONE DEL TEST REALE SUL TELEFONO (stessa v4.117): la prima
+    // versione usava tinta border (E2E8F0): contrasto ~1.15:1 contro il
+    // bianco della scheda, tecnicamente presente e PERCETTIVAMENTE
+    // assente ("si capisce solo perche' c'e' scritto nuovo"). Il bordo
+    // serve a DARE UN CONFINE, quindi deve essere un grigio che si vede:
+    // borderStrong (94A3B8 chiaro / 334A75 scuro), sempre 1px, zero ombre.
+    msgCard: {
+      flexDirection: 'row',
+      borderRadius: 20,
+      backgroundColor: colors.surface,
+      overflow: 'hidden',
+      // v4.117: il confine che rende OGNI messaggio un blocco riconoscibile
+      borderWidth: 1,
+      borderColor: colors.borderStrong,
+    },
+    // v4.117: il non letto porta BORDO ORO + FONDO ORO CALDO (la firma
+    // dell'app): la coppia frame+sfondo si riconosce prima ancora di
+    // leggere il titolo o la pillola "Nuovo" (che resta, decisione v4.50)
+    msgCardUnread: { backgroundColor: colors.accentSoft, borderColor: colors.accent },
     msgInner: { flex: 1, padding: 18, gap: 12 },
     msgHeader: { flexDirection: 'row', alignItems: 'flex-start', gap: 12 },
     msgIcon: { width: 40, height: 40, borderRadius: 20, alignItems: 'center', justifyContent: 'center' },
@@ -911,7 +942,10 @@ const makeStyles = (colors: ThemeColors) =>
     // v4.40: data su riga propria sotto il titolo (prima stava accanto a
     // "STUDIO PFC" e sbordava fino a toccare le icone in alto a destra);
     // tinta meta' discreta, come le date dell'Attivita.
-    msgDate: { ...typography.caption, color: colors.textTertiary, marginTop: 1 },
+    // v4.117: la data e' l'ANCORA di ogni comunicazione ("quando e'
+    // arrivato QUESTO messaggio"): da caption 10px grigino quasi
+    // invisibile a 12.5px grigio scuro, leggibile al colpo d'occhio
+    msgDate: { ...typography.caption, color: colors.textSecondary, fontSize: 12.5, marginTop: 1 },
     msgTitle: { ...typography.body, color: colors.textPrimary, fontWeight: '500', fontSize: 15.5 },
     msgTitleUnread: { fontWeight: '800' },
     // v4.82: via la capsula con la freccia in alto a destra: la testata
