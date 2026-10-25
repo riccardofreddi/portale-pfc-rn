@@ -167,14 +167,25 @@ export default function App() {
   // una nuova viene aggiunta. Tutto silenzioso: se qualcosa fallisce
   // semplicemente si riprova alla prossima apertura.
   const ultimaSyncScadenze = useRef(0);
+  const syncScadenzeInCorso = useRef(false);
   useEffect(() => {
     if (!user) return;
 
     const sincronizza = () => {
       const ora = Date.now();
       if (ora - ultimaSyncScadenze.current < 30 * 60 * 1000) return;
-      ultimaSyncScadenze.current = ora;
-      aggiornaPromemoriaScadenze();
+      // v4.118 — CONTATORE ONESTO: prima il momento veniva segnato PRIMA di
+      // chiamare la sync, che e' asincrona e non veniva attesa: una sync
+      // lunga (rete lenta) spostava la successiva a "30 minuti + durata
+      // sync", e un telefono tornato a riposo durante la sync risultava
+      // sincronizzato senza esserlo. Ora il momento sale quando la sync e'
+      // FINITA, e un flag impedisce a due sync di correre insieme.
+      if (syncScadenzeInCorso.current) return;
+      syncScadenzeInCorso.current = true;
+      aggiornaPromemoriaScadenze().finally(() => {
+        syncScadenzeInCorso.current = false;
+        ultimaSyncScadenze.current = Date.now();
+      });
     };
 
     // Al login: sync immediata (prima volta: nessun limite).

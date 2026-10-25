@@ -68,6 +68,18 @@
  * NON c'e' (allarme perso) l'avviso esce SUBITO, una volta sola. Il buco
  * del 24/9 non potra' piu' ripetersi: a app aperta non esiste piu' nessun
  * percorso che finisce in silenzio.
+ *
+ * v4.118 — FEEDBACK AL SERVER, UN AVVISO SOLO. Quando l'avviso locale del
+ * giorno di scadenza risulta EROGATO, l'app lo dice al server (POST
+ * /api/documenti/scadenza/allarme-confermato): la push di riserva "Scade
+ * OGGI" del server (che da oggi parte solo dopo le 08:35 italiane, dentro
+ * una finestra calcolata su Europe/Rome) NON parte per chi ha avuto la
+ * sveglia. Chi NON ce l'ha avuta (app chiusa, allarme perso) non manda
+ * nulla e la push arriva lo stesso: la riserva resta sempre accesa, e' il
+ * feedback che si spegne — mai il contrario. La lista delle scadenze ora
+ * arriva a 90 giorni (?giorni=90): le sveglie restano armate anche se il
+ * cliente non apre l'app per settimane (prima la lista si fermava alla
+ * finestra di preavviso, ~10 giorni).
  */
 
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -102,6 +114,30 @@ const PREFISSO_ARMATO = '@pfc/prom-scad-armato/';
  * ma mai piu' silenzio dopo un allarme perso.
  */
 const PREFISSO_EROGATO = '@pfc/prom-scad-erogato/';
+
+/**
+ * v4.118 — Segnali di conferma GIA' spediti al server in questa sessione
+ * ("id:giorno"): le sync girano a ogni ritorno sull'app, il POST va fatto
+ * UNA volta. Se il POST fallisce il segno si tira via, così la sync dopo
+ * riprova.
+ */
+const giaConfermatiAlServer = new Set<string>();
+
+/**
+ * v4.118 — FEEDBACK fire-and-forget al server: "l'avviso locale per questo
+ * giorno e' stato erogato". Silenzioso per costruzione: se la rete manca
+ * il server non sa nulla e la sua push di riserva parte lo stesso (al
+ * peggio un doppione, MAI il silenzio: la riserva non si spegne per un
+ * feedback perso).
+ */
+function confermaAllarmeAlServer(scadenzaId: string, giorno: string): void {
+  const segno = `${scadenzaId}:${giorno}`;
+  if (giaConfermatiAlServer.has(segno)) return;
+  giaConfermatiAlServer.add(segno);
+  api.scadenze.confermaAllarme(scadenzaId).catch(() => {
+    giaConfermatiAlServer.delete(segno); // riprova alla prossima sync
+  });
+}
 
 /**
  * v4.12 — Interruttore dei promemoria (l'interuttore nelle Impostazioni).
@@ -146,6 +182,10 @@ export async function segnaSvegliaVistaDaNotifica(
     const armato = await AsyncStorage.getItem(PREFISSO_ARMATO + scadenzaId);
     if (armato) {
       await AsyncStorage.setItem(PREFISSO_EROGATO + scadenzaId, armato);
+      // v4.118 — anche il TOCCO della sveglia e' "avviso avuto": dillo al
+      // server (la push di riserva del giorno stesso tace). armato e' il
+      // giorno (YYYY-MM-DD) per cui la sveglia era programmata.
+      confermaAllarmeAlServer(scadenzaId, armato);
     }
   } catch {
     // storage indisponibile: al peggio la sync ripetera' l'avviso una volta
@@ -260,13 +300,15 @@ export async function aggiornaPromemoriaScadenze(): Promise<number> {
       return 0;
     }
 
-    // 1) Scarichiamo PRIMA le scadenze imminenti dal server: solo se la
-    //    lettura riesce tocchiamo i promemoria gia' schedulati (v4.4).
+    // 1) Scarichiamo PRIMA le scadenze dal server: solo se la lettura
+    //    riesce tocchiamo i promemoria gia' schedulati (v4.4).
     //    Prima era il contrario: si cancellava tutto e POI si chiedeva la
     //    lista; se la lettura falliva (rete giu', sessione chiusa) i
     //    promemoria restavano cancellati e persi. Cosi' un problema di
     //    rete NON tocca i promemoria gia' in orologio.
-    const { scadenze } = await api.scadenze.list();
+    //    v4.118: 90 giorni (prima la finestra di preavviso ~10): le sveglie
+    //    future restano armate anche senza aprire l'app per settimane.
+    const { scadenze } = await api.scadenze.list({ giorni: 90 });
 
     // 2) Cancelliamo TUTTI i vecchi promemoria scadenze: la
     // rischedulazione pulita e' la garantia che una scadenza pagata
@@ -315,6 +357,20 @@ export async function aggiornaPromemoriaScadenze(): Promise<number> {
         const chiaveArmato = PREFISSO_ARMATO + scadenza.id;
         const chiaveErogato = PREFISSO_EROGATO + scadenza.id;
         const giorno = giornoIso(scade);
+
+        // v4.118 — se la scadenza e' OGGI e l'avviso risulta EROGATO,
+        // dillo al server (la sua push di riserva tace). Chiamato nei punti
+        // giusti del ramo qui sotto: EROGATO e' l'unico segnale che conta,
+        // "armato" prima delle 08:30 non basta (l'allarme puo' ancora
+        // perdersi, e allora la push del server e' esattamente la rete che
+        // serve: non va spenta in anticipo).
+        const feedbackSeErogato = async () => {
+          if (giorno !== giornoIso(adesso)) return;
+          const erogato = await AsyncStorage.getItem(chiaveErogato).catch(
+            () => null,
+          );
+          if (erogato === giorno) confermaAllarmeAlServer(scadenza.id, giorno);
+        };
 
         if (quando.getTime() > adesso.getTime()) {
           // Caso normale: promemoria programmato alle 08:30 del giorno
@@ -370,6 +426,9 @@ export async function aggiornaPromemoriaScadenze(): Promise<number> {
               scadenza.titolo,
               ': salto',
             );
+            // v4.118: l'avviso e' stato avuto in un giro precedente di
+            // oggi: confermalo al server (una volta sola per sessione).
+            await feedbackSeErogato();
             continue;
           }
 
@@ -400,6 +459,9 @@ export async function aggiornaPromemoriaScadenze(): Promise<number> {
               scadenza.titolo,
               ': nessun doppione',
             );
+            // v4.118: sveglia AVUTA = feedback al server, la push di
+            // riserva "Scade OGGI" per oggi non serve.
+            await feedbackSeErogato();
             continue;
           }
 
@@ -410,6 +472,9 @@ export async function aggiornaPromemoriaScadenze(): Promise<number> {
             trigger: null,
           });
           await AsyncStorage.setItem(chiaveErogato, giorno).catch(() => {});
+          // v4.118: l'avviso di recupero e' erogato ADESSO: feedback al
+          // server, cosi' la sua push di riserva non lo raddoppia.
+          await feedbackSeErogato();
           numero++;
         }
       } catch (err) {

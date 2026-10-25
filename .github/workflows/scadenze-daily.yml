@@ -1,9 +1,16 @@
 name: Promemoria scadenze (seconda sveglia)
 on:
   schedule:
-    - cron: '5 6 * * *'   # 06:05 UTC = 08:05 ora italiana
-    - cron: '35 6 * * *'  # 06:35 UTC = 08:35 ora italiana (2a chance: GitHub a volte lascia la prima in coda per ore)
-    - cron: '55 6 * * *'  # 06:55 UTC = 08:55 ora italiana (3a chance)
+    # v4.118 — gli orari sono UTC: in Italia cambiano con ora solare/legale.
+    # La FINESTRA della push "Scade OGGI" la calcola il SERVER su Europe/Rome
+    # (push solo dopo le 08:35 italiane): una chance partita in anticipo fa
+    # solo i preavvisi (e le campanelle del giorno stesso), una in ritardo si
+    # auto-corregge — dopo le 08:35 italiane qualunque giro tenta la push,
+    # e le guardie anti-doppione (campanella/push separate + feedback
+    # allarme_locale_il) rendono tutto idempotente.
+    - cron: '5 6 * * *'   # 06:05 UTC = 07:05 it. solare / 08:05 it. legale — riserva preavvisi
+    - cron: '45 7 * * *'  # 07:45 UTC = 08:45 it. solare / 09:45 it. legale — FINESTRA "Scade OGGI"
+    - cron: '30 8 * * *'  # 08:30 UTC = 09:30 it. solare / 10:30 it. legale — 2a chance finestra
   workflow_dispatch: {}   # permette la prova manuale dal tab Actions
 jobs:
   scadenze-check:

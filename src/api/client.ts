@@ -269,10 +269,17 @@ export const api = {
   },
 
   scadenze: {
-    /** v4.3: scadenze imminenti del cliente loggato (per i promemoria locali). */
-    async list(): Promise<{ scadenze: ScadenzaItem[] }> {
+    /** v4.3: scadenze imminenti del cliente loggato (per i promemoria locali).
+     * v4.118: con { giorni: N } il server allarga la lista a N giorni
+     * (default: solo il periodo di preavviso di ogni scadenza). L'app chiede
+     * 90: le sveglie locali delle 08:30 restano armate per TUTTE le
+     * scadenze conosciute anche se il cliente non apre l'app per settimane. */
+    async list(opzioni?: { giorni?: number }): Promise<{ scadenze: ScadenzaItem[] }> {
+      const giorni = opzioni?.giorni;
+      const coda =
+        giorni != null && giorni > 0 ? `?giorni=${Math.floor(giorni)}` : '';
       const res = await apiFetch<{ scadenze: Array<Record<string, unknown>> }>(
-        '/api/documenti/scadenza/list',
+        '/api/documenti/scadenza/list' + coda,
       );
       const mapped: ScadenzaItem[] = (res.scadenze ?? []).map((s) => ({
         id: String(s.id ?? ''),
@@ -298,6 +305,22 @@ export const api = {
       return apiFetch('/api/documenti/scadenza/paga', {
         method: 'POST',
         body: JSON.stringify({ filePath, pagata }),
+      });
+    },
+
+    /**
+     * v4.118 — FEEDBACK al server: "l'avviso locale di oggi è stato
+     * EROGATO" (sveglia delle 08:30 vista nel vassoio / toccata / avviso
+     * immediato di recupero). Con questo segno il server NON manda la
+     * push di riserva "Scade OGGI" del giorno stesso: un avviso solo.
+     * Fire-and-forget dal chiamante: se la richiesta non arriva (rete
+     * giù), la push di riserva parte lo stesso — al peggio un doppione,
+     * MAI il silenzio. Il server conferma solo le PROPRIE scadenze.
+     */
+    async confermaAllarme(scadenzaId: string): Promise<{ ok: boolean }> {
+      return apiFetch('/api/documenti/scadenza/allarme-confermato', {
+        method: 'POST',
+        body: JSON.stringify({ scadenzaId }),
       });
     },
   },
