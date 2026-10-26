@@ -69,6 +69,7 @@ import {
 import {
   aggiornaPromemoriaScadenze,
   cancellaPromemoriaLocali,
+  contaScadenzeConPromemoria,
   promemoriaAttivi,
   setPromemoriaAttivi,
 } from '@/lib/scadenze-locali';
@@ -111,7 +112,9 @@ export function SettingsModal() {
   // - permessoSistema: il telefono concede DAVVERO le notifiche? (null =
   //   non noto, es. moduli nativi mancanti su copie vecchie)
   // - diagnostica: token FCM presente, esito dell'ultima registrazione,
-  //   quanti promemoria sono programmati nell'orologio di Android.
+  //   quante scadenze hanno promemoria programmati nell'orologio di
+  //   Android (v4.123: SCADENZE, non allarmi — una scadenza ha fino a 4
+  //   allarmi col suo preallarme, il numero vecchio non tornava).
   // Finora la pillola "Attivo" diceva che tutto andava anche con il
   // permesso negato per sempre, e l'utente non aveva NESSUNA via
   // d'uscita se non capire da solo dove battere.
@@ -138,13 +141,11 @@ export function SettingsModal() {
     } catch {
       setPermessoSistema(null);
     }
-    let promemoria: number | null = null;
-    try {
-      const tutti = await Notifications.getAllScheduledNotificationsAsync();
-      promemoria = tutti.filter((n) => n.identifier.startsWith('pfc-scad-')).length;
-    } catch {
-      promemoria = null;
-    }
+    // v4.123: il numero ora conta le SCADENZE, non gli allarmi: la sveglia
+    // del giorno stesso + i preallarmi (-p1/-p3/-p10) facevano salire il
+    // numero fino a 4x e l'utente lo confrontava a occhio con la lista
+    // delle scadenze trovandolo sbagliato. Una scadenza = 1.
+    const promemoria = await contaScadenzeConPromemoria();
     setDiagnostica({
       token: Boolean(pushState.token),
       registrato: pushState.registered,
@@ -482,7 +483,7 @@ export function SettingsModal() {
                 Token di notifica: {diagnostica.token ? 'presente' : 'assente'}
               </Text>
               <Text style={styles.diagRiga}>
-                Promemoria scadenze programmati:{' '}
+                Scadenze con promemoria programmati:{' '}
                 {diagnostica.promemoria === null ? 'sconosciuto' : diagnostica.promemoria}
               </Text>
               <Pressable
@@ -504,15 +505,6 @@ export function SettingsModal() {
             </View>
           )}
 
-          {/* v4.118: i produttori (Xiaomi, Huawei, Samsung, Oppo) fermano
-              gli allarmi per "risparmiare batteria" ANCHE con il permesso
-              concesso: la risposta ai "non ricevo gli avvisi". */}
-          <Text style={styles.helpText}>
-            Se gli avvisi non arrivano a telefono spento: Impostazioni del
-            telefono → App → Portale Studio → Batteria → "Senza restrizioni".
-            Alcuni telefoni (Xiaomi, Huawei, Samsung, Oppo) fermano gli
-            allarmi per risparmiare batteria.
-          </Text>
         </View>
 
         {/* --- Card ASPETTO (v4.13: tolta la riga versione) --- */}

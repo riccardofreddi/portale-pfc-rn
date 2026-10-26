@@ -222,6 +222,37 @@ export async function cancellaPromemoriaLocali(): Promise<void> {
 }
 
 /**
+ * v4.123 — Quante SCADENZE hanno almeno una sveglia armata nell'orologio
+ * di Android (la sveglia del giorno stesso oppure un preallarme -p1/-p3/-p10).
+ * La diagnostica nelle Impostazioni contava prima il numero di ALLARMI: una
+ * scadenza ne ha fino a 4, quindi il numero cresceva con i preallarmi e non
+ * tornava con la lista delle scadenze che l'utente vede. Qui invece ogni
+ * scadenza vale 1, che e' il numero "esatto" che si confronta a occhio con
+ * l'archivio. Best-effort: null = modulo non disponibile o lettura fallita.
+ */
+export async function contaScadenzeConPromemoria(): Promise<number | null> {
+  try {
+    const Notifications = await caricaModuloNotifiche();
+    if (!Notifications) {
+      return null;
+    }
+    const tutti = await Notifications.getAllScheduledNotificationsAsync();
+    const scadenze = new Set<string>();
+    for (const notifica of tutti) {
+      if (notifica.identifier.startsWith(PREFISSO_ID)) {
+        // 'pfc-scad-<id>' e 'pfc-scad-<id>-pN' sono la STESSA scadenza
+        scadenze.add(
+          notifica.identifier.slice(PREFISSO_ID.length).replace(/-p\d+$/, ''),
+        );
+      }
+    }
+    return scadenze.size;
+  } catch {
+    return null;
+  }
+}
+
+/**
  * v4.12 — Interruttore dei promemoria (l'interuttore nelle Impostazioni).
  * La scelta resta SUL TELEFONO (AsyncStorage, chiave dedicata): nessuna
  * modifica al server. Default = ATTIVO, cioe' esattamente il comportamento
