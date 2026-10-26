@@ -1,6 +1,6 @@
 {
   "name": "PortalePFCRN",
-  "version": "1.88.25",
+  "version": "1.88.26",
   "private": true,
   "main": "index.js",
   "scripts": {

@@ -238,11 +238,15 @@ export default function App() {
       toastSpenteMostrato.current = false;
       return;
     }
-    if (toastSpenteMostrato.current) return;
-    toastSpenteMostrato.current = true;
     // Piccola pausa: il toast di benvenuto ha già la scena (due toast
     // sovrapposti si coprono a vicenda e l'importante resta invisibile).
+    // v4.124: il segno "già mostrato" sta DENTRO il timer: prima veniva
+    // alzato PRIMA di programmarlo e il cleanup dell'effetto (rerun
+    // ravvicinato di [user]) cancellava il timer lasciando il segno acceso:
+    // il toast non sarebbe più partito in tutta la sessione.
     const timer = setTimeout(() => {
+      if (toastSpenteMostrato.current) return;
+      toastSpenteMostrato.current = true;
       void promemoriaAttivi().then((attivi) => {
         if (!attivi) {
           toast.info(

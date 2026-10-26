@@ -40,6 +40,7 @@ import messaging from '@react-native-firebase/messaging';
 import { DeviceEventEmitter, Platform } from 'react-native';
 import { api } from '@/api/client';
 import { parseDeepLink, type DeepLinkTarget } from '@/lib/deeplink';
+import { useAppStore } from '@/store/auth';
 // v4.121: entra assicuraPermessoNotifiche (il permesso è UNO per tutta
 // l'app, chiesto con finestra sola e mutex condiviso — vedi notifiche.ts).
 import {
@@ -222,12 +223,32 @@ function attaccaListenerRinnovoToken(): void {
 }
 
 /**
+ * v4.124 — MUTEX DELLE REGISTRAZIONI (in ENTRAMBE le direzioni). Il login
+ * sonoro e la riparazione silenziosa NON devono mai correre in parallelo:
+ * due POST identici al server a pochi ms di distanza. Chi arriva mentre
+ * un'altra registrazione è in volo la ASPETTA e si ferma: il suo esito
+ * copre anche questo giro. (Il freno v4.118 agiva solo DOPO, sui giri
+ * successivi, e soltanto verso la silenziosa: il caso silenzioso già in
+ * volo + login sonoro restava scoperto.)
+ */
+let registrazioneInCorso: Promise<boolean> | null = null;
+
+/**
  * Registra il device per le push FCM. Da chiamare dopo il login.
  * v4.112: ritorna TRUE solo se il telefono è davvero registrato al server:
  * chi mostra un messaggio all'utente può ora dire la verità (prima il
  * chiamante fingeva tutto ok anche con permesso negato o rete giù).
  */
-export async function registerPushForCurrentUser(): Promise<boolean> {
+export function registerPushForCurrentUser(): Promise<boolean> {
+  if (!registrazioneInCorso) {
+    registrazioneInCorso = registraPushInterno().finally(() => {
+      registrazioneInCorso = null;
+    });
+  }
+  return registrazioneInCorso;
+}
+
+async function registraPushInterno(): Promise<boolean> {
   try {
     // v4.13: interruttore "Notifiche" SPENTO => nessuna registrazione.
     // (Rende la scelta del cliente stabile anche ai successivi login.)
@@ -299,6 +320,20 @@ export async function registerPushForCurrentUser(): Promise<boolean> {
  * da solo e le notifiche ripartono senza che il cliente tocchi niente.
  */
 export async function riRegistraPushSilenziosa(): Promise<void> {
+  // v4.124 — MUTEX BIDIREZIONALE: se una registrazione è GIÀ in volo (login
+  // sonoro, interruttore, o un giro precedente di questa stessa funzione),
+  // si aspetta il suo esito e basta: nessun secondo POST in parallelo.
+  if (registrazioneInCorso) {
+    await registrazioneInCorso.catch(() => false);
+    return;
+  }
+  registrazioneInCorso = riRegistraInterna().finally(() => {
+    registrazioneInCorso = null;
+  });
+  await registrazioneInCorso.catch(() => false);
+}
+
+async function riRegistraInterna(): Promise<boolean> {
   try {
     // v4.112: PRIMA DI TUTTO, la deregistrazione pendente (interruttore
     // spento mentre il telefono era offline): il server ha ancora il token
@@ -313,7 +348,7 @@ export async function riRegistraPushSilenziosa(): Promise<void> {
         const token = await tokenConRiserva();
         if (!token) {
           console.log('[PUSH] deregistrazione pendente rimandata (token non ottenibile, rete giù?)');
-          return; // si riprova al prossimo avvio/foreground
+          return false; // si riprova al prossimo avvio/foreground
         }
         try {
           await api.push.fcmUnregister(token);
@@ -322,11 +357,11 @@ export async function riRegistraPushSilenziosa(): Promise<void> {
           console.log('[PUSH] deregistrazione pendente COMPLETATA (spegnimento fatto offline)');
         } catch {
           console.log('[PUSH] deregistrazione pendente rimandata (server non raggiungibile)');
-          return;
+          return false;
         }
       }
       console.log('[PUSH] auto-riparazione saltata (notifiche SPENTE)');
-      return;
+      return false;
     }
     if (pendente) {
       await AsyncStorage.removeItem(FCM_DEREGISTRAZIONE_KEY).catch(() => {});
@@ -339,7 +374,7 @@ export async function riRegistraPushSilenziosa(): Promise<void> {
     // questo copre il login manuale e i ritorni ravvicinati.
     if (Date.now() - ultimaRegistrazioneRiuscita < FREQ_REGISTRAZIONE) {
       console.log('[PUSH] auto-riparazione saltata (registrato da pochi minuti)');
-      return;
+      return false;
     }
 
     const perm = await messaging().hasPermission();
@@ -350,14 +385,14 @@ export async function riRegistraPushSilenziosa(): Promise<void> {
       console.log(
         '[PUSH] auto-riparazione saltata (permesso non concesso, nessun prompt)',
       );
-      return;
+      return false;
     }
     const token = await messaging().getToken();
     if (!token) {
       // v4.112: senza token la registrazione al server è inutile: niente
       // chiamata con indirizzo vuoto. Il prossimo giro riproverà.
       console.log('[PUSH] auto-riparazione saltata (getToken vuoto)');
-      return;
+      return false;
     }
     // v4.118: il listener di rinnovo del token prima era agganciato SOLO
     // dalla registrazione sonora (registerPushForCurrentUser): con la
@@ -372,9 +407,11 @@ export async function riRegistraPushSilenziosa(): Promise<void> {
     pushState.error = '';
     ultimaRegistrazioneRiuscita = Date.now();
     console.log('[PUSH] auto-riparazione OK:', token.slice(0, 20) + '...');
+    return true;
   } catch (err) {
     // Silenzioso di proposito: il prossimo avvio/foreground riproverà.
     console.log('[PUSH] auto-riparazione fallita, si riprova più tardi:', err);
+    return false;
   }
 }
 
@@ -446,6 +483,16 @@ export function setupPushListeners(
     // nei dati: al tocco sull'avviso locale la Bacheca si apre da sola.
     if (eAvvisoPubblico(datiMsg as Record<string, unknown>, title)) {
       datiAvviso.title = title;
+    }
+    // v4.124 — Se stai già guardando la tab dei MESSAGGI, niente banner di
+    // sistema per un messaggio che sta per comparire nella lista che hai
+    // davanti: la lista si aggiorna da sola (evento qui sotto) e il banner
+    // di sistema risultava il doppione. Le altre push (documenti, scadenze:
+    // url diverso) si comportano come sempre.
+    const tabAttiva = useAppStore.getState().clienteTab;
+    if (url.includes('tab=messaggi') && tabAttiva === 'messaggi') {
+      DeviceEventEmitter.emit('pfc-push-ricevuta', { url, title });
+      return;
     }
     const mostrata = await mostraAvvisoLocale(
       title,
@@ -582,4 +629,12 @@ export function resetStatoPushLocale(): void {
   pushState.registered = false;
   pushState.token = '';
   pushState.error = '';
+  // v4.124: al logout il NUOVO account non eredita il freno "registrato da
+  // pochi minuti" dell'account vecchio (prima: A registrato alle T0, logout,
+  // B entra entro 10 minuti, registrazione sonora fallita per rete = quella
+  // silenziosa frenata fino a T0+10: B senza notifiche e senza spiegazioni).
+  // Il mutex viene pure rilasciato: nessuna registrazione dell'account
+  // vecchio deve coprire quella del nuovo.
+  ultimaRegistrazioneRiuscita = 0;
+  registrazioneInCorso = null;
 }

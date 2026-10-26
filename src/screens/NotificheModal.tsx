@@ -42,7 +42,10 @@ function getNotifConfig(
     documento_nuovo: { icon: '📄', color: colors.success, bg: colors.successSoft },
     messaggio: { icon: '💬', color: colors.info, bg: colors.infoSoft },
     avviso: { icon: '⚠', color: colors.warning, bg: colors.warningSoft },
-    richiesta_upload: { icon: '⬆', color: '#7C3AED', bg: '#F3E8FF' },
+    // v4.124: niente colori FISSI: nel tema scuro #F3E8FF era un blocco
+    // chiaro su fondo notte. La famiglia teal (v4.97) è quella delle voci
+    // di UPLOAD (AttivitaScreen la usa già) ed è a tema.
+    richiesta_upload: { icon: '⬆', color: colors.teal, bg: colors.tealSoft },
     scadenza: { icon: '⏰', color: colors.danger, bg: colors.dangerSoft },
     scadenza_oggi: { icon: '⏰', color: colors.danger, bg: colors.dangerSoft },
     upload_confermato: { icon: '✓', color: colors.success, bg: colors.successSoft },

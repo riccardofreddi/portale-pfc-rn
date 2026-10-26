@@ -69,6 +69,9 @@
  */
 import { Platform } from 'react-native';
 import { requireOptionalNativeModule } from 'expo-modules-core';
+// v4.124: il permesso delle PUSH FCM non deve dipendere dai moduli expo:
+// se il gate v3.4 è chiuso, Firebase chiede il permesso da solo.
+import messaging from '@react-native-firebase/messaging';
 
 type ModuloNotifiche = typeof import('expo-notifications');
 
@@ -192,7 +195,24 @@ export function assicuraPermessoNotifiche(): Promise<boolean> {
   richiestaPermessoInCorso = (async () => {
     try {
       const Notifications = await caricaModulo();
-      if (!Notifications) return false;
+      if (!Notifications) {
+        // v4.124 — Moduli expo assenti (gate v3.4 chiuso): le push FCM NON
+        // devono dipendere da loro. Firebase gestisce il permesso da solo:
+        // chiediamolo direttamente, così la registrazione del token (e tutte
+        // le push dello studio) non muoiono solo perché le notifiche LOCALI
+        // (sveglie scadenze, avvisi a app aperta) non sono disponibili su
+        // questa copia. Se il permesso era già stato negato, Android
+        // risponde DENIED senza riaprire finestre.
+        try {
+          const stato = await messaging().requestPermission();
+          permessoOk =
+            stato === messaging.AuthorizationStatus.AUTHORIZED ||
+            stato === messaging.AuthorizationStatus.PROVISIONAL;
+          return permessoOk;
+        } catch {
+          return false;
+        }
+      }
       const stato = await Notifications.getPermissionsAsync();
       if (stato.granted) {
         permessoOk = true;

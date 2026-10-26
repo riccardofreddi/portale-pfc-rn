@@ -416,19 +416,15 @@ async function syncPromemoriaScadenze(): Promise<number> {
     //    future restano armate anche senza aprire l'app per settimane.
     const { scadenze } = await api.scadenze.list({ giorni: 90 });
 
-    // 2) Cancelliamo TUTTI i vecchi promemoria scadenze: la
-    // rischedulazione pulita e' la garantia che una scadenza pagata
-    // sparisce subito dai promemoria.
-    const giaSchedulati = await Notifications.getAllScheduledNotificationsAsync();
-    for (const notifica of giaSchedulati) {
-      if (notifica.identifier.startsWith(PREFISSO_ID)) {
-        await Notifications.cancelScheduledNotificationAsync(notifica.identifier).catch(
-          () => {},
-        );
-      }
-    }
-
-    // 3) Un promemoria per scadenza: alle 08:30 del giorno stesso.
+    // 2) v4.124 — ALLARMI DESIDERATI. Prima si cancellavano TUTTI i
+    //    promemoria e POI si ricreavano: un kill dell'app in mezzo (o una
+    //    schedulazione fallita) lasciava il telefono SENZA sveglie. Ora si
+    //    schedula DIRETTAMENTE — con lo stesso identifier expo-notifications
+    //    SOSTITUISCE il vecchio allarme (verificato nel sorgente nativo 0.29:
+    //    saveNotificationRequest sovrascrive il record e lo stesso PendingIntent
+    //    rimpiazza quello in AlarmManager) — e alla FINE si cancellano SOLO
+    //    gli allarmi non piu' desiderati (pagate, erogate, sparite).
+    const desiderati = new Set<string>();
     const adesso = new Date();
     let numero = 0;
     for (const scadenza of scadenze) {
@@ -469,7 +465,18 @@ async function syncPromemoriaScadenze(): Promise<number> {
         // se il loro momento è ancora FUTURO: se è passato (scadenza entrata
         // tardi nella lista, o sync del giorno stesso) si salta e basta:
         // niente recupero, il giorno stesso ha la sua rete dedicata.
-        for (const giorniPrima of PREALLARMI) {
+        // v4.124 — l'ANTICIPO SCELTO DALLO STUDIO entra lui stesso nei
+        // preavvisi (prima solo le tacche fisse 10/3/1: con anticipo 5 il
+        // server avvisava a 5 giorni e il telefono taceva fino a 3). Difesa
+        // NaN: anticipo non valido = 10 (il default del server).
+        const anticipo =
+          Number.isFinite(scadenza.anticipoGiorni) && scadenza.anticipoGiorni > 0
+            ? scadenza.anticipoGiorni
+            : 10;
+        const giorniPreavviso = Array.from(new Set([anticipo, ...PREALLARMI]))
+          .filter((n) => n > 0 && n <= anticipo)
+          .sort((a, b) => b - a);
+        for (const giorniPrima of giorniPreavviso) {
           const quandoPre = new Date(
             scade.getFullYear(),
             scade.getMonth(),
@@ -480,16 +487,15 @@ async function syncPromemoriaScadenze(): Promise<number> {
             0,
           );
           if (quandoPre.getTime() <= adesso.getTime()) continue;
-          // L'anticipo scelto nello studio resta il limite: una scadenza
-          // con anticipo 3 non deve far partire "Scade tra 10 giorni".
-          if (giorniPrima > scadenza.anticipoGiorni) continue;
-          const titoloPre =
-            giorniPrima === 1 ? '⏰ Scade domani' : `⏰ Scade tra ${giorniPrima} giorni`;
+          const idPre = `${PREFISSO_ID}${scadenza.id}-p${giorniPrima}`;
           try {
             await Notifications.scheduleNotificationAsync({
-              identifier: `${PREFISSO_ID}${scadenza.id}-p${giorniPrima}`,
+              identifier: idPre,
               content: {
-                title: titoloPre,
+                title:
+                  giorniPrima === 1
+                    ? '⏰ Scade domani'
+                    : `⏰ Scade tra ${giorniPrima} giorni`,
                 body: `"${scadenza.titolo}" scade il ${scade.toLocaleDateString('it-IT')}. Aprilo dall'archivio.`,
                 data: dati,
               },
@@ -499,6 +505,7 @@ async function syncPromemoriaScadenze(): Promise<number> {
                 channelId: CANALE,
               },
             });
+            desiderati.add(idPre);
             numero++;
           } catch (errPre) {
             // Un preallarme fallito non tocca né il giorno stesso né le altre
@@ -523,40 +530,25 @@ async function syncPromemoriaScadenze(): Promise<number> {
           if (erogato === giorno) confermaAllarmeAlServer(scadenza.id, giorno);
         };
 
+        // v4.124: letto UNA volta PRIMA dei due rami — prima il ramo futuro
+        // leggeva DOPO aver già schedulato: la sveglia veniva riarmata anche
+        // se l'avviso era già stato erogato dalla push "Scade OGGI"
+        // (segnaPushScadenzaOggiEroga) = doppione assicurato.
+        const giaErogato = await AsyncStorage.getItem(chiaveErogato).catch(
+          () => null,
+        );
+
         if (quando.getTime() > adesso.getTime()) {
           // Caso normale: promemoria programmato alle 08:30 del giorno
           // di scadenza (allarme esatto di Android: arriva anche a app
           // chiusa, schermo spento e telefono in risparmio energetico).
-          await Notifications.scheduleNotificationAsync({
-            identifier,
-            content: contenuto,
-            trigger: {
-              // v4.116 — IL BUG DELLA VITA REALE: era CALENDAR, che in
-              // expo-notifications esiste SOLO su iOS (il tipo e' marcato
-              // "@platform ios"). Android rifiutava la schedulazione, il
-              // catch esterno nascondeva l'errore e i promemoria a app
-              // CHIUSA non sono MAI partiti (funzionava solo l'avviso
-              // immediato ad app aperta). Il trigger DATE (il momento come
-              // Date) e' supportato da entrambe le piattaforme e arriva
-              // allo stesso minuto del giorno di scadenza, via allarme
-              // esatto di Android: anche a telefono addormentato.
-              type: Notifications.SchedulableTriggerInputTypes.DATE,
-              date: quando,
-              channelId: CANALE,
-            },
-          });
-          // v4.57: segnala "sveglia armata per questo giorno".
-          // v4.75: questo segnale NON e' piu' un blocco: se la sveglia verra'
-          // persa, la rete di sicurezza del ramo qui sotto la ripara. Armiamo
-          // solo se l'avviso non e' gia' stato EROGATO oggi (difensivo).
           // v4.119 (audit) — REGOLA UNICA: se l'avviso per OGGI è già stato
-          // erogato (es. la push "Scade OGGI" del server è arrivata a app
-          // aperta e ha tacitato la sveglia via segnaPushScadenzaOggiEroga),
-          // la sveglia NON si riarma e non si rischedula: un avviso solo.
-          const giaErogatoOra = await AsyncStorage.getItem(chiaveErogato).catch(
-            () => null,
-          );
-          if (giaErogatoOra === giorno) {
+          // erogato, la sveglia NON si riarma: il controllo sta PRIMA della
+          // schedulazione e lo skip la lascia fuori dai "desiderati" (la
+          // pulizia finale la cancella se era ancora in orologio).
+          // v4.116 — il trigger resta DATE (CALENDAR esiste solo su iOS: su
+          // Android la schedulazione veniva rifiutata in silenzio).
+          if (giaErogato === giorno) {
             console.log(
               '[SCADENZE-LOCALI] avviso già erogato oggi per',
               scadenza.titolo,
@@ -564,7 +556,20 @@ async function syncPromemoriaScadenze(): Promise<number> {
             );
             continue;
           }
+          await Notifications.scheduleNotificationAsync({
+            identifier,
+            content: contenuto,
+            trigger: {
+              type: Notifications.SchedulableTriggerInputTypes.DATE,
+              date: quando,
+              channelId: CANALE,
+            },
+          });
+          // v4.57: segnala "sveglia armata per questo giorno".
+          // v4.75: questo segnale NON e' piu' un blocco: se la sveglia verra'
+          // persa, la rete di sicurezza del ramo qui sotto la ripara.
           await AsyncStorage.setItem(chiaveArmato, giorno).catch(() => {});
+          desiderati.add(identifier);
           numero++;
         } else {
           // v4.75 — IL BUCO CHIUSO. Il momento e' gia' passato ma la scadenza
@@ -594,9 +599,6 @@ async function syncPromemoriaScadenze(): Promise<number> {
             );
             continue;
           }
-          const giaErogato = await AsyncStorage.getItem(chiaveErogato).catch(
-            () => null,
-          );
           if (giaErogato === giorno) {
             console.log(
               '[SCADENZE-LOCALI] avviso gia erogato oggi per',
@@ -686,6 +688,27 @@ async function syncPromemoriaScadenze(): Promise<number> {
           err instanceof Error ? err.message : err,
         );
       }
+    }
+
+    // v4.124 — Cancella SOLO gli allarmi non piu' desiderati (pagate,
+    // erogate, sparite): gli altri restano in orologio SENZA finestre vuote
+    // (prima: cancel-all e poi ricrea; un kill dell'app in mezzo = telefono
+    // muto finché la prossima sync). Se la lettura fallisce non si cancella
+    // NIENTE: si riprova alla prossima sync.
+    try {
+      const presenti = await Notifications.getAllScheduledNotificationsAsync();
+      for (const notifica of presenti) {
+        if (
+          notifica.identifier.startsWith(PREFISSO_ID) &&
+          !desiderati.has(notifica.identifier)
+        ) {
+          await Notifications.cancelScheduledNotificationAsync(
+            notifica.identifier,
+          ).catch(() => {});
+        }
+      }
+    } catch {
+      // vassoio non leggibile: niente cancellazioni, i vecchi allarmi restano
     }
 
     // v4.57 — Pulizia dei segnali vecchi: le scadenze pagate o passate non
